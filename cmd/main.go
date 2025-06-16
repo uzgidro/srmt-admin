@@ -4,6 +4,8 @@ import (
 	"log/slog"
 	"os"
 	"srmt-admin/internal/config"
+	"srmt-admin/internal/lib/logger/sl"
+	"srmt-admin/internal/storage/postgres"
 )
 
 const (
@@ -15,8 +17,16 @@ func main() {
 	cfg := config.MustLoad()
 
 	log := setupLogger(cfg.Env)
+	log.Info("Logger start")
 
-	log.Info(cfg.Address)
+	storage, err := postgres.New(cfg.StoragePath)
+	if err != nil {
+		log.Error("Error starting storage", sl.Err(err))
+		os.Exit(1)
+	}
+	log.Info("Storage start")
+
+	_ = storage
 }
 
 func setupLogger(env string) *slog.Logger {

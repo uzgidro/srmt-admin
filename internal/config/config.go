@@ -8,8 +8,10 @@ import (
 )
 
 type Config struct {
-	Env        string `yaml:"env" env-default:"local"`
-	HttpServer `yaml:"http_server"`
+	Env         string `yaml:"env" env-default:"local"`
+	StoragePath string `yaml:"storage_path" env-required:"true"`
+	LogPath     string `yaml:"log_path" env-required:"true"`
+	HttpServer  `yaml:"http_server"`
 }
 
 type HttpServer struct {
