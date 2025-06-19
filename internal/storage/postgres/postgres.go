@@ -11,7 +11,7 @@ type Storage struct {
 }
 
 func New(storagePath string) (*Storage, error) {
-	const op = "storage.sqlite.New"
+	const op = "storage.postgres.New"
 
 	db, err := sql.Open("postgres", storagePath)
 	if err != nil {
