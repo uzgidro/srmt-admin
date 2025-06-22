@@ -27,7 +27,11 @@ func main() {
 	}
 	log.Info("Storage start")
 
-	_ = storage
+	defer func() {
+		if closeErr := storage.DB.Close(); closeErr != nil {
+			log.Error("Error closing storage", sl.Err(closeErr))
+		}
+	}()
 }
 
 func setupLogger(env string) *slog.Logger {

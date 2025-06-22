@@ -2,14 +2,18 @@ package sqlite
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/sqlite3"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
 	_ "github.com/mattn/go-sqlite3"
 )
 
 type Storage struct {
-	db *sql.DB
+	DB *sql.DB
 }
 
 func New(storagePath string) (*Storage, error) {
@@ -29,5 +33,25 @@ func New(storagePath string) (*Storage, error) {
 	db.SetMaxIdleConns(1)
 	db.SetConnMaxLifetime(5 * time.Minute)
 
-	return &Storage{db: db}, nil
+	fmt.Printf("Запуск миграций из %q...\n", "file://./migrations")
+	m, err := migrate.New(
+		"file://./migrations",       // Путь к файлам миграций
+		"sqlite3"+"://"+storagePath, // Строка подключения для мигратора
+	)
+	if err != nil {
+		return nil, fmt.Errorf("%s: failed to initialize migrations: %w", op, err)
+	}
+	defer m.Close() // Важно закрыть мигратор
+
+	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		return nil, fmt.Errorf("%s: failed to apply migrations: %w", op, err)
+	}
+
+	if errors.Is(err, migrate.ErrNoChange) {
+		fmt.Println("Миграции не требуются, база данных уже актуальна.")
+	} else {
+		fmt.Println("Миграции успешно выполнены.")
+	}
+
+	return &Storage{DB: db}, nil
 }
