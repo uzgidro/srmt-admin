@@ -11,7 +11,8 @@ type Config struct {
 	Env         string `yaml:"env" env-default:"local"`
 	StoragePath string `yaml:"storage_path" env-required:"true"`
 	//LogPath     string `yaml:"log_path" env-required:"false"` TODO(): add service -> send logs to mongo
-	HttpServer `yaml:"http_server"`
+	MigrationsPath string `yaml:"migrations_path" env-required:"true"`
+	HttpServer     `yaml:"http_server"`
 }
 
 type HttpServer struct {

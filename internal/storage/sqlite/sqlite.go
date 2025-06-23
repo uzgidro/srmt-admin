@@ -16,10 +16,11 @@ type Storage struct {
 	DB *sql.DB
 }
 
-func New(storagePath string) (*Storage, error) {
+func New(storagePath string, migrationsPath string) (*Storage, error) {
 	const op = "storage.sqlite.New"
+	const driver = "sqlite3"
 
-	db, err := sql.Open("sqlite3", storagePath)
+	db, err := sql.Open(driver, storagePath)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
@@ -33,24 +34,17 @@ func New(storagePath string) (*Storage, error) {
 	db.SetMaxIdleConns(1)
 	db.SetConnMaxLifetime(5 * time.Minute)
 
-	fmt.Printf("Запуск миграций из %q...\n", "file://./migrations")
 	m, err := migrate.New(
-		"file://./migrations",       // Путь к файлам миграций
-		"sqlite3"+"://"+storagePath, // Строка подключения для мигратора
+		migrationsPath,
+		driver+"://"+storagePath,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("%s: failed to initialize migrations: %w", op, err)
 	}
-	defer m.Close() // Важно закрыть мигратор
+	defer m.Close()
 
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return nil, fmt.Errorf("%s: failed to apply migrations: %w", op, err)
-	}
-
-	if errors.Is(err, migrate.ErrNoChange) {
-		fmt.Println("Миграции не требуются, база данных уже актуальна.")
-	} else {
-		fmt.Println("Миграции успешно выполнены.")
 	}
 
 	return &Storage{DB: db}, nil

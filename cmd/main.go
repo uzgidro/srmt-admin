@@ -20,7 +20,7 @@ func main() {
 	log := setupLogger(cfg.Env)
 	log.Info("Logger start")
 
-	storage, err := sqlite.New(cfg.StoragePath)
+	storage, err := sqlite.New(cfg.StoragePath, cfg.MigrationsPath)
 	if err != nil {
 		log.Error("Error starting storage", sl.Err(err))
 		os.Exit(1)
