@@ -16,9 +16,9 @@ type Config struct {
 }
 
 type HttpServer struct {
-	Address     string        `yaml:"address" env-default:"localhost:9010"`
-	timeout     time.Duration `yaml:"timeout" env-default:"4s"`
-	idleTimeout time.Duration `yaml:"idle-timeout" env-default:"60s"`
+	Address     string        `yaml:"address" env-default:":9010"`
+	Timeout     time.Duration `yaml:"timeout" env-default:"4s"`
+	IdleTimeout time.Duration `yaml:"idle-timeout" env-default:"60s"`
 }
 
 func MustLoad() *Config {

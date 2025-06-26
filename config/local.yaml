@@ -3,6 +3,6 @@ storage_path: "./data/srmt_db.sqlite"
 #log_path: "mongodb://srmt:srmt@localhost:27017/srmt?authSource=admin"
 migrations_path: "file://./migrations"
 http_server:
-  address: "localhost:9010"
+  address: ":9010"
   timeout: 4s
   idle_timeout: 60s
