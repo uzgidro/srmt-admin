@@ -1,8 +1,15 @@
 package create
 
 import (
+	"errors"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/render"
+	"github.com/go-playground/validator/v10"
 	"golang.org/x/exp/slog"
 	"net/http"
+	resp "srmt-admin/internal/lib/api/response"
+	"srmt-admin/internal/lib/crypto/hash"
+	"srmt-admin/internal/lib/logger/sl"
 )
 
 type Request struct {
@@ -11,8 +18,7 @@ type Request struct {
 }
 
 type Response struct {
-	Status string `json:"status"`
-	Error  string `json:"error,omitempty"`
+	resp.Response
 }
 
 // UserCreator Construction must be equal to Storage method, or Service in future
@@ -22,6 +28,57 @@ type UserCreator interface {
 
 func New(log *slog.Logger, userCreator UserCreator) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		const op = "handlers.auth.New"
 
+		log = log.With(
+			slog.String("op", op),
+			slog.String("request_id", middleware.GetReqID(r.Context())),
+		)
+
+		var req Request
+
+		// Decode JSON
+		if err := render.DecodeJSON(r.Body, &req); err != nil {
+			log.Error("failed to parse request", sl.Err(err))
+
+			render.JSON(w, r, resp.BadRequest("failed to parse request"))
+			return
+		}
+
+		log.Info("request parsed", slog.Any("req", req))
+
+		// Validate fields
+		if err := validator.New().Struct(req); err != nil {
+			var validationErrors validator.ValidationErrors
+			errors.As(err, &validationErrors)
+
+			log.Error("failed to validate request", sl.Err(err))
+
+			render.JSON(w, r, resp.ValidationError(validationErrors))
+
+			return
+		}
+
+		// Hash password
+		hashPassword, err := hash.HashPassword(req.Password)
+		if err != nil {
+			log.Error("failed to hashPassword password", sl.Err(err))
+
+			render.JSON(w, r, resp.InternalServerError("failed to hashPassword password"))
+			return
+		}
+
+		// save user
+		id, err := userCreator.AddUser(req.Name, hashPassword)
+		if err != nil {
+			log.Info("failed to add user", sl.Err(err))
+
+			render.JSON(w, r, resp.InternalServerError("failed to add user"))
+			return
+		}
+
+		log.Info("successfully added user", slog.Int64("id", id))
+
+		render.JSON(w, r, resp.Created())
 	}
 }
