@@ -1,12 +1,14 @@
 package main
 
 import (
+	"errors"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"log/slog"
 	"net/http"
 	"os"
 	"srmt-admin/internal/config"
+	"srmt-admin/internal/http-server/handlers/auth/create"
 	"srmt-admin/internal/http-server/middleware/logger"
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/storage/sqlite"
@@ -45,9 +47,23 @@ func main() {
 	r.Use(logger.New(log))
 	r.Use(middleware.Recoverer)
 
-	r.Use(middleware.Timeout(cfg.HttpServer.IdleTimeout))
+	//r.Use(middleware.Timeout(cfg.HttpServer.IdleTimeout))
 
-	http.ListenAndServe(cfg.HttpServer.Address, r)
+	r.Post("/auth/sign-up", create.New(log, storage))
+
+	srv := &http.Server{
+		Addr:         cfg.HttpServer.Address,
+		Handler:      r,
+		ReadTimeout:  cfg.HttpServer.Timeout,
+		WriteTimeout: cfg.HttpServer.Timeout,
+		IdleTimeout:  cfg.HttpServer.IdleTimeout,
+	}
+
+	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Error("Error starting http server", sl.Err(err))
+	}
+
+	log.Error("Server shutdown")
 }
 
 func setupLogger(env string) *slog.Logger {
