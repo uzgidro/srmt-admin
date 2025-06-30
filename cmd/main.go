@@ -32,7 +32,7 @@ func main() {
 	log.Info("Storage start")
 
 	defer func() {
-		if closeErr := storage.DB.Close(); closeErr != nil {
+		if closeErr := storage.Close(); closeErr != nil {
 			log.Error("Error closing storage", sl.Err(closeErr))
 		}
 	}()

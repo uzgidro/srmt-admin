@@ -13,7 +13,7 @@ import (
 )
 
 type Storage struct {
-	DB *sql.DB
+	db *sql.DB
 }
 
 func New(storagePath string, migrationsPath string) (*Storage, error) {
@@ -47,5 +47,27 @@ func New(storagePath string, migrationsPath string) (*Storage, error) {
 		return nil, fmt.Errorf("%s: failed to apply migrations: %w", op, err)
 	}
 
-	return &Storage{DB: db}, nil
+	return &Storage{db: db}, nil
+}
+
+func (s *Storage) Close() error {
+	return s.db.Close()
+}
+
+func (s *Storage) AddUser(name, passHash string) (int64, error) {
+	const op = "storage.sqlite.AddUser"
+
+	query := `INSERT INTO users (name, pass_hash) VALUES (?, ?)` // Для SQLite
+
+	res, err := s.db.Exec(query, name, passHash)
+	if err != nil {
+		return 0, fmt.Errorf("%s: execute query: %w", op, err)
+	}
+
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("%s: get last insert id: %w", op, err)
+	}
+
+	return id, nil
 }
