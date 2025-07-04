@@ -1,4 +1,4 @@
-package create
+package sign_up
 
 import (
 	"errors"

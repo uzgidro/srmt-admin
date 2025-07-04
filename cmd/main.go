@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"os"
 	"srmt-admin/internal/config"
-	"srmt-admin/internal/http-server/handlers/auth/create"
+	"srmt-admin/internal/http-server/handlers/auth/sign-up"
 	"srmt-admin/internal/http-server/middleware/logger"
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/storage/sqlite"
@@ -47,9 +47,7 @@ func main() {
 	r.Use(logger.New(log))
 	r.Use(middleware.Recoverer)
 
-	//r.Use(middleware.Timeout(cfg.HttpServer.IdleTimeout))
-
-	r.Post("/auth/sign-up", create.New(log, storage))
+	r.Post("/auth/sign-up", sign_up.New(log, storage))
 
 	srv := &http.Server{
 		Addr:         cfg.HttpServer.Address,
