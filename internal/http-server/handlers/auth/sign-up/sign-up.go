@@ -5,10 +5,10 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
 	"github.com/go-playground/validator/v10"
+	"golang.org/x/crypto/bcrypt"
 	"log/slog"
 	"net/http"
 	resp "srmt-admin/internal/lib/api/response"
-	"srmt-admin/internal/lib/crypto/hash"
 	"srmt-admin/internal/lib/logger/sl"
 )
 
@@ -28,7 +28,7 @@ type UserCreator interface {
 
 func New(log *slog.Logger, userCreator UserCreator) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		const op = "handlers.auth.New"
+		const op = "handlers.auth.sign-up.New"
 
 		log = log.With(
 			slog.String("op", op),
@@ -60,7 +60,7 @@ func New(log *slog.Logger, userCreator UserCreator) http.HandlerFunc {
 		}
 
 		// Hash password
-		hashPassword, err := hash.HashPassword(req.Password)
+		hashPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 		if err != nil {
 			log.Error("failed to hashPassword password", sl.Err(err))
 
@@ -69,7 +69,7 @@ func New(log *slog.Logger, userCreator UserCreator) http.HandlerFunc {
 		}
 
 		// save user
-		id, err := userCreator.AddUser(req.Name, hashPassword)
+		id, err := userCreator.AddUser(req.Name, string(hashPassword))
 		if err != nil {
 			log.Info("failed to add user", sl.Err(err))
 

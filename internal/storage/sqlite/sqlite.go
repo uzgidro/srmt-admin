@@ -1,9 +1,12 @@
 package sqlite
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+	"srmt-admin/internal/lib/model/user"
+	"srmt-admin/internal/storage"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -70,4 +73,23 @@ func (s *Storage) AddUser(name, passHash string) (int64, error) {
 	}
 
 	return id, nil
+}
+
+func (s *Storage) GetUserByName(ctx context.Context, name string) (user.Model, error) {
+	const op = "storage.sqlite.GetUserByName"
+
+	query := `SELECT id, name, pass_hash FROM users WHERE name = ?`
+
+	row := s.db.QueryRowContext(ctx, query, name)
+
+	var u user.Model
+	err := row.Scan(&u.Id, &u.Name, &u.PassHash)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return user.Model{}, fmt.Errorf("%s: %w", op, storage.ErrUserNotFound)
+		}
+		return user.Model{}, fmt.Errorf("%s: %w", op, err)
+	}
+
+	return u, nil
 }

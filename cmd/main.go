@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"srmt-admin/internal/config"
+	"srmt-admin/internal/http-server/handlers/auth/sign-in"
 	"srmt-admin/internal/http-server/handlers/auth/sign-up"
 	"srmt-admin/internal/http-server/middleware/logger"
 	"srmt-admin/internal/lib/logger/sl"
@@ -34,7 +35,7 @@ func main() {
 	log.Info("Storage start")
 
 	defer func() {
-		if closeErr := storage.Close(); closeErr != nil {
+		if closeErr := StorageCloser.Close(storage); closeErr != nil {
 			log.Error("Error closing storage", sl.Err(closeErr))
 		}
 	}()
@@ -48,6 +49,7 @@ func main() {
 	r.Use(middleware.Recoverer)
 
 	r.Post("/auth/sign-up", sign_up.New(log, storage))
+	r.Get("/auth/sign-in", sign_in.New(log, storage))
 
 	srv := &http.Server{
 		Addr:         cfg.HttpServer.Address,
@@ -62,6 +64,10 @@ func main() {
 	}
 
 	log.Error("Server shutdown")
+}
+
+type StorageCloser interface {
+	Close() error
 }
 
 func setupLogger(env string) *slog.Logger {

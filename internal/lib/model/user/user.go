@@ -1,4 +1,7 @@
 package user
 
-type UserModel struct {
+type Model struct {
+	Id       int64
+	Name     string
+	PassHash string
 }
