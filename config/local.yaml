@@ -6,3 +6,7 @@ http_server:
   address: ":9010"
   timeout: 4s
   idle_timeout: 60s
+jwt:
+  secret: "pAcmKVrB5AWhOi/162ehskTyjftPzpb6nk4GCwrkH6Q="
+  access_timeout: 3h
+  refresh_timeout: 24h

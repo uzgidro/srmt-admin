@@ -57,12 +57,12 @@ func (s *Storage) Close() error {
 	return s.db.Close()
 }
 
-func (s *Storage) AddUser(name, passHash string) (int64, error) {
+func (s *Storage) AddUser(ctx context.Context, name, passHash string) (int64, error) {
 	const op = "storage.sqlite.AddUser"
 
-	query := `INSERT INTO users (name, pass_hash) VALUES (?, ?)` // Для SQLite
+	query := `INSERT INTO users (name, pass_hash) VALUES (?, ?)`
 
-	res, err := s.db.Exec(query, name, passHash)
+	res, err := s.db.ExecContext(ctx, query, name, passHash)
 	if err != nil {
 		return 0, fmt.Errorf("%s: execute query: %w", op, err)
 	}

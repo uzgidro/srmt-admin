@@ -12,6 +12,7 @@ type Config struct {
 	StoragePath string `yaml:"storage_path" env-required:"true"`
 	//LogPath     string `yaml:"log_path" env-required:"false"` TODO(): add service -> send logs to mongo
 	MigrationsPath string `yaml:"migrations_path" env-required:"true"`
+	JwtConfig      `yaml:"jwt"`
 	HttpServer     `yaml:"http_server"`
 }
 
@@ -19,6 +20,12 @@ type HttpServer struct {
 	Address     string        `yaml:"address" env-default:":9010"`
 	Timeout     time.Duration `yaml:"timeout" env-default:"4s"`
 	IdleTimeout time.Duration `yaml:"idle-timeout" env-default:"60s"`
+}
+
+type JwtConfig struct {
+	Secret         string        `yaml:"secret" env-required:"true"`
+	AccessTimeout  time.Duration `yaml:"access_timeout" env-default:"1h"`
+	RefreshTimeout time.Duration `yaml:"refresh_timeout" env-default:"6h"`
 }
 
 func MustLoad() *Config {
