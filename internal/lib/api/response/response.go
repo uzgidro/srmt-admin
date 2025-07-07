@@ -12,6 +12,10 @@ type Response struct {
 	Error  string `json:"error,omitempty"`
 }
 
+func Ok() Response {
+	return Response{Status: http.StatusOK}
+}
+
 func Created() Response {
 	return Response{
 		Status: http.StatusCreated,

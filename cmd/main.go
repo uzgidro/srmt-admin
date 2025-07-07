@@ -13,6 +13,7 @@ import (
 	"srmt-admin/internal/http-server/middleware/logger"
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/storage/sqlite"
+	"srmt-admin/internal/token"
 )
 
 const (
@@ -33,6 +34,8 @@ func main() {
 		os.Exit(1)
 	}
 	log.Info("Storage start")
+
+	token, err := token.New(cfg.JwtConfig.Secret, cfg.JwtConfig.AccessTimeout, cfg.JwtConfig.RefreshTimeout)
 
 	defer func() {
 		if closeErr := StorageCloser.Close(storage); closeErr != nil {

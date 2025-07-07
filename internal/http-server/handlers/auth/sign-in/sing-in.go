@@ -13,6 +13,7 @@ import (
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/lib/model/user"
 	"srmt-admin/internal/storage"
+	"srmt-admin/internal/token"
 )
 
 type Request struct {
@@ -30,7 +31,11 @@ type UserGetter interface {
 	GetUserByName(ctx context.Context, name string) (user.Model, error)
 }
 
-func New(log *slog.Logger, userGetter UserGetter) http.HandlerFunc {
+type TokenCreator interface {
+	Create(u user.Model) (token.Pair, error)
+}
+
+func New(log *slog.Logger, userGetter UserGetter, tokenCreator TokenCreator) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.auth.sign-in.New"
 
@@ -78,10 +83,18 @@ func New(log *slog.Logger, userGetter UserGetter) http.HandlerFunc {
 
 		// check password
 		if err := bcrypt.CompareHashAndPassword([]byte(u.PassHash), []byte(req.Password)); err != nil {
-			log.Warn("invalid password", slog.String("name", req.Name))
+			log.Warn("invalid password")
 			render.JSON(w, r, resp.BadRequest("invalid credentials"))
 			return
 		}
 
+		pair, err := tokenCreator.Create(u)
+		if err != nil {
+			log.Error("failed to create pair", sl.Err(err))
+			render.JSON(w, r, resp.InternalServerError("Internal server error"))
+			return
+		}
+		render.JSON(w, r, Response{resp.Ok(), pair.AccessToken, pair.RefreshToken})
+		return
 	}
 }
