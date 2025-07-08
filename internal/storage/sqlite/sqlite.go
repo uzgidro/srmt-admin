@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/mattn/go-sqlite3"
+	"srmt-admin/internal/lib/model/role"
 	"srmt-admin/internal/lib/model/user"
 	"srmt-admin/internal/storage"
 	"time"
@@ -12,7 +14,6 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/sqlite3"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
-	_ "github.com/mattn/go-sqlite3"
 )
 
 type Storage struct {
@@ -92,4 +93,78 @@ func (s *Storage) GetUserByName(ctx context.Context, name string) (user.Model, e
 	}
 
 	return u, nil
+}
+
+// AddRole создает новую роль.
+func (s *Storage) AddRole(ctx context.Context, name string) (int64, error) {
+	stmt, err := s.db.Prepare("INSERT INTO roles(name) VALUES(?)")
+	if err != nil {
+		return 0, fmt.Errorf("failed to prepare statement: %w", err)
+	}
+	defer stmt.Close()
+
+	res, err := stmt.ExecContext(ctx, name)
+	if err != nil {
+		var sqliteErr sqlite3.Error
+		if errors.As(err, &sqliteErr) && sqliteErr.ExtendedCode == sqlite3.ErrConstraintUnique {
+			return 0, storage.ErrRoleExists
+		}
+		return 0, fmt.Errorf("failed to execute statement: %w", err)
+	}
+
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get last insert id: %w", err)
+	}
+	return id, nil
+}
+
+// AssignRoleToUser назначает роль пользователю.
+func (s *Storage) AssignRoleToUser(ctx context.Context, userID, roleID int64) error {
+	stmt, err := s.db.Prepare("INSERT INTO user_roles(user_id, role_id) VALUES(?, ?)")
+	if err != nil {
+		return fmt.Errorf("failed to prepare statement: %w", err)
+	}
+	defer stmt.Close()
+
+	if _, err := stmt.ExecContext(ctx, userID, roleID); err != nil {
+		// Можно добавить обработку ошибки FOREIGN KEY, если нужно
+		return fmt.Errorf("failed to execute statement: %w", err)
+	}
+	return nil
+}
+
+// GetUserRoles возвращает все роли, назначенные пользователю.
+func (s *Storage) GetUserRoles(ctx context.Context, userID int64) ([]role.Model, error) {
+	const query = `
+		SELECT r.id, r.name FROM roles r
+		JOIN user_roles ur ON r.id = ur.role_id
+		WHERE ur.user_id = ?
+	`
+	stmt, err := s.db.Prepare(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare statement: %w", err)
+	}
+	defer stmt.Close()
+
+	rows, err := stmt.QueryContext(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query roles: %w", err)
+	}
+	defer rows.Close()
+
+	var roles []role.Model
+	for rows.Next() {
+		var r role.Model
+		if err := rows.Scan(&r.ID, &r.Name); err != nil {
+			return nil, fmt.Errorf("failed to scan role row: %w", err)
+		}
+		roles = append(roles, r)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows iteration error: %w", err)
+	}
+
+	return roles, nil
 }
