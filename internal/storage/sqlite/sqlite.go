@@ -84,7 +84,7 @@ func (s *Storage) GetUserByName(ctx context.Context, name string) (user.Model, e
 	row := s.db.QueryRowContext(ctx, query, name)
 
 	var u user.Model
-	err := row.Scan(&u.Id, &u.Name, &u.PassHash)
+	err := row.Scan(&u.ID, &u.Name, &u.PassHash)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return user.Model{}, fmt.Errorf("%s: %w", op, storage.ErrUserNotFound)
@@ -117,6 +117,29 @@ func (s *Storage) AddRole(ctx context.Context, name string) (int64, error) {
 		return 0, fmt.Errorf("failed to get last insert id: %w", err)
 	}
 	return id, nil
+}
+
+// GetRoleByName находит роль по её уникальному имени.
+// Возвращает модель роли или ошибку ErrRoleNotFound.
+func (s *Storage) GetRoleByName(ctx context.Context, name string) (role.Model, error) {
+	stmt, err := s.db.Prepare("SELECT id, name FROM roles WHERE name = ?")
+	if err != nil {
+		return role.Model{}, fmt.Errorf("failed to prepare statement: %w", err)
+	}
+	defer stmt.Close()
+
+	row := stmt.QueryRowContext(ctx, name)
+
+	var r role.Model
+	if err := row.Scan(&r.ID, &r.Name); err != nil {
+		// Если Scan вернул sql.ErrNoRows, значит запись не найдена.
+		if errors.Is(err, sql.ErrNoRows) {
+			return role.Model{}, storage.ErrRoleNotFound
+		}
+		return role.Model{}, fmt.Errorf("failed to scan row: %w", err)
+	}
+
+	return r, nil
 }
 
 // AssignRoleToUser назначает роль пользователю.

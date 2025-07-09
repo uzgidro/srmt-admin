@@ -81,7 +81,7 @@ func (s *Token) createAccessToken(u user.Model) (string, error) {
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(s.accessTTL)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
-		UserID: u.Id,
+		UserID: u.ID,
 		Name:   u.Name,
 	}
 
@@ -96,7 +96,7 @@ func (s *Token) createRefreshToken(u user.Model) (string, error) {
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(s.refreshTTL)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
-		UserID: u.Id,
+		UserID: u.ID,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

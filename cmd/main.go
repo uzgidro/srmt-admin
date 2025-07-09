@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -11,6 +12,7 @@ import (
 	"srmt-admin/internal/http-server/handlers/auth/sign-in"
 	"srmt-admin/internal/http-server/handlers/auth/sign-up"
 	"srmt-admin/internal/http-server/middleware/logger"
+	startup_admin "srmt-admin/internal/lib/admin/startup-admin"
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/storage/sqlite"
 	"srmt-admin/internal/token"
@@ -35,13 +37,18 @@ func main() {
 	}
 	log.Info("Storage start")
 
-	token, err := token.New(cfg.JwtConfig.Secret, cfg.JwtConfig.AccessTimeout, cfg.JwtConfig.RefreshTimeout)
+	t, err := token.New(cfg.JwtConfig.Secret, cfg.JwtConfig.AccessTimeout, cfg.JwtConfig.RefreshTimeout)
 
 	defer func() {
 		if closeErr := StorageCloser.Close(storage); closeErr != nil {
 			log.Error("Error closing storage", sl.Err(closeErr))
 		}
 	}()
+
+	if err := startup_admin.EnsureAdminExists(context.Background(), log, storage); err != nil {
+		log.Error("failed to ensure admin exists", "error", err)
+		os.Exit(1)
+	}
 
 	r := chi.NewRouter()
 
@@ -52,7 +59,7 @@ func main() {
 	r.Use(middleware.Recoverer)
 
 	r.Post("/auth/sign-up", sign_up.New(log, storage))
-	r.Get("/auth/sign-in", sign_in.New(log, storage))
+	r.Get("/auth/sign-in", sign_in.New(log, storage, t))
 
 	srv := &http.Server{
 		Addr:         cfg.HttpServer.Address,
