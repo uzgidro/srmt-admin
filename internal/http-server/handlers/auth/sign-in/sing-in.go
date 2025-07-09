@@ -63,7 +63,7 @@ func New(log *slog.Logger, userGetter UserGetter, tokenCreator TokenCreator) htt
 
 			log.Error("failed to validate request", sl.Err(err))
 
-			render.JSON(w, r, resp.ValidationError(validationErrors))
+			render.JSON(w, r, resp.Unauthorized())
 
 			return
 		}

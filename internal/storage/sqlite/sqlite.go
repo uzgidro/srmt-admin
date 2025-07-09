@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/mattn/go-sqlite3"
@@ -79,17 +80,47 @@ func (s *Storage) AddUser(ctx context.Context, name, passHash string) (int64, er
 func (s *Storage) GetUserByName(ctx context.Context, name string) (user.Model, error) {
 	const op = "storage.sqlite.GetUserByName"
 
-	query := `SELECT id, name, pass_hash FROM users WHERE name = ?`
+	// Этот SQL-запрос использует подзапрос с агрегацией JSON для сбора всех ролей пользователя.
+	const query = `
+		SELECT
+			u.id,
+			u.name,
+			u.pass_hash,
+			-- COALESCE нужен, чтобы вернуть пустой массив '[]', если у пользователя нет ролей, вместо NULL.
+			COALESCE(
+				(SELECT json_group_array(r.name)
+				 FROM user_roles ur
+				 JOIN roles r ON ur.role_id = r.id
+				 WHERE ur.user_id = u.id),
+				'[]'
+			) as roles_json
+		FROM
+			users u
+		WHERE
+			u.name = ?
+	`
+	stmt, err := s.db.Prepare(query)
+	if err != nil {
+		return user.Model{}, fmt.Errorf("%s: failed to prepare statement: %w", op, err)
+	}
+	defer stmt.Close()
 
-	row := s.db.QueryRowContext(ctx, query, name)
+	row := stmt.QueryRowContext(ctx, name)
 
 	var u user.Model
-	err := row.Scan(&u.ID, &u.Name, &u.PassHash)
-	if err != nil {
+	var rolesJSON string // Временная переменная для хранения JSON-строки с ролями
+
+	// Сканируем основные поля пользователя и JSON-строку с ролями.
+	if err := row.Scan(&u.ID, &u.Name, &u.PassHash, &rolesJSON); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return user.Model{}, fmt.Errorf("%s: %w", op, storage.ErrUserNotFound)
+			return user.Model{}, storage.ErrUserNotFound
 		}
-		return user.Model{}, fmt.Errorf("%s: %w", op, err)
+		return user.Model{}, fmt.Errorf("%s: failed to scan user row: %w", op, err)
+	}
+
+	// Десериализуем (unmarshal) JSON-строку в срез ролей в нашей модели.
+	if err := json.Unmarshal([]byte(rolesJSON), &u.Roles); err != nil {
+		return user.Model{}, fmt.Errorf("%s: failed to unmarshal roles: %w", op, err)
 	}
 
 	return u, nil

@@ -29,6 +29,12 @@ func BadRequest(msg string) Response {
 	}
 }
 
+func Unauthorized() Response {
+	return Response{
+		Status: http.StatusUnauthorized,
+	}
+}
+
 func InternalServerError(msg string) Response {
 	return Response{
 		Status: http.StatusInternalServerError,

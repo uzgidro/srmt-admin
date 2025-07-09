@@ -22,8 +22,9 @@ type Pair struct {
 // Claims — это полезная нагрузка, которую мы храним в токене.
 type Claims struct {
 	jwt.RegisteredClaims
-	UserID int64  `json:"uid"`
-	Name   string `json:"name"`
+	UserID int64    `json:"uid"`
+	Name   string   `json:"name"`
+	Roles  []string `json:"roles"`
 }
 
 // Token — это наш сервис для работы с JWT.
@@ -83,6 +84,7 @@ func (s *Token) createAccessToken(u user.Model) (string, error) {
 		},
 		UserID: u.ID,
 		Name:   u.Name,
+		Roles:  u.Roles,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

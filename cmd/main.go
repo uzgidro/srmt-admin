@@ -10,9 +10,9 @@ import (
 	"os"
 	"srmt-admin/internal/config"
 	"srmt-admin/internal/http-server/handlers/auth/sign-in"
-	"srmt-admin/internal/http-server/handlers/auth/sign-up"
+	mwauth "srmt-admin/internal/http-server/middleware/auth"
 	"srmt-admin/internal/http-server/middleware/logger"
-	startup_admin "srmt-admin/internal/lib/admin/startup-admin"
+	startupadmin "srmt-admin/internal/lib/admin/startup-admin"
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/storage/sqlite"
 	"srmt-admin/internal/token"
@@ -45,7 +45,7 @@ func main() {
 		}
 	}()
 
-	if err := startup_admin.EnsureAdminExists(context.Background(), log, storage); err != nil {
+	if err := startupadmin.EnsureAdminExists(context.Background(), log, storage); err != nil {
 		log.Error("failed to ensure admin exists", "error", err)
 		os.Exit(1)
 	}
@@ -58,8 +58,21 @@ func main() {
 	r.Use(logger.New(log))
 	r.Use(middleware.Recoverer)
 
-	r.Post("/auth/sign-up", sign_up.New(log, storage))
+	//r.Post("/auth/sign-up", sign_up.New(log, storage))
 	r.Get("/auth/sign-in", sign_in.New(log, storage, t))
+
+	r.Group(func(r chi.Router) {
+		r.Use(mwauth.NewMiddleware(t))
+
+		// Пример защищенного хендлера
+		r.Get("/profile", func(w http.ResponseWriter, r *http.Request) {
+			isAdmin := mwauth.IsAdmin(r.Context())
+			if !isAdmin {
+				http.Error(w, "forbidden", http.StatusForbidden)
+				return
+			}
+		})
+	})
 
 	srv := &http.Server{
 		Addr:         cfg.HttpServer.Address,
