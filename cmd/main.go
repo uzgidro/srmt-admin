@@ -10,6 +10,7 @@ import (
 	"os"
 	"srmt-admin/internal/config"
 	"srmt-admin/internal/http-server/handlers/auth/sign-in"
+	"srmt-admin/internal/http-server/handlers/role/add"
 	mwauth "srmt-admin/internal/http-server/middleware/auth"
 	"srmt-admin/internal/http-server/middleware/logger"
 	startupadmin "srmt-admin/internal/lib/admin/startup-admin"
@@ -61,17 +62,12 @@ func main() {
 	//r.Post("/auth/sign-up", sign_up.New(log, storage))
 	r.Get("/auth/sign-in", sign_in.New(log, storage, t))
 
+	// Admin endpoints
 	r.Group(func(r chi.Router) {
-		r.Use(mwauth.NewMiddleware(t))
+		r.Use(mwauth.Authenticator(t))
+		r.Use(mwauth.AdminOnly)
 
-		// Пример защищенного хендлера
-		r.Get("/profile", func(w http.ResponseWriter, r *http.Request) {
-			isAdmin := mwauth.IsAdmin(r.Context())
-			if !isAdmin {
-				http.Error(w, "forbidden", http.StatusForbidden)
-				return
-			}
-		})
+		r.Post("/role/add", add.New(log, storage))
 	})
 
 	srv := &http.Server{

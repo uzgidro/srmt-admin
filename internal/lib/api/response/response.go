@@ -8,7 +8,7 @@ import (
 )
 
 type Response struct {
-	Status int    `json:"status"`
+	Status int    `json:"-"`
 	Error  string `json:"error,omitempty"`
 }
 

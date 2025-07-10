@@ -50,6 +50,7 @@ func New(log *slog.Logger, userGetter UserGetter, tokenCreator TokenCreator) htt
 		if err := render.DecodeJSON(r.Body, &req); err != nil {
 			log.Error("failed to parse request", sl.Err(err))
 
+			render.Status(r, http.StatusBadRequest)
 			render.JSON(w, r, resp.BadRequest("failed to parse request"))
 			return
 		}
@@ -63,7 +64,8 @@ func New(log *slog.Logger, userGetter UserGetter, tokenCreator TokenCreator) htt
 
 			log.Error("failed to validate request", sl.Err(err))
 
-			render.JSON(w, r, resp.Unauthorized())
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, resp.BadRequest("failed to validate request"))
 
 			return
 		}
@@ -77,6 +79,7 @@ func New(log *slog.Logger, userGetter UserGetter, tokenCreator TokenCreator) htt
 				return
 			}
 			log.Error("failed to get user", sl.Err(err))
+			render.Status(r, http.StatusInternalServerError)
 			render.JSON(w, r, resp.InternalServerError("Internal server error"))
 			return
 		}
@@ -84,6 +87,7 @@ func New(log *slog.Logger, userGetter UserGetter, tokenCreator TokenCreator) htt
 		// check password
 		if err := bcrypt.CompareHashAndPassword([]byte(u.PassHash), []byte(req.Password)); err != nil {
 			log.Warn("invalid password")
+			render.Status(r, http.StatusBadRequest)
 			render.JSON(w, r, resp.BadRequest("invalid credentials"))
 			return
 		}
@@ -91,6 +95,7 @@ func New(log *slog.Logger, userGetter UserGetter, tokenCreator TokenCreator) htt
 		pair, err := tokenCreator.Create(u)
 		if err != nil {
 			log.Error("failed to create pair", sl.Err(err))
+			render.Status(r, http.StatusInternalServerError)
 			render.JSON(w, r, resp.InternalServerError("Internal server error"))
 			return
 		}

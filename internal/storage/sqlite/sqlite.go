@@ -127,7 +127,7 @@ func (s *Storage) GetUserByName(ctx context.Context, name string) (user.Model, e
 }
 
 // AddRole создает новую роль.
-func (s *Storage) AddRole(ctx context.Context, name string) (int64, error) {
+func (s *Storage) AddRole(ctx context.Context, name string, description string) (int64, error) {
 	stmt, err := s.db.Prepare("INSERT INTO roles(name) VALUES(?)")
 	if err != nil {
 		return 0, fmt.Errorf("failed to prepare statement: %w", err)

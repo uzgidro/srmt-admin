@@ -1,4 +1,4 @@
-package sign_up
+package add
 
 import (
 	"context"
@@ -6,7 +6,6 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
 	"github.com/go-playground/validator/v10"
-	"golang.org/x/crypto/bcrypt"
 	"log/slog"
 	"net/http"
 	resp "srmt-admin/internal/lib/api/response"
@@ -14,22 +13,21 @@ import (
 )
 
 type Request struct {
-	Name     string `json:"name" validate:"required"`
-	Password string `json:"password" validate:"required,min=8"`
+	Name        string `json:"name" validate:"required"`
+	Description string `json:"description,omitempty"`
 }
 
 type Response struct {
 	resp.Response
 }
 
-// UserCreator Construction must be equal to Storage method, or Service in future
-type UserCreator interface {
-	AddUser(ctx context.Context, name, passHash string) (int64, error)
+type RoleCreator interface {
+	AddRole(ctx context.Context, name string, description string) (int64, error)
 }
 
-func New(log *slog.Logger, userCreator UserCreator) http.HandlerFunc {
+func New(log *slog.Logger, roleCreator RoleCreator) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		const op = "handlers.auth.sign-up.New"
+		const op = "handlers.role.add.New"
 
 		log = log.With(
 			slog.String("op", op),
@@ -57,32 +55,22 @@ func New(log *slog.Logger, userCreator UserCreator) http.HandlerFunc {
 			log.Error("failed to validate request", sl.Err(err))
 
 			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, resp.ValidationError(validationErrors))
+			render.JSON(w, r, resp.BadRequest("failed to validate request"))
 
 			return
 		}
 
-		// Hash password
-		hashPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+		// add role
+		id, err := roleCreator.AddRole(r.Context(), req.Name, req.Description)
 		if err != nil {
-			log.Error("failed to hashPassword password", sl.Err(err))
+			log.Info("failed to add role", sl.Err(err))
 
 			render.Status(r, http.StatusInternalServerError)
-			render.JSON(w, r, resp.InternalServerError("failed to hashPassword password"))
+			render.JSON(w, r, resp.InternalServerError("failed to add role"))
 			return
 		}
 
-		// save user
-		id, err := userCreator.AddUser(r.Context(), req.Name, string(hashPassword))
-		if err != nil {
-			log.Info("failed to add user", sl.Err(err))
-
-			render.Status(r, http.StatusInternalServerError)
-			render.JSON(w, r, resp.InternalServerError("failed to add user"))
-			return
-		}
-
-		log.Info("successfully added user", slog.Int64("id", id))
+		log.Info("successfully added role", slog.Int64("id", id))
 
 		render.Status(r, http.StatusCreated)
 		render.JSON(w, r, resp.Created())

@@ -20,7 +20,7 @@ type AdminCreator interface {
 	AddUser(ctx context.Context, name, passHash string) (int64, error)
 	GetUserByName(ctx context.Context, name string) (user.Model, error)
 	GetRoleByName(ctx context.Context, name string) (role.Model, error)
-	AddRole(ctx context.Context, name string) (int64, error)
+	AddRole(ctx context.Context, name string, description string) (int64, error)
 	GetUserRoles(ctx context.Context, userID int64) ([]role.Model, error)
 	AssignRoleToUser(ctx context.Context, userID, roleID int64) error
 }
@@ -35,7 +35,7 @@ func EnsureAdminExists(ctx context.Context, log *slog.Logger, creator AdminCreat
 	if err != nil {
 		if errors.Is(err, storage.ErrRoleNotFound) {
 			log.Info("admin role not found, creating it")
-			newRoleID, createErr := creator.AddRole(ctx, defaultAdminRole)
+			newRoleID, createErr := creator.AddRole(ctx, defaultAdminRole, "Admin role")
 			if createErr != nil {
 				return createErr
 			}

@@ -15,8 +15,8 @@ type TokenVerifier interface {
 	Verify(token string) (*token.Claims, error)
 }
 
-// NewMiddleware создает middleware, которому для работы нужен наш JWT-сервис.
-func NewMiddleware(verifier TokenVerifier) func(http.Handler) http.Handler {
+// Authenticator создает middleware, которому для работы нужен наш JWT-сервис.
+func Authenticator(verifier TokenVerifier) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// 1. Извлекаем заголовок
@@ -55,17 +55,4 @@ func NewMiddleware(verifier TokenVerifier) func(http.Handler) http.Handler {
 func ClaimsFromContext(ctx context.Context) (*token.Claims, bool) {
 	claims, ok := ctx.Value(claimsKey).(*token.Claims)
 	return claims, ok
-}
-
-func IsAdmin(ctx context.Context) bool {
-	claims, ok := ctx.Value(claimsKey).(*token.Claims)
-	if ok {
-		for _, item := range claims.Roles {
-			if item == "admin" {
-				return true
-			}
-		}
-		return false
-	}
-	return false
 }
