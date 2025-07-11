@@ -128,25 +128,28 @@ func (s *Storage) GetUserByName(ctx context.Context, name string) (user.Model, e
 
 // AddRole создает новую роль.
 func (s *Storage) AddRole(ctx context.Context, name string, description string) (int64, error) {
-	stmt, err := s.db.Prepare("INSERT INTO roles(name) VALUES(?)")
+	const op = "storage.sqlite.AddRole"
+
+	stmt, err := s.db.Prepare("INSERT INTO roles(name, description) VALUES(?, ?)")
 	if err != nil {
-		return 0, fmt.Errorf("failed to prepare statement: %w", err)
+		return 0, fmt.Errorf("%s: failed to prepare statement: %w", op, err)
 	}
 	defer stmt.Close()
 
-	res, err := stmt.ExecContext(ctx, name)
+	res, err := stmt.ExecContext(ctx, name, description)
 	if err != nil {
 		var sqliteErr sqlite3.Error
 		if errors.As(err, &sqliteErr) && sqliteErr.ExtendedCode == sqlite3.ErrConstraintUnique {
 			return 0, storage.ErrRoleExists
 		}
-		return 0, fmt.Errorf("failed to execute statement: %w", err)
+		return 0, fmt.Errorf("%s: failed to execute statement: %w", op, err)
 	}
 
 	id, err := res.LastInsertId()
 	if err != nil {
-		return 0, fmt.Errorf("failed to get last insert id: %w", err)
+		return 0, fmt.Errorf("%s: failed to get last insert id: %w", op, err)
 	}
+
 	return id, nil
 }
 
