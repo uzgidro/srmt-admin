@@ -11,6 +11,7 @@ import (
 	"srmt-admin/internal/config"
 	"srmt-admin/internal/http-server/handlers/auth/sign-in"
 	"srmt-admin/internal/http-server/handlers/role/add"
+	"srmt-admin/internal/http-server/handlers/role/edit"
 	mwauth "srmt-admin/internal/http-server/middleware/auth"
 	"srmt-admin/internal/http-server/middleware/logger"
 	startupadmin "srmt-admin/internal/lib/admin/startup-admin"
@@ -68,6 +69,7 @@ func main() {
 		r.Use(mwauth.AdminOnly)
 
 		r.Post("/role/add", add.New(log, storage))
+		r.Put("/role/edit", edit.New(log, storage))
 	})
 
 	srv := &http.Server{

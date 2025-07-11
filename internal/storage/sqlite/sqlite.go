@@ -10,6 +10,7 @@ import (
 	"srmt-admin/internal/lib/model/role"
 	"srmt-admin/internal/lib/model/user"
 	"srmt-admin/internal/storage"
+	"strings"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -146,6 +147,63 @@ func (s *Storage) AddRole(ctx context.Context, name string, description string) 
 	}
 
 	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("%s: failed to get last insert id: %w", op, err)
+	}
+
+	return id, nil
+}
+
+func (s *Storage) EditRole(ctx context.Context, id int64, name, description string) (int64, error) {
+	const op = "storage.sqlite.EditRole"
+
+	var query strings.Builder
+	query.WriteString("UPDATE roles SET")
+
+	var args []interface{}
+	var setClauses []string
+
+	if name != "" {
+		setClauses = append(setClauses, " name = ?")
+		args = append(args, name)
+	}
+	if description != "" {
+		setClauses = append(setClauses, " description = ?")
+		args = append(args, description)
+	}
+
+	if len(setClauses) == 0 {
+		return -1, fmt.Errorf("%s: fields are empty", op)
+	}
+
+	query.WriteString(strings.Join(setClauses, ","))
+	query.WriteString(" WHERE id = ?")
+	args = append(args, id)
+
+	stmt, err := s.db.Prepare(query.String())
+	if err != nil {
+		return -1, fmt.Errorf("%s: failed to prepare statement: %w", op, err)
+	}
+	defer stmt.Close()
+
+	res, err := stmt.ExecContext(ctx, args...)
+	if err != nil {
+		var sqliteErr sqlite3.Error
+		if errors.As(err, &sqliteErr) && sqliteErr.ExtendedCode == sqlite3.ErrConstraintUnique {
+			return -1, storage.ErrRoleExists
+		}
+		return -1, fmt.Errorf("%s: failed to execute statement: %w", op, err)
+	}
+
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return -1, fmt.Errorf("%s: failed to get affected rows: %w", op, err)
+	}
+	if rowsAffected == 0 {
+		return -1, storage.ErrRoleNotFound
+	}
+
+	id, err = res.LastInsertId()
 	if err != nil {
 		return 0, fmt.Errorf("%s: failed to get last insert id: %w", op, err)
 	}
