@@ -211,6 +211,31 @@ func (s *Storage) EditRole(ctx context.Context, id int64, name, description stri
 	return id, nil
 }
 
+func (s *Storage) DeleteRole(ctx context.Context, id int64) error {
+	const op = "storage.sqlite.DeleteRole"
+
+	stmt, err := s.db.Prepare("DELETE FROM roles WHERE id = ?")
+	if err != nil {
+		return fmt.Errorf("%s: failed to prepare statement: %w", op, err)
+	}
+	defer stmt.Close()
+
+	res, err := stmt.ExecContext(ctx, id)
+	if err != nil {
+		return fmt.Errorf("%s: failed to execute statement: %w", op, err)
+	}
+
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("%s: failed to get affected rows: %w", op, err)
+	}
+	if rowsAffected == 0 {
+		return storage.ErrRoleNotFound
+	}
+
+	return nil
+}
+
 // GetRoleByName находит роль по её уникальному имени.
 // Возвращает модель роли или ошибку ErrRoleNotFound.
 func (s *Storage) GetRoleByName(ctx context.Context, name string) (role.Model, error) {

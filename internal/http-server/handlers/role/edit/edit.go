@@ -3,6 +3,7 @@ package edit
 import (
 	"context"
 	"errors"
+	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
 	"github.com/go-playground/validator/v10"
@@ -10,10 +11,10 @@ import (
 	"net/http"
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
+	"strconv"
 )
 
 type Request struct {
-	ID          int64  `json:"id" validate:"required"`
 	Name        string `json:"name" validate:"required"`
 	Description string `json:"description,omitempty"`
 }
@@ -34,6 +35,14 @@ func New(log *slog.Logger, editor RoleEditor) http.HandlerFunc {
 			slog.String("op", op),
 			slog.String("request_id", middleware.GetReqID(r.Context())),
 		)
+
+		roleID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+		if err != nil {
+			log.Warn("invalid role ID", "error", err)
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, resp.BadRequest("invalid role id"))
+			return
+		}
 
 		var req Request
 
@@ -62,7 +71,7 @@ func New(log *slog.Logger, editor RoleEditor) http.HandlerFunc {
 		}
 
 		// edit role
-		id, err := editor.EditRole(r.Context(), req.ID, req.Name, req.Description)
+		id, err := editor.EditRole(r.Context(), roleID, req.Name, req.Description)
 		if err != nil {
 			log.Info("failed to edit role", sl.Err(err))
 
