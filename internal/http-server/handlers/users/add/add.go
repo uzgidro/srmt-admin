@@ -27,12 +27,12 @@ type Response struct {
 // UserCreator Construction must be equal to Storage method, or Service in future
 type UserCreator interface {
 	AddUser(ctx context.Context, name, passHash string) (int64, error)
-	AssignRoleToUser(ctx context.Context, userID, roleID int64) error
+	AssignRole(ctx context.Context, userID, roleID int64) error
 }
 
 func New(log *slog.Logger, userCreator UserCreator) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		const op = "handlers.auth.sign-up.New"
+		const op = "handlers.users.add.New"
 
 		log = log.With(
 			slog.String("op", op),
@@ -88,7 +88,7 @@ func New(log *slog.Logger, userCreator UserCreator) http.HandlerFunc {
 		log.Info("successfully added user", slog.Int64("id", id))
 
 		for _, reqRole := range req.Roles {
-			if err := userCreator.AssignRoleToUser(r.Context(), id, reqRole.ID); err != nil {
+			if err := userCreator.AssignRole(r.Context(), id, reqRole.ID); err != nil {
 				log.Info("failed to assign role to user", sl.Err(err))
 				render.Status(r, http.StatusInternalServerError)
 				render.JSON(w, r, resp.InternalServerError("failed to assign role to user"))
@@ -97,6 +97,5 @@ func New(log *slog.Logger, userCreator UserCreator) http.HandlerFunc {
 		}
 
 		render.Status(r, http.StatusCreated)
-		render.JSON(w, r, resp.Created())
 	}
 }

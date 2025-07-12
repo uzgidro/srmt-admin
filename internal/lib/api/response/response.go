@@ -35,6 +35,13 @@ func Unauthorized() Response {
 	}
 }
 
+func NotFound(msg string) Response {
+	return Response{
+		Status: http.StatusNotFound,
+		Error:  msg,
+	}
+}
+
 func InternalServerError(msg string) Response {
 	return Response{
 		Status: http.StatusInternalServerError,

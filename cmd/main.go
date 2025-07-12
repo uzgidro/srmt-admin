@@ -14,6 +14,7 @@ import (
 	roleDelete "srmt-admin/internal/http-server/handlers/role/delete"
 	roleEdit "srmt-admin/internal/http-server/handlers/role/edit"
 	usersAdd "srmt-admin/internal/http-server/handlers/users/add"
+	usersEdit "srmt-admin/internal/http-server/handlers/users/edit"
 	mwauth "srmt-admin/internal/http-server/middleware/auth"
 	"srmt-admin/internal/http-server/middleware/logger"
 	startupadmin "srmt-admin/internal/lib/admin/startup-admin"
@@ -72,11 +73,12 @@ func main() {
 
 		// Roles
 		r.Post("/roles", roleAdd.New(log, storage))
-		r.Put("/roles/{id}", roleEdit.New(log, storage))
+		r.Patch("/roles/{id}", roleEdit.New(log, storage))
 		r.Delete("/roles/{id}", roleDelete.New(log, storage))
 
 		// Users
 		r.Post("/users", usersAdd.New(log, storage))
+		r.Patch("/users", usersEdit.New(log, storage))
 	})
 
 	srv := &http.Server{

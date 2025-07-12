@@ -73,6 +73,5 @@ func New(log *slog.Logger, roleCreator RoleCreator) http.HandlerFunc {
 		log.Info("successfully added role", slog.Int64("id", id))
 
 		render.Status(r, http.StatusCreated)
-		render.JSON(w, r, resp.Created())
 	}
 }

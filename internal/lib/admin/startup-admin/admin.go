@@ -22,7 +22,7 @@ type AdminCreator interface {
 	GetRoleByName(ctx context.Context, name string) (role.Model, error)
 	AddRole(ctx context.Context, name string, description string) (int64, error)
 	GetUserRoles(ctx context.Context, userID int64) ([]role.Model, error)
-	AssignRoleToUser(ctx context.Context, userID, roleID int64) error
+	AssignRole(ctx context.Context, userID, roleID int64) error
 }
 
 // EnsureAdminExists проверяет и при необходимости создает пользователя admin и его роль.
@@ -85,7 +85,7 @@ func EnsureAdminExists(ctx context.Context, log *slog.Logger, creator AdminCreat
 
 	if !hasAdminRole {
 		log.Info("assigning admin role to admin user")
-		if err := creator.AssignRoleToUser(ctx, u.ID, r.ID); err != nil {
+		if err := creator.AssignRole(ctx, u.ID, r.ID); err != nil {
 			return err
 		}
 	}
