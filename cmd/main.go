@@ -13,6 +13,7 @@ import (
 	roleAdd "srmt-admin/internal/http-server/handlers/role/add"
 	roleDelete "srmt-admin/internal/http-server/handlers/role/delete"
 	roleEdit "srmt-admin/internal/http-server/handlers/role/edit"
+	usersAdd "srmt-admin/internal/http-server/handlers/users/add"
 	mwauth "srmt-admin/internal/http-server/middleware/auth"
 	"srmt-admin/internal/http-server/middleware/logger"
 	startupadmin "srmt-admin/internal/lib/admin/startup-admin"
@@ -69,9 +70,13 @@ func main() {
 		r.Use(mwauth.Authenticator(t))
 		r.Use(mwauth.AdminOnly)
 
+		// Roles
 		r.Post("/roles", roleAdd.New(log, storage))
 		r.Put("/roles/{id}", roleEdit.New(log, storage))
 		r.Delete("/roles/{id}", roleDelete.New(log, storage))
+
+		// Users
+		r.Post("/users", usersAdd.New(log, storage))
 	})
 
 	srv := &http.Server{
