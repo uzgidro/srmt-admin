@@ -14,7 +14,9 @@ import (
 	roleDelete "srmt-admin/internal/http-server/handlers/role/delete"
 	roleEdit "srmt-admin/internal/http-server/handlers/role/edit"
 	usersAdd "srmt-admin/internal/http-server/handlers/users/add"
+	assignRole "srmt-admin/internal/http-server/handlers/users/assign-role"
 	usersEdit "srmt-admin/internal/http-server/handlers/users/edit"
+	revokeRole "srmt-admin/internal/http-server/handlers/users/revoke-role"
 	mwauth "srmt-admin/internal/http-server/middleware/auth"
 	"srmt-admin/internal/http-server/middleware/logger"
 	startupadmin "srmt-admin/internal/lib/admin/startup-admin"
@@ -63,7 +65,6 @@ func main() {
 	r.Use(logger.New(log))
 	r.Use(middleware.Recoverer)
 
-	//r.Post("/auth/sign-up", sign_up.New(log, storage))
 	r.Get("/auth/sign-in", sign_in.New(log, storage, t))
 
 	// Admin endpoints
@@ -79,6 +80,8 @@ func main() {
 		// Users
 		r.Post("/users", usersAdd.New(log, storage))
 		r.Patch("/users", usersEdit.New(log, storage))
+		r.Post("/users/{userID}/roles", assignRole.New(log, storage))
+		r.Delete("/users/{userID}/roles/{roleID}", revokeRole.New(log, storage))
 	})
 
 	srv := &http.Server{

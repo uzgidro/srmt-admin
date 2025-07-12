@@ -323,9 +323,21 @@ func (s *Storage) AssignRole(ctx context.Context, userID, roleID int64) error {
 	}
 	defer stmt.Close()
 
-	if _, err := stmt.ExecContext(ctx, userID, roleID); err != nil {
+	_, err = stmt.ExecContext(ctx, userID, roleID)
+	if err != nil {
+		var sqliteErr sqlite3.Error
+		if errors.As(err, &sqliteErr) {
+			switch sqliteErr.ExtendedCode {
+			case sqlite3.ErrConstraintUnique:
+				return nil
+			case sqlite3.ErrConstraintForeignKey:
+				return fmt.Errorf("%s: %w", op, storage.ErrForeignKeyViolation)
+			}
+		}
+		// Все остальные ошибки - это непредвиденные сбои.
 		return fmt.Errorf("%s: failed to execute statement: %w", op, err)
 	}
+
 	return nil
 }
 
