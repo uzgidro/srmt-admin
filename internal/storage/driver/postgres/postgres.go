@@ -5,15 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"github.com/golang-migrate/migrate/v4"
+	"github.com/jackc/pgconn"
+	"srmt-admin/internal/storage"
+
 	_ "github.com/lib/pq"
 )
 
-type Storage struct {
-	DB *sql.DB
-}
-
-func New(storagePath string, migrationsPath string) (*Storage, error) {
-	const op = "storage.postgres.New"
+func New(storagePath string, migrationsPath string) (*storage.Driver, error) {
+	const op = "storage.driver.postgres.New"
 	const driver = "postgres"
 
 	db, err := sql.Open(driver, storagePath)
@@ -39,6 +38,21 @@ func New(storagePath string, migrationsPath string) (*Storage, error) {
 		return nil, fmt.Errorf("%s: failed to apply migrations: %w", op, err)
 	}
 
-	return &Storage{DB: db}, nil
+	return &storage.Driver{DB: db, Translator: &Translator{}}, nil
 
+}
+
+type Translator struct{}
+
+func (t *Translator) Translate(err error, op string) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		switch pgErr.Code {
+		case "23505":
+			return fmt.Errorf("%s: %w", op, storage.ErrDuplicate)
+		case "23503":
+			return fmt.Errorf("%s: %w", op, storage.ErrForeignKeyViolation)
+		}
+	}
+	return fmt.Errorf("%s: %w", op, err)
 }

@@ -21,7 +21,10 @@ import (
 	"srmt-admin/internal/http-server/middleware/logger"
 	startupadmin "srmt-admin/internal/lib/admin/startup-admin"
 	"srmt-admin/internal/lib/logger/sl"
-	"srmt-admin/internal/storage/sqlite"
+	"srmt-admin/internal/storage"
+	"srmt-admin/internal/storage/driver/postgres"
+	"srmt-admin/internal/storage/driver/sqlite"
+	"srmt-admin/internal/storage/repo"
 	"srmt-admin/internal/token"
 )
 
@@ -37,22 +40,24 @@ func main() {
 	log := setupLogger(cfg.Env)
 	log.Info("Logger start")
 
-	storage, err := sqlite.New(cfg.StoragePath, cfg.MigrationsPath)
+	driver, err := setupDriver(cfg.Env, cfg.StoragePath, cfg.MigrationsPath)
 	if err != nil {
 		log.Error("Error starting storage", sl.Err(err))
 		os.Exit(1)
 	}
-	log.Info("Storage start")
+	log.Info("driver start")
+
+	repository := repo.New(driver)
 
 	t, err := token.New(cfg.JwtConfig.Secret, cfg.JwtConfig.AccessTimeout, cfg.JwtConfig.RefreshTimeout)
 
 	defer func() {
-		if closeErr := StorageCloser.Close(storage); closeErr != nil {
+		if closeErr := StorageCloser.Close(repository); closeErr != nil {
 			log.Error("Error closing storage", sl.Err(closeErr))
 		}
 	}()
 
-	if err := startupadmin.EnsureAdminExists(context.Background(), log, storage); err != nil {
+	if err := startupadmin.EnsureAdminExists(context.Background(), log, repository); err != nil {
 		log.Error("failed to ensure admin exists", "error", err)
 		os.Exit(1)
 	}
@@ -65,7 +70,7 @@ func main() {
 	r.Use(logger.New(log))
 	r.Use(middleware.Recoverer)
 
-	r.Get("/auth/sign-in", sign_in.New(log, storage, t))
+	r.Get("/auth/sign-in", sign_in.New(log, repository, t))
 
 	// Admin endpoints
 	r.Group(func(r chi.Router) {
@@ -73,15 +78,15 @@ func main() {
 		r.Use(mwauth.AdminOnly)
 
 		// Roles
-		r.Post("/roles", roleAdd.New(log, storage))
-		r.Patch("/roles/{id}", roleEdit.New(log, storage))
-		r.Delete("/roles/{id}", roleDelete.New(log, storage))
+		r.Post("/roles", roleAdd.New(log, repository))
+		r.Patch("/roles/{id}", roleEdit.New(log, repository))
+		r.Delete("/roles/{id}", roleDelete.New(log, repository))
 
 		// Users
-		r.Post("/users", usersAdd.New(log, storage))
-		r.Patch("/users", usersEdit.New(log, storage))
-		r.Post("/users/{userID}/roles", assignRole.New(log, storage))
-		r.Delete("/users/{userID}/roles/{roleID}", revokeRole.New(log, storage))
+		r.Post("/users", usersAdd.New(log, repository))
+		r.Patch("/users", usersEdit.New(log, repository))
+		r.Post("/users/{userID}/roles", assignRole.New(log, repository))
+		r.Delete("/users/{userID}/roles/{roleID}", revokeRole.New(log, repository))
 	})
 
 	srv := &http.Server{
@@ -122,4 +127,17 @@ func setupLogger(env string) *slog.Logger {
 	}
 
 	return log
+}
+
+func setupDriver(env, storagePath, migrationsPath string) (*storage.Driver, error) {
+	var driver *storage.Driver
+	var err error
+
+	switch env {
+	case envLocal:
+		driver, err = sqlite.New(storagePath, migrationsPath)
+	case envDev:
+		driver, err = postgres.New(storagePath, migrationsPath)
+	}
+	return driver, err
 }

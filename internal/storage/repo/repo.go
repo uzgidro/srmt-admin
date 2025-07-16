@@ -1,4 +1,4 @@
-package sqlite
+package repo
 
 import (
 	"context"
@@ -6,66 +6,31 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/mattn/go-sqlite3"
 	"srmt-admin/internal/lib/model/role"
 	"srmt-admin/internal/lib/model/user"
 	"srmt-admin/internal/storage"
 	"strings"
-	"time"
-
-	"github.com/golang-migrate/migrate/v4"
-	_ "github.com/golang-migrate/migrate/v4/database/sqlite3"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
 )
 
-type Storage struct {
-	db *sql.DB
+type Repo struct {
+	Driver       *sql.DB
+	ErrorHandler storage.ErrorTranslator
 }
 
-func New(storagePath string, migrationsPath string) (*Storage, error) {
-	const op = "storage.sqlite.New"
-	const driver = "sqlite3"
-
-	db, err := sql.Open(driver, storagePath)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", op, err)
-	}
-
-	pingErr := db.Ping()
-	if pingErr != nil {
-		return nil, fmt.Errorf("%s: ping failed: %w", op, pingErr)
-	}
-
-	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(1)
-	db.SetConnMaxLifetime(5 * time.Minute)
-
-	m, err := migrate.New(
-		migrationsPath,
-		driver+"://"+storagePath,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("%s: failed to initialize migrations: %w", op, err)
-	}
-	defer m.Close()
-
-	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		return nil, fmt.Errorf("%s: failed to apply migrations: %w", op, err)
-	}
-
-	return &Storage{db: db}, nil
+func New(driver *storage.Driver) *Repo {
+	return &Repo{driver.DB, driver.Translator}
 }
 
-func (s *Storage) Close() error {
-	return s.db.Close()
+func (s *Repo) Close() error {
+	return s.Driver.Close()
 }
 
-func (s *Storage) AddUser(ctx context.Context, name, passHash string) (int64, error) {
+func (s *Repo) AddUser(ctx context.Context, name, passHash string) (int64, error) {
 	const op = "storage.sqlite.AddUser"
 
 	query := `INSERT INTO users (name, pass_hash) VALUES (?, ?)`
 
-	res, err := s.db.ExecContext(ctx, query, name, passHash)
+	res, err := s.Driver.ExecContext(ctx, query, name, passHash)
 	if err != nil {
 		return 0, fmt.Errorf("%s: execute query: %w", op, err)
 	}
@@ -78,7 +43,7 @@ func (s *Storage) AddUser(ctx context.Context, name, passHash string) (int64, er
 	return id, nil
 }
 
-func (s *Storage) GetUserByName(ctx context.Context, name string) (user.Model, error) {
+func (s *Repo) GetUserByName(ctx context.Context, name string) (user.Model, error) {
 	const op = "storage.sqlite.GetUserByName"
 
 	// Этот SQL-запрос использует подзапрос с агрегацией JSON для сбора всех ролей пользователя.
@@ -100,7 +65,7 @@ func (s *Storage) GetUserByName(ctx context.Context, name string) (user.Model, e
 		WHERE
 			u.name = ?
 	`
-	stmt, err := s.db.Prepare(query)
+	stmt, err := s.Driver.Prepare(query)
 	if err != nil {
 		return user.Model{}, fmt.Errorf("%s: failed to prepare statement: %w", op, err)
 	}
@@ -127,7 +92,7 @@ func (s *Storage) GetUserByName(ctx context.Context, name string) (user.Model, e
 	return u, nil
 }
 
-func (s *Storage) EditUser(ctx context.Context, id int64, name, passHash string) error {
+func (s *Repo) EditUser(ctx context.Context, id int64, name, passHash string) error {
 	const op = "storage.sqlite.EditUser"
 
 	var query strings.Builder
@@ -153,7 +118,7 @@ func (s *Storage) EditUser(ctx context.Context, id int64, name, passHash string)
 	query.WriteString(" WHERE id = ?")
 	args = append(args, id)
 
-	stmt, err := s.db.Prepare(query.String())
+	stmt, err := s.Driver.Prepare(query.String())
 	if err != nil {
 		return fmt.Errorf("%s: failed to prepare statement: %w", op, err)
 	}
@@ -161,9 +126,8 @@ func (s *Storage) EditUser(ctx context.Context, id int64, name, passHash string)
 
 	res, err := stmt.ExecContext(ctx, args...)
 	if err != nil {
-		var sqliteErr sqlite3.Error
-		if errors.As(err, &sqliteErr) && sqliteErr.ExtendedCode == sqlite3.ErrConstraintUnique {
-			return storage.ErrUserExists
+		if err := s.ErrorHandler.Translate(err, op); err != nil {
+			return err
 		}
 		return fmt.Errorf("%s: failed to execute statement: %w", op, err)
 	}
@@ -185,10 +149,10 @@ func (s *Storage) EditUser(ctx context.Context, id int64, name, passHash string)
 }
 
 // AddRole создает новую роль.
-func (s *Storage) AddRole(ctx context.Context, name string, description string) (int64, error) {
+func (s *Repo) AddRole(ctx context.Context, name string, description string) (int64, error) {
 	const op = "storage.sqlite.AddRole"
 
-	stmt, err := s.db.Prepare("INSERT INTO roles(name, description) VALUES(?, ?)")
+	stmt, err := s.Driver.Prepare("INSERT INTO roles(name, description) VALUES(?, ?)")
 	if err != nil {
 		return 0, fmt.Errorf("%s: failed to prepare statement: %w", op, err)
 	}
@@ -196,9 +160,8 @@ func (s *Storage) AddRole(ctx context.Context, name string, description string) 
 
 	res, err := stmt.ExecContext(ctx, name, description)
 	if err != nil {
-		var sqliteErr sqlite3.Error
-		if errors.As(err, &sqliteErr) && sqliteErr.ExtendedCode == sqlite3.ErrConstraintUnique {
-			return 0, storage.ErrRoleExists
+		if err := s.ErrorHandler.Translate(err, op); err != nil {
+			return 0, err
 		}
 		return 0, fmt.Errorf("%s: failed to execute statement: %w", op, err)
 	}
@@ -211,7 +174,7 @@ func (s *Storage) AddRole(ctx context.Context, name string, description string) 
 	return id, nil
 }
 
-func (s *Storage) EditRole(ctx context.Context, id int64, name, description string) error {
+func (s *Repo) EditRole(ctx context.Context, id int64, name, description string) error {
 	const op = "storage.sqlite.EditRole"
 
 	var query strings.Builder
@@ -237,7 +200,7 @@ func (s *Storage) EditRole(ctx context.Context, id int64, name, description stri
 	query.WriteString(" WHERE id = ?")
 	args = append(args, id)
 
-	stmt, err := s.db.Prepare(query.String())
+	stmt, err := s.Driver.Prepare(query.String())
 	if err != nil {
 		return fmt.Errorf("%s: failed to prepare statement: %w", op, err)
 	}
@@ -245,9 +208,8 @@ func (s *Storage) EditRole(ctx context.Context, id int64, name, description stri
 
 	res, err := stmt.ExecContext(ctx, args...)
 	if err != nil {
-		var sqliteErr sqlite3.Error
-		if errors.As(err, &sqliteErr) && sqliteErr.ExtendedCode == sqlite3.ErrConstraintUnique {
-			return storage.ErrRoleExists
+		if err := s.ErrorHandler.Translate(err, op); err != nil {
+			return err
 		}
 		return fmt.Errorf("%s: failed to execute statement: %w", op, err)
 	}
@@ -268,10 +230,10 @@ func (s *Storage) EditRole(ctx context.Context, id int64, name, description stri
 	return nil
 }
 
-func (s *Storage) DeleteRole(ctx context.Context, id int64) error {
+func (s *Repo) DeleteRole(ctx context.Context, id int64) error {
 	const op = "storage.sqlite.DeleteRole"
 
-	stmt, err := s.db.Prepare("DELETE FROM roles WHERE id = ?")
+	stmt, err := s.Driver.Prepare("DELETE FROM roles WHERE id = ?")
 	if err != nil {
 		return fmt.Errorf("%s: failed to prepare statement: %w", op, err)
 	}
@@ -293,8 +255,8 @@ func (s *Storage) DeleteRole(ctx context.Context, id int64) error {
 	return nil
 }
 
-func (s *Storage) GetRoleByName(ctx context.Context, name string) (role.Model, error) {
-	stmt, err := s.db.Prepare("SELECT id, name FROM roles WHERE name = ?")
+func (s *Repo) GetRoleByName(ctx context.Context, name string) (role.Model, error) {
+	stmt, err := s.Driver.Prepare("SELECT id, name FROM roles WHERE name = ?")
 	if err != nil {
 		return role.Model{}, fmt.Errorf("failed to prepare statement: %w", err)
 	}
@@ -314,10 +276,10 @@ func (s *Storage) GetRoleByName(ctx context.Context, name string) (role.Model, e
 	return r, nil
 }
 
-func (s *Storage) AssignRole(ctx context.Context, userID, roleID int64) error {
+func (s *Repo) AssignRole(ctx context.Context, userID, roleID int64) error {
 	const op = "storage.sqlite.AssignRole"
 
-	stmt, err := s.db.Prepare("INSERT INTO user_roles(user_id, role_id) VALUES(?, ?)")
+	stmt, err := s.Driver.Prepare("INSERT INTO user_roles(user_id, role_id) VALUES(?, ?)")
 	if err != nil {
 		return fmt.Errorf("%s: failed to prepare statement: %w", op, err)
 	}
@@ -325,26 +287,19 @@ func (s *Storage) AssignRole(ctx context.Context, userID, roleID int64) error {
 
 	_, err = stmt.ExecContext(ctx, userID, roleID)
 	if err != nil {
-		var sqliteErr sqlite3.Error
-		if errors.As(err, &sqliteErr) {
-			switch sqliteErr.ExtendedCode {
-			case sqlite3.ErrConstraintUnique:
-				return nil
-			case sqlite3.ErrConstraintForeignKey:
-				return fmt.Errorf("%s: %w", op, storage.ErrForeignKeyViolation)
-			}
+		if err := s.ErrorHandler.Translate(err, op); err != nil {
+			return err
 		}
-		// Все остальные ошибки - это непредвиденные сбои.
 		return fmt.Errorf("%s: failed to execute statement: %w", op, err)
 	}
 
 	return nil
 }
 
-func (s *Storage) RevokeRole(ctx context.Context, userID, roleID int64) error {
+func (s *Repo) RevokeRole(ctx context.Context, userID, roleID int64) error {
 	const op = "storage.sqlite.RevokeRole"
 
-	stmt, err := s.db.Prepare("DELETE FROM user_roles WHERE user_id = ? AND role_id = ?")
+	stmt, err := s.Driver.Prepare("DELETE FROM user_roles WHERE user_id = ? AND role_id = ?")
 	if err != nil {
 		return fmt.Errorf("%s: failed to prepare statement: %w", op, err)
 	}
@@ -358,13 +313,13 @@ func (s *Storage) RevokeRole(ctx context.Context, userID, roleID int64) error {
 	return nil
 }
 
-func (s *Storage) GetUserRoles(ctx context.Context, userID int64) ([]role.Model, error) {
+func (s *Repo) GetUserRoles(ctx context.Context, userID int64) ([]role.Model, error) {
 	const query = `
 		SELECT r.id, r.name FROM roles r
 		JOIN user_roles ur ON r.id = ur.role_id
 		WHERE ur.user_id = ?
 	`
-	stmt, err := s.db.Prepare(query)
+	stmt, err := s.Driver.Prepare(query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to prepare statement: %w", err)
 	}

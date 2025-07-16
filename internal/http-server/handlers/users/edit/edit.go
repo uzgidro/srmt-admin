@@ -95,7 +95,7 @@ func New(log *slog.Logger, editor UserEditor) http.HandlerFunc {
 				render.JSON(w, r, resp.NotFound("user not found"))
 				return
 			}
-			if errors.Is(err, storage.ErrUserExists) {
+			if errors.Is(err, storage.ErrDuplicate) {
 				log.Warn("username already exists", "name", newName)
 				render.Status(r, http.StatusConflict)
 				render.JSON(w, r, resp.BadRequest("username already exists"))
