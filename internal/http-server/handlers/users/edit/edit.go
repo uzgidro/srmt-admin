@@ -38,7 +38,7 @@ func New(log *slog.Logger, editor UserEditor) http.HandlerFunc {
 			slog.String("request_id", middleware.GetReqID(r.Context())),
 		)
 
-		userID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+		userID, err := strconv.ParseInt(chi.URLParam(r, "userID"), 10, 64)
 		if err != nil {
 			log.Warn("invalid user ID", "error", err)
 			render.Status(r, http.StatusBadRequest)

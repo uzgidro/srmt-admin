@@ -9,16 +9,8 @@ import (
 	"net/http"
 	"os"
 	"srmt-admin/internal/config"
-	"srmt-admin/internal/http-server/handlers/auth/sign-in"
-	roleAdd "srmt-admin/internal/http-server/handlers/role/add"
-	roleDelete "srmt-admin/internal/http-server/handlers/role/delete"
-	roleEdit "srmt-admin/internal/http-server/handlers/role/edit"
-	usersAdd "srmt-admin/internal/http-server/handlers/users/add"
-	assignRole "srmt-admin/internal/http-server/handlers/users/assign-role"
-	usersEdit "srmt-admin/internal/http-server/handlers/users/edit"
-	revokeRole "srmt-admin/internal/http-server/handlers/users/revoke-role"
-	mwauth "srmt-admin/internal/http-server/middleware/auth"
 	"srmt-admin/internal/http-server/middleware/logger"
+	"srmt-admin/internal/http-server/router"
 	startupadmin "srmt-admin/internal/lib/admin/startup-admin"
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/storage"
@@ -74,24 +66,7 @@ func main() {
 	r.Use(logger.New(log))
 	r.Use(middleware.Recoverer)
 
-	r.Get("/auth/sign-in", sign_in.New(log, repository, t))
-
-	// Admin endpoints
-	r.Group(func(r chi.Router) {
-		r.Use(mwauth.Authenticator(t))
-		r.Use(mwauth.AdminOnly)
-
-		// Roles
-		r.Post("/roles", roleAdd.New(log, repository))
-		r.Patch("/roles/{id}", roleEdit.New(log, repository))
-		r.Delete("/roles/{id}", roleDelete.New(log, repository))
-
-		// Users
-		r.Post("/users", usersAdd.New(log, repository))
-		r.Patch("/users", usersEdit.New(log, repository))
-		r.Post("/users/{userID}/roles", assignRole.New(log, repository))
-		r.Delete("/users/{userID}/roles/{roleID}", revokeRole.New(log, repository))
-	})
+	router.SetupRoutes(r, log, t, repository)
 
 	srv := &http.Server{
 		Addr:         cfg.HttpServer.Address,
