@@ -337,3 +337,23 @@ func (s *Repo) GetUserRoles(ctx context.Context, userID int64) ([]role.Model, er
 
 	return roles, nil
 }
+
+func (s *Repo) AddReservoir(ctx context.Context, name string) (int64, error) {
+	const op = "storage.repo.AddReservoir"
+
+	stmt, err := s.Driver.Prepare("INSERT INTO reservoirs(name) VALUES($1) RETURNING id")
+	if err != nil {
+		return 0, fmt.Errorf("%s: failed to prepare statement: %w", op, err)
+	}
+	defer stmt.Close()
+
+	var id int64
+	if err := stmt.QueryRowContext(ctx, name).Scan(&id); err != nil {
+		if err := s.ErrorHandler.Translate(err, op); err != nil {
+			return 0, err
+		}
+		return 0, fmt.Errorf("%s: failed to execute statement: %w", op, err)
+	}
+
+	return id, nil
+}
