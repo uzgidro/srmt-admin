@@ -8,14 +8,15 @@ import (
 	"github.com/jackc/pgconn"
 	"srmt-admin/internal/storage"
 
-	_ "github.com/lib/pq"
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 func New(storagePath string, migrationsPath string) (*storage.Driver, error) {
 	const op = "storage.driver.postgres.New"
-	const driver = "postgres"
 
-	db, err := sql.Open(driver, storagePath)
+	db, err := sql.Open("pgx", storagePath)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
@@ -27,7 +28,7 @@ func New(storagePath string, migrationsPath string) (*storage.Driver, error) {
 
 	m, err := migrate.New(
 		migrationsPath,
-		driver+"://"+storagePath,
+		storagePath,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("%s: failed to initialize migrations: %w", op, err)

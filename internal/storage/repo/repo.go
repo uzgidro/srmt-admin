@@ -26,27 +26,27 @@ func (s *Repo) Close() error {
 }
 
 func (s *Repo) AddUser(ctx context.Context, name, passHash string) (int64, error) {
-	const op = "storage.sqlite.AddUser"
+	const op = "storage.repo.AddUser"
 
-	query := `INSERT INTO users (name, pass_hash) VALUES (?, ?)`
+	query := `INSERT INTO users (name, pass_hash) VALUES ($1, $2) RETURNING id`
 
-	res, err := s.Driver.ExecContext(ctx, query, name, passHash)
+	stmt, err := s.Driver.Prepare(query)
 	if err != nil {
-		return 0, fmt.Errorf("%s: execute query: %w", op, err)
+		return 0, fmt.Errorf("%s: %w", op, err)
 	}
+	defer stmt.Close()
 
-	id, err := res.LastInsertId()
-	if err != nil {
-		return 0, fmt.Errorf("%s: get last insert id: %w", op, err)
+	var id int64
+	if err = stmt.QueryRowContext(ctx, name, passHash).Scan(&id); err != nil {
+		return 0, fmt.Errorf("%s: execute query: %w", op, err)
 	}
 
 	return id, nil
 }
 
 func (s *Repo) GetUserByName(ctx context.Context, name string) (user.Model, error) {
-	const op = "storage.sqlite.GetUserByName"
+	const op = "storage.repo.GetUserByName"
 
-	// Этот SQL-запрос использует подзапрос с агрегацией JSON для сбора всех ролей пользователя.
 	const query = `
 		SELECT
 			u.id,
@@ -54,8 +54,8 @@ func (s *Repo) GetUserByName(ctx context.Context, name string) (user.Model, erro
 			u.pass_hash,
 			-- COALESCE нужен, чтобы вернуть пустой массив '[]', если у пользователя нет ролей, вместо NULL.
 			COALESCE(
-				(SELECT json_group_array(r.name)
-				 FROM user_roles ur
+				(SELECT json_agg(r.name)
+				 FROM users_roles ur
 				 JOIN roles r ON ur.role_id = r.id
 				 WHERE ur.user_id = u.id),
 				'[]'
@@ -63,7 +63,7 @@ func (s *Repo) GetUserByName(ctx context.Context, name string) (user.Model, erro
 		FROM
 			users u
 		WHERE
-			u.name = ?
+			u.name = $1
 	`
 	stmt, err := s.Driver.Prepare(query)
 	if err != nil {
@@ -74,9 +74,8 @@ func (s *Repo) GetUserByName(ctx context.Context, name string) (user.Model, erro
 	row := stmt.QueryRowContext(ctx, name)
 
 	var u user.Model
-	var rolesJSON string // Временная переменная для хранения JSON-строки с ролями
+	var rolesJSON string
 
-	// Сканируем основные поля пользователя и JSON-строку с ролями.
 	if err := row.Scan(&u.ID, &u.Name, &u.PassHash, &rolesJSON); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return user.Model{}, storage.ErrUserNotFound
@@ -84,7 +83,6 @@ func (s *Repo) GetUserByName(ctx context.Context, name string) (user.Model, erro
 		return user.Model{}, fmt.Errorf("%s: failed to scan user row: %w", op, err)
 	}
 
-	// Десериализуем (unmarshal) JSON-строку в срез ролей в нашей модели.
 	if err := json.Unmarshal([]byte(rolesJSON), &u.Roles); err != nil {
 		return user.Model{}, fmt.Errorf("%s: failed to unmarshal roles: %w", op, err)
 	}
@@ -93,21 +91,24 @@ func (s *Repo) GetUserByName(ctx context.Context, name string) (user.Model, erro
 }
 
 func (s *Repo) EditUser(ctx context.Context, id int64, name, passHash string) error {
-	const op = "storage.sqlite.EditUser"
+	const op = "storage.repo.EditUser"
 
 	var query strings.Builder
 	query.WriteString("UPDATE users SET")
 
 	var args []interface{}
 	var setClauses []string
+	argID := 1
 
 	if name != "" {
-		setClauses = append(setClauses, " name = ?")
+		setClauses = append(setClauses, fmt.Sprintf("name = $%d", argID))
 		args = append(args, name)
+		argID++
 	}
 	if passHash != "" {
-		setClauses = append(setClauses, " pass_hash = ?")
+		setClauses = append(setClauses, fmt.Sprintf("pass_hash = $%d", argID))
 		args = append(args, passHash)
+		argID++
 	}
 
 	if len(setClauses) == 0 {
@@ -115,7 +116,7 @@ func (s *Repo) EditUser(ctx context.Context, id int64, name, passHash string) er
 	}
 
 	query.WriteString(strings.Join(setClauses, ","))
-	query.WriteString(" WHERE id = ?")
+	query.WriteString(fmt.Sprintf("WHERE id = $%d", argID))
 	args = append(args, id)
 
 	stmt, err := s.Driver.Prepare(query.String())
@@ -140,56 +141,48 @@ func (s *Repo) EditUser(ctx context.Context, id int64, name, passHash string) er
 		return storage.ErrUserNotFound
 	}
 
-	id, err = res.LastInsertId()
-	if err != nil {
-		return fmt.Errorf("%s: failed to get last insert id: %w", op, err)
-	}
-
 	return nil
 }
 
-// AddRole создает новую роль.
 func (s *Repo) AddRole(ctx context.Context, name string, description string) (int64, error) {
-	const op = "storage.sqlite.AddRole"
+	const op = "storage.repo.AddRole"
 
-	stmt, err := s.Driver.Prepare("INSERT INTO roles(name, description) VALUES(?, ?)")
+	stmt, err := s.Driver.Prepare("INSERT INTO roles(name, description) VALUES($1, $2) RETURNING id")
 	if err != nil {
 		return 0, fmt.Errorf("%s: failed to prepare statement: %w", op, err)
 	}
 	defer stmt.Close()
 
-	res, err := stmt.ExecContext(ctx, name, description)
-	if err != nil {
+	var id int64
+	if err := stmt.QueryRowContext(ctx, name, description).Scan(&id); err != nil {
 		if err := s.ErrorHandler.Translate(err, op); err != nil {
 			return 0, err
 		}
 		return 0, fmt.Errorf("%s: failed to execute statement: %w", op, err)
 	}
 
-	id, err := res.LastInsertId()
-	if err != nil {
-		return 0, fmt.Errorf("%s: failed to get last insert id: %w", op, err)
-	}
-
 	return id, nil
 }
 
 func (s *Repo) EditRole(ctx context.Context, id int64, name, description string) error {
-	const op = "storage.sqlite.EditRole"
+	const op = "storage.repo.EditRole"
 
 	var query strings.Builder
 	query.WriteString("UPDATE roles SET")
 
 	var args []interface{}
 	var setClauses []string
+	argID := 1
 
 	if name != "" {
-		setClauses = append(setClauses, " name = ?")
+		setClauses = append(setClauses, fmt.Sprintf("name = $%d", argID))
 		args = append(args, name)
+		argID++
 	}
 	if description != "" {
-		setClauses = append(setClauses, " description = ?")
+		setClauses = append(setClauses, fmt.Sprintf("description = $%d", argID))
 		args = append(args, description)
+		argID++
 	}
 
 	if len(setClauses) == 0 {
@@ -197,7 +190,7 @@ func (s *Repo) EditRole(ctx context.Context, id int64, name, description string)
 	}
 
 	query.WriteString(strings.Join(setClauses, ","))
-	query.WriteString(" WHERE id = ?")
+	query.WriteString(fmt.Sprintf("WHERE id = $%d", argID))
 	args = append(args, id)
 
 	stmt, err := s.Driver.Prepare(query.String())
@@ -222,18 +215,13 @@ func (s *Repo) EditRole(ctx context.Context, id int64, name, description string)
 		return storage.ErrRoleNotFound
 	}
 
-	id, err = res.LastInsertId()
-	if err != nil {
-		return fmt.Errorf("%s: failed to get last insert id: %w", op, err)
-	}
-
 	return nil
 }
 
 func (s *Repo) DeleteRole(ctx context.Context, id int64) error {
-	const op = "storage.sqlite.DeleteRole"
+	const op = "storage.repo.DeleteRole"
 
-	stmt, err := s.Driver.Prepare("DELETE FROM roles WHERE id = ?")
+	stmt, err := s.Driver.Prepare("DELETE FROM roles WHERE id = $1")
 	if err != nil {
 		return fmt.Errorf("%s: failed to prepare statement: %w", op, err)
 	}
@@ -256,9 +244,10 @@ func (s *Repo) DeleteRole(ctx context.Context, id int64) error {
 }
 
 func (s *Repo) GetRoleByName(ctx context.Context, name string) (role.Model, error) {
-	stmt, err := s.Driver.Prepare("SELECT id, name FROM roles WHERE name = ?")
+	const op = "storage.repo.GetRoleByName"
+	stmt, err := s.Driver.Prepare("SELECT id, name FROM roles WHERE name = $1")
 	if err != nil {
-		return role.Model{}, fmt.Errorf("failed to prepare statement: %w", err)
+		return role.Model{}, fmt.Errorf("%s: failed to prepare statement: %w", op, err)
 	}
 	defer stmt.Close()
 
@@ -270,16 +259,16 @@ func (s *Repo) GetRoleByName(ctx context.Context, name string) (role.Model, erro
 		if errors.Is(err, sql.ErrNoRows) {
 			return role.Model{}, storage.ErrRoleNotFound
 		}
-		return role.Model{}, fmt.Errorf("failed to scan row: %w", err)
+		return role.Model{}, fmt.Errorf("%s: failed to scan row: %w", op, err)
 	}
 
 	return r, nil
 }
 
 func (s *Repo) AssignRole(ctx context.Context, userID, roleID int64) error {
-	const op = "storage.sqlite.AssignRole"
+	const op = "storage.repo.AssignRole"
 
-	stmt, err := s.Driver.Prepare("INSERT INTO user_roles(user_id, role_id) VALUES(?, ?)")
+	stmt, err := s.Driver.Prepare("INSERT INTO users_roles(user_id, role_id) VALUES($1, $2)")
 	if err != nil {
 		return fmt.Errorf("%s: failed to prepare statement: %w", op, err)
 	}
@@ -297,9 +286,9 @@ func (s *Repo) AssignRole(ctx context.Context, userID, roleID int64) error {
 }
 
 func (s *Repo) RevokeRole(ctx context.Context, userID, roleID int64) error {
-	const op = "storage.sqlite.RevokeRole"
+	const op = "storage.repo.RevokeRole"
 
-	stmt, err := s.Driver.Prepare("DELETE FROM user_roles WHERE user_id = ? AND role_id = ?")
+	stmt, err := s.Driver.Prepare("DELETE FROM users_roles WHERE user_id = $1 AND role_id = $2")
 	if err != nil {
 		return fmt.Errorf("%s: failed to prepare statement: %w", op, err)
 	}
@@ -314,20 +303,22 @@ func (s *Repo) RevokeRole(ctx context.Context, userID, roleID int64) error {
 }
 
 func (s *Repo) GetUserRoles(ctx context.Context, userID int64) ([]role.Model, error) {
+	const op = "storage.repo.GetUserRoles"
+
 	const query = `
 		SELECT r.id, r.name FROM roles r
-		JOIN user_roles ur ON r.id = ur.role_id
-		WHERE ur.user_id = ?
+		JOIN users_roles ur ON r.id = ur.role_id
+		WHERE ur.user_id = $1
 	`
 	stmt, err := s.Driver.Prepare(query)
 	if err != nil {
-		return nil, fmt.Errorf("failed to prepare statement: %w", err)
+		return nil, fmt.Errorf("%s: failed to prepare statement: %w", op, err)
 	}
 	defer stmt.Close()
 
 	rows, err := stmt.QueryContext(ctx, userID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query roles: %w", err)
+		return nil, fmt.Errorf("%s: failed to query roles: %w", op, err)
 	}
 	defer rows.Close()
 
@@ -335,13 +326,13 @@ func (s *Repo) GetUserRoles(ctx context.Context, userID int64) ([]role.Model, er
 	for rows.Next() {
 		var r role.Model
 		if err := rows.Scan(&r.ID, &r.Name); err != nil {
-			return nil, fmt.Errorf("failed to scan role row: %w", err)
+			return nil, fmt.Errorf("%s: failed to scan role row: %w", op, err)
 		}
 		roles = append(roles, r)
 	}
 
 	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("rows iteration error: %w", err)
+		return nil, fmt.Errorf("%s: rows iteration error: %w", op, err)
 	}
 
 	return roles, nil

@@ -38,9 +38,9 @@ func main() {
 	cfg := config.MustLoad()
 
 	log := setupLogger(cfg.Env)
-	log.Info("Logger start")
+	log.Info("logger start")
 
-	driver, err := setupDriver(cfg.Env, cfg.StoragePath, cfg.MigrationsPath)
+	driver, err := postgres.New(cfg.StoragePath, cfg.MigrationsPath)
 	if err != nil {
 		log.Error("Error starting storage", sl.Err(err))
 		os.Exit(1)
@@ -49,7 +49,11 @@ func main() {
 
 	repository := repo.New(driver)
 
+	log.Info("repository start")
+
 	t, err := token.New(cfg.JwtConfig.Secret, cfg.JwtConfig.AccessTimeout, cfg.JwtConfig.RefreshTimeout)
+
+	log.Info("token start")
 
 	defer func() {
 		if closeErr := StorageCloser.Close(repository); closeErr != nil {

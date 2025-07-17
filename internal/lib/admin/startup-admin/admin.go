@@ -3,6 +3,7 @@ package startup_admin
 import (
 	"context"
 	"errors"
+	"fmt"
 	"golang.org/x/crypto/bcrypt"
 	"log/slog"
 	"srmt-admin/internal/lib/model/role"
@@ -25,13 +26,12 @@ type AdminCreator interface {
 	AssignRole(ctx context.Context, userID, roleID int64) error
 }
 
-// EnsureAdminExists проверяет и при необходимости создает пользователя admin и его роль.
 func EnsureAdminExists(ctx context.Context, log *slog.Logger, creator AdminCreator) error {
-	log = log.With(slog.String("op", "setup.ensureAdminExists"))
+	const op = "setup.ensureAdminExists"
+	log = log.With(slog.String("op", op))
 	log.Info("checking for default admin user and role")
 
-	// --- Шаг 1: Проверка и создание роли 'admin' ---
-	r, err := creator.GetRoleByName(ctx, defaultAdminRole) // Предполагаем, что этот метод у вас есть
+	r, err := creator.GetRoleByName(ctx, defaultAdminRole)
 	if err != nil {
 		if errors.Is(err, storage.ErrRoleNotFound) {
 			log.Info("admin role not found, creating it")
@@ -42,17 +42,15 @@ func EnsureAdminExists(ctx context.Context, log *slog.Logger, creator AdminCreat
 			r.ID = newRoleID
 			r.Name = defaultAdminRole
 		} else {
-			return err // Другая ошибка при поиске роли
+			return fmt.Errorf("%s: error on creating role %w", op, err)
 		}
 	}
 
-	// --- Шаг 2: Проверка и создание пользователя 'admin' ---
 	u, err := creator.GetUserByName(ctx, defaultAdminName)
 	if err != nil {
 		if errors.Is(err, storage.ErrUserNotFound) {
 			log.Info("admin user not found, creating it")
 
-			// Хешируем пароль с помощью bcrypt
 			hashedPassword, passErr := bcrypt.GenerateFromPassword([]byte(defaultAdminPass), bcrypt.DefaultCost)
 			if passErr != nil {
 				return passErr
@@ -65,14 +63,13 @@ func EnsureAdminExists(ctx context.Context, log *slog.Logger, creator AdminCreat
 			u.ID = newUserID
 			u.Name = defaultAdminName
 		} else {
-			return err // Другая ошибка при поиске пользователя
+			return fmt.Errorf("%s: error on creating user %w", op, err)
 		}
 	}
 
-	// --- Шаг 3: Проверка и назначение роли пользователю ---
 	userRoles, err := creator.GetUserRoles(ctx, u.ID)
 	if err != nil {
-		return err
+		return fmt.Errorf("%s: error on connecting user with role %w", op, err)
 	}
 
 	var hasAdminRole bool
@@ -86,7 +83,7 @@ func EnsureAdminExists(ctx context.Context, log *slog.Logger, creator AdminCreat
 	if !hasAdminRole {
 		log.Info("assigning admin role to admin user")
 		if err := creator.AssignRole(ctx, u.ID, r.ID); err != nil {
-			return err
+			return fmt.Errorf("%s: assigning admin role to admin user %w", op, err)
 		}
 	}
 

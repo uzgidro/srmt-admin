@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS roles (
 );
 
 -- Создание таблицы user_roles (таблица связей многие-ко-многим)
-CREATE TABLE IF NOT EXISTS user_roles (
+CREATE TABLE IF NOT EXISTS users_roles (
                             user_id INTEGER NOT NULL,
                             role_id INTEGER NOT NULL,
                             PRIMARY KEY (user_id, role_id), -- Составной первичный ключ
