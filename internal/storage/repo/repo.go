@@ -135,7 +135,7 @@ func (s *Repo) EditUser(ctx context.Context, id int64, name, passHash string) er
 
 	rowsAffected, err := res.RowsAffected()
 	if err != nil {
-		return fmt.Errorf("%s: failed to get affected rows: %w", op, err)
+		return fmt.Errorf("%s: failed to set affected rows: %w", op, err)
 	}
 	if rowsAffected == 0 {
 		return storage.ErrUserNotFound
@@ -209,7 +209,7 @@ func (s *Repo) EditRole(ctx context.Context, id int64, name, description string)
 
 	rowsAffected, err := res.RowsAffected()
 	if err != nil {
-		return fmt.Errorf("%s: failed to get affected rows: %w", op, err)
+		return fmt.Errorf("%s: failed to set affected rows: %w", op, err)
 	}
 	if rowsAffected == 0 {
 		return storage.ErrRoleNotFound
@@ -234,7 +234,7 @@ func (s *Repo) DeleteRole(ctx context.Context, id int64) error {
 
 	rowsAffected, err := res.RowsAffected()
 	if err != nil {
-		return fmt.Errorf("%s: failed to get affected rows: %w", op, err)
+		return fmt.Errorf("%s: failed to set affected rows: %w", op, err)
 	}
 	if rowsAffected == 0 {
 		return storage.ErrRoleNotFound
@@ -353,6 +353,55 @@ func (s *Repo) AddReservoir(ctx context.Context, name string) (int64, error) {
 			return 0, err
 		}
 		return 0, fmt.Errorf("%s: failed to execute statement: %w", op, err)
+	}
+
+	return id, nil
+}
+
+func (s *Repo) SetAndijanIndicator(ctx context.Context, height float64) (int64, error) {
+	const op = "storage.repo.SetAndijanIndicator"
+
+	query := `INSERT INTO indicator_height (height, res_id) VALUES ($1, $2) RETURNING id`
+
+	reservoirID, err := s.GetAndijanReservoir(ctx)
+
+	stmt, err := s.Driver.Prepare(query)
+	if err != nil {
+		return 0, fmt.Errorf("%s: failed to prepare statement: %w", op, err)
+	}
+	defer stmt.Close()
+
+	var id int64
+	if err := stmt.QueryRowContext(ctx, height, reservoirID).Scan(&id); err != nil {
+		if translatedErr := s.ErrorHandler.Translate(err, op); translatedErr != nil {
+			return 0, translatedErr
+		}
+		return 0, fmt.Errorf("%s: failed to execute statement: %w", op, err)
+	}
+
+	return id, nil
+}
+
+func (s *Repo) GetAndijanReservoir(ctx context.Context) (int64, error) {
+	const op = "storage.repo.GetAndijanReservoir"
+
+	stmt, err := s.Driver.Prepare("SELECT id FROM reservoirs WHERE name = $1")
+	if err != nil {
+		return 0, fmt.Errorf("%s: failed to prepare statement: %w", op, err)
+	}
+	defer stmt.Close()
+
+	row := stmt.QueryRowContext(ctx, "And")
+
+	var id int64
+	if err := row.Scan(&id); err != nil {
+		// Если Scan вернул sql.ErrNoRows, значит запись не найдена.
+		if errors.Is(err, sql.ErrNoRows) {
+			// Рекомендуется использовать специальную ошибку для этого случая,
+			// по аналогии с ErrUserNotFound и ErrRoleNotFound.
+			return 0, storage.ErrReservoirNotFound
+		}
+		return 0, fmt.Errorf("%s: failed to scan row: %w", op, err)
 	}
 
 	return id, nil

@@ -19,4 +19,6 @@ var (
 	ErrDuplicate           = errors.New("duplicate entry")
 	ErrRoleNotFound        = errors.New("role not found")
 	ErrForeignKeyViolation = errors.New("provided id for user or role does not exist")
+
+	ErrReservoirNotFound = errors.New("reservoir not found")
 )
