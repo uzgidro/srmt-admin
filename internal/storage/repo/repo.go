@@ -10,6 +10,7 @@ import (
 	"srmt-admin/internal/lib/model/user"
 	"srmt-admin/internal/storage"
 	"strings"
+	"time"
 )
 
 type Repo struct {
@@ -358,12 +359,16 @@ func (s *Repo) AddReservoir(ctx context.Context, name string) (int64, error) {
 	return id, nil
 }
 
-func (s *Repo) SetAndijanIndicator(ctx context.Context, height float64) (int64, error) {
-	const op = "storage.repo.SetAndijanIndicator"
+func (s *Repo) SetIndicator(ctx context.Context, resID int64, height float64) (int64, error) {
+	const op = "storage.repo.SetIndicator"
 
-	query := `INSERT INTO indicator_height (height, res_id) VALUES ($1, $2) RETURNING id`
-
-	reservoirID, err := s.GetAndijanReservoir(ctx)
+	const query = `
+		INSERT INTO indicator_height (res_id, height)
+		VALUES ($1, $2)
+		ON CONFLICT (res_id)
+		DO UPDATE SET height = EXCLUDED.height
+		RETURNING id
+	`
 
 	stmt, err := s.Driver.Prepare(query)
 	if err != nil {
@@ -372,7 +377,7 @@ func (s *Repo) SetAndijanIndicator(ctx context.Context, height float64) (int64, 
 	defer stmt.Close()
 
 	var id int64
-	if err := stmt.QueryRowContext(ctx, height, reservoirID).Scan(&id); err != nil {
+	if err := stmt.QueryRowContext(ctx, resID, height).Scan(&id); err != nil {
 		if translatedErr := s.ErrorHandler.Translate(err, op); translatedErr != nil {
 			return 0, translatedErr
 		}
@@ -405,4 +410,9 @@ func (s *Repo) GetAndijanReservoir(ctx context.Context) (int64, error) {
 	}
 
 	return id, nil
+}
+
+func (s *Repo) SaveAndijanData(ctx context.Context, t time.Time, current, resistance float64) error {
+	//TODO implement me
+	panic("implement me")
 }

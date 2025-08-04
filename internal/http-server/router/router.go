@@ -3,8 +3,10 @@ package router
 import (
 	"github.com/go-chi/chi/v5"
 	"log/slog"
-	sign_in "srmt-admin/internal/http-server/handlers/auth/sign-in"
-	"srmt-admin/internal/http-server/handlers/reservoirs/add"
+	signIn "srmt-admin/internal/http-server/handlers/auth/sign-in"
+	andijanData "srmt-admin/internal/http-server/handlers/data/andijan/set"
+	setIndicator "srmt-admin/internal/http-server/handlers/indicators/andijan/set"
+	resAdd "srmt-admin/internal/http-server/handlers/reservoirs/add"
 	roleAdd "srmt-admin/internal/http-server/handlers/role/add"
 	roleDelete "srmt-admin/internal/http-server/handlers/role/delete"
 	roleEdit "srmt-admin/internal/http-server/handlers/role/edit"
@@ -18,7 +20,9 @@ import (
 )
 
 func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, repository *repo.Repo) {
-	router.Post("/auth/sign-in", sign_in.New(log, repository, token))
+	router.Post("/auth/sign-in", signIn.New(log, repository, token))
+
+	router.Post("/data/andijan", andijanData.New(log, repository))
 
 	// Admin endpoints
 	router.Group(func(r chi.Router) {
@@ -36,7 +40,16 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, reposito
 		r.Post("/users/{userID}/roles", assignRole.New(log, repository))
 		r.Delete("/users/{userID}/roles/{roleID}", revokeRole.New(log, repository))
 
+	})
+
+	// SC endpoints
+	router.Group(func(r chi.Router) {
+		r.Use(mwauth.Authenticator(token))
+		r.Use(mwauth.RequireAnyRole("admin", "sc"))
+
+		r.Put("/indicators/{resID}", setIndicator.New(log, repository))
+
 		// Reservoirs
-		r.Post("/reservoirs", add.New(log, repository))
+		r.Post("/reservoirs", resAdd.New(log, repository))
 	})
 }

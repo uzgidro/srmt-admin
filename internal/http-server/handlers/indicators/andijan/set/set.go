@@ -3,6 +3,7 @@ package set
 import (
 	"context"
 	"errors"
+	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
 	"github.com/go-playground/validator/v10"
@@ -10,6 +11,7 @@ import (
 	"net/http"
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
+	"strconv"
 )
 
 type Request struct {
@@ -17,7 +19,7 @@ type Request struct {
 }
 
 type IndicatorSetter interface {
-	SetAndijanIndicator(ctx context.Context, height float64) (int64, error)
+	SetIndicator(ctx context.Context, resID int64, height float64) (int64, error)
 }
 
 func New(log *slog.Logger, setter IndicatorSetter) http.HandlerFunc {
@@ -28,6 +30,14 @@ func New(log *slog.Logger, setter IndicatorSetter) http.HandlerFunc {
 			slog.String("op", op),
 			slog.String("request_id", middleware.GetReqID(r.Context())),
 		)
+
+		resID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+		if err != nil {
+			log.Warn("invalid role ID", "error", err)
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, resp.BadRequest("invalid role id"))
+			return
+		}
 
 		var req Request
 
@@ -51,7 +61,7 @@ func New(log *slog.Logger, setter IndicatorSetter) http.HandlerFunc {
 			return
 		}
 
-		id, err := setter.SetAndijanIndicator(r.Context(), req.Height)
+		id, err := setter.SetIndicator(r.Context(), resID, req.Height)
 		if err != nil {
 			log.Error("failed to set indicator", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)
