@@ -44,11 +44,6 @@ func Authenticator(verifier TokenVerifier) func(http.Handler) http.Handler {
 	}
 }
 
-func ClaimsFromContext(ctx context.Context) (*token.Claims, bool) {
-	claims, ok := ctx.Value(claimsKey).(*token.Claims)
-	return claims, ok
-}
-
 func RequireAnyRole(roles ...string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -59,6 +54,11 @@ func RequireAnyRole(roles ...string) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+func ClaimsFromContext(ctx context.Context) (*token.Claims, bool) {
+	claims, ok := ctx.Value(claimsKey).(*token.Claims)
+	return claims, ok
 }
 
 func hasAnyRole(ctx context.Context, requiredRoles ...string) bool {
