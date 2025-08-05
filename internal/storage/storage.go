@@ -20,7 +20,6 @@ var (
 	ErrRoleNotFound        = errors.New("role not found")
 	ErrForeignKeyViolation = errors.New("provided id for user or role does not exist")
 
-	ErrReservoirNotFound = errors.New("reservoir not found")
-
-	ErrIndicatorNotFound = errors.New("indicator not found")
+	ErrIndicatorNotFound    = errors.New("indicator not found")
+	ErrLevelOutOfCurveRange = errors.New("level is outside the defined curve range")
 )

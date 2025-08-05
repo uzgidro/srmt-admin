@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"srmt-admin/internal/lib/model/data"
 	"srmt-admin/internal/storage"
 )
 
@@ -77,4 +78,37 @@ func (s *Repo) GetIndicator(ctx context.Context, resID int64) (float64, error) {
 	}
 
 	return height, nil
+}
+
+func (s *Repo) GetVolumeByLevel(ctx context.Context, resID int64, level float64) (float64, error) {
+	const op = "storage.repo.GetVolumeByLevel"
+
+	queryBelow := `SELECT level, volume FROM level_volume WHERE res_id = $1 AND level <= $2 ORDER BY level DESC LIMIT 1`
+	queryAbove := `SELECT level, volume FROM level_volume WHERE res_id = $1 AND level >= $2 ORDER BY level LIMIT 1`
+
+	var p1, p2 data.Model
+
+	rowBelow := s.Driver.QueryRowContext(ctx, queryBelow, resID, level)
+	err1 := rowBelow.Scan(&p1.Level, &p1.Volume)
+
+	rowAbove := s.Driver.QueryRowContext(ctx, queryAbove, resID, level)
+	err2 := rowAbove.Scan(&p2.Level, &p2.Volume)
+
+	if err1 != nil || err2 != nil {
+		if errors.Is(err1, sql.ErrNoRows) || errors.Is(err2, sql.ErrNoRows) {
+			return 0, storage.ErrLevelOutOfCurveRange
+		}
+		if err1 != nil {
+			return 0, fmt.Errorf("%s: failed to get lower point: %w", op, err1)
+		}
+		return 0, fmt.Errorf("%s: failed to get upper point: %w", op, err2)
+	}
+
+	if p1.Level == p2.Level {
+		return p1.Volume, nil
+	}
+
+	interpolatedVolume := p1.Volume + (level-p1.Level)*(p2.Volume-p1.Volume)/(p2.Level-p1.Level)
+
+	return interpolatedVolume, nil
 }
