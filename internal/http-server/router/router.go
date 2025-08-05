@@ -4,8 +4,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"log/slog"
 	signIn "srmt-admin/internal/http-server/handlers/auth/sign-in"
-	andijanData "srmt-admin/internal/http-server/handlers/data/andijan/set"
-	setIndicator "srmt-admin/internal/http-server/handlers/indicators/andijan/set"
+	dataSet "srmt-admin/internal/http-server/handlers/data/set"
+	setIndicator "srmt-admin/internal/http-server/handlers/indicators/set"
 	resAdd "srmt-admin/internal/http-server/handlers/reservoirs/add"
 	roleAdd "srmt-admin/internal/http-server/handlers/role/add"
 	roleDelete "srmt-admin/internal/http-server/handlers/role/delete"
@@ -22,7 +22,7 @@ import (
 func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, repository *repo.Repo) {
 	router.Post("/auth/sign-in", signIn.New(log, repository, token))
 
-	router.Post("/data/andijan", andijanData.New(log, repository))
+	router.Post("/data/{id}", dataSet.New(log, repository))
 
 	// Admin endpoints
 	router.Group(func(r chi.Router) {

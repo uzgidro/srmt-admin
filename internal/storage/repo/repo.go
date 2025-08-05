@@ -3,8 +3,8 @@ package repo
 import (
 	"context"
 	"database/sql"
+	"srmt-admin/internal/lib/model/data"
 	"srmt-admin/internal/storage"
-	"time"
 )
 
 type Repo struct {
@@ -20,7 +20,7 @@ func (s *Repo) Close() error {
 	return s.Driver.Close()
 }
 
-func (s *Repo) SaveAndijanData(ctx context.Context, t time.Time, current, resistance float64) error {
+func (s *Repo) SaveData(ctx context.Context, data data.Model) error {
 	//TODO implement me
 	panic("implement me")
 }

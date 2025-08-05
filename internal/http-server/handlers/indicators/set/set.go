@@ -3,6 +3,7 @@ package set
 import (
 	"context"
 	"errors"
+	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
 	"github.com/go-playground/validator/v10"
@@ -10,27 +11,33 @@ import (
 	"net/http"
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
-	"time"
+	"strconv"
 )
 
 type Request struct {
-	Current    float64   `json:"current" validate:"required"`
-	Resistance float64   `json:"resistance" validate:"required"`
-	Time       time.Time `json:"time" validate:"required"`
+	Height float64 `json:"height" validate:"required,gt=0"`
 }
 
-type DataSaver interface {
-	SaveAndijanData(ctx context.Context, t time.Time, current, resistance float64) error
+type IndicatorSetter interface {
+	SetIndicator(ctx context.Context, resID int64, height float64) (int64, error)
 }
 
-func New(log *slog.Logger, saver DataSaver) http.HandlerFunc {
+func New(log *slog.Logger, setter IndicatorSetter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		const op = "handlers.data.andijan.set.New"
+		const op = "handlers.indicators.set.New"
 
 		log = log.With(
 			slog.String("op", op),
 			slog.String("request_id", middleware.GetReqID(r.Context())),
 		)
+
+		resID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+		if err != nil {
+			log.Warn("invalid role ID", "error", err)
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, resp.BadRequest("invalid role id"))
+			return
+		}
 
 		var req Request
 
@@ -54,15 +61,15 @@ func New(log *slog.Logger, saver DataSaver) http.HandlerFunc {
 			return
 		}
 
-		err := saver.SaveAndijanData(r.Context(), req.Time, req.Current, req.Resistance)
+		id, err := setter.SetIndicator(r.Context(), resID, req.Height)
 		if err != nil {
-			log.Error("failed to save data", sl.Err(err))
+			log.Error("failed to set indicator", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)
-			render.JSON(w, r, resp.InternalServerError("failed to save data"))
+			render.JSON(w, r, resp.InternalServerError("failed to set indicator"))
 			return
 		}
 
-		log.Info("successfully saved data")
+		log.Info("successfully set indicator", slog.Int64("id", id))
 
 		render.Status(r, http.StatusCreated)
 	}

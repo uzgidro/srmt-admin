@@ -2,7 +2,10 @@ package repo
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
+	"srmt-admin/internal/storage"
 )
 
 func (s *Repo) AddReservoir(ctx context.Context, name string) (int64, error) {
@@ -51,4 +54,27 @@ func (s *Repo) SetIndicator(ctx context.Context, resID int64, height float64) (i
 	}
 
 	return id, nil
+}
+
+func (s *Repo) GetIndicator(ctx context.Context, resID int64) (float64, error) {
+	const op = "storage.repo.GetIndicator"
+
+	stmt, err := s.Driver.Prepare("SELECT height FROM indicator_height WHERE res_id = $1")
+	if err != nil {
+		return 0, fmt.Errorf("%s: failed to prepare statement: %w", op, err)
+	}
+	defer stmt.Close()
+
+	var height float64
+	if err := stmt.QueryRowContext(ctx, resID).Scan(&height); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, storage.ErrIndicatorNotFound
+		}
+		if translatedErr := s.ErrorHandler.Translate(err, op); translatedErr != nil {
+			return 0, translatedErr
+		}
+		return 0, fmt.Errorf("%s: failed to execute statement: %w", op, err)
+	}
+
+	return height, nil
 }

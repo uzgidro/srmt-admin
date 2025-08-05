@@ -11,20 +11,26 @@ import (
 	"net/http"
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
+	"srmt-admin/internal/lib/model/data"
+	dataConvert "srmt-admin/internal/lib/service/data-convert"
 	"strconv"
+	"time"
 )
 
 type Request struct {
-	Height float64 `json:"height" validate:"required,gt=0"`
+	Current    float64   `json:"current" validate:"required"`
+	Resistance float64   `json:"resistance" validate:"required"`
+	Time       time.Time `json:"time" validate:"required"`
 }
 
-type IndicatorSetter interface {
-	SetIndicator(ctx context.Context, resID int64, height float64) (int64, error)
+type DataSaver interface {
+	GetIndicator(ctx context.Context, resID int64) (float64, error)
+	SaveData(ctx context.Context, data data.Model) error
 }
 
-func New(log *slog.Logger, setter IndicatorSetter) http.HandlerFunc {
+func New(log *slog.Logger, saver DataSaver) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		const op = "handlers.indicators.andijan.set.New"
+		const op = "handlers.data.andijan.set.New"
 
 		log = log.With(
 			slog.String("op", op),
@@ -61,15 +67,25 @@ func New(log *slog.Logger, setter IndicatorSetter) http.HandlerFunc {
 			return
 		}
 
-		id, err := setter.SetIndicator(r.Context(), resID, req.Height)
+		indicatorLevel, err := saver.GetIndicator(r.Context(), resID)
 		if err != nil {
-			log.Error("failed to set indicator", sl.Err(err))
+			log.Error("failed to get indicator level", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)
-			render.JSON(w, r, resp.InternalServerError("failed to set indicator"))
+			render.JSON(w, r, resp.InternalServerError("failed to get indicator level"))
 			return
 		}
 
-		log.Info("successfully set indicator", slog.Int64("id", id))
+		data, err := dataConvert.Convert(resID, indicatorLevel, req.Current, req.Resistance)
+		data.Time = req.Time
+
+		if err = saver.SaveData(r.Context(), data); err != nil {
+			log.Error("failed to save data", sl.Err(err))
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, resp.InternalServerError("failed to save data"))
+			return
+		}
+
+		log.Info("successfully saved data")
 
 		render.Status(r, http.StatusCreated)
 	}
