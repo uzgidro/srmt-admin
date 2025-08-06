@@ -13,10 +13,10 @@ import (
 	"srmt-admin/internal/http-server/router"
 	startupadmin "srmt-admin/internal/lib/admin/startup-admin"
 	"srmt-admin/internal/lib/logger/sl"
-	"srmt-admin/internal/storage"
+	"srmt-admin/internal/storage/driver/mongo"
 	"srmt-admin/internal/storage/driver/postgres"
-	"srmt-admin/internal/storage/driver/sqlite"
-	"srmt-admin/internal/storage/repo"
+	mngRepo "srmt-admin/internal/storage/mongo"
+	pgRepo "srmt-admin/internal/storage/repo"
 	"srmt-admin/internal/token"
 )
 
@@ -32,16 +32,24 @@ func main() {
 	log := setupLogger(cfg.Env)
 	log.Info("logger start")
 
-	driver, err := postgres.New(cfg.StoragePath, cfg.MigrationsPath)
+	pgDriver, err := postgres.New(cfg.StoragePath, cfg.MigrationsPath)
 	if err != nil {
-		log.Error("Error starting storage", sl.Err(err))
+		log.Error("Error starting pgDriver", sl.Err(err))
 		os.Exit(1)
 	}
-	log.Info("driver start")
+	log.Info("pgDriver start")
 
-	repository := repo.New(driver)
+	repository := pgRepo.New(pgDriver)
 
 	log.Info("repository start")
+
+	mngClient, err := mongo.New(context.Background(), cfg.Mongo)
+	if err != nil {
+		log.Error("Error starting mongo", sl.Err(err))
+		os.Exit(1)
+	}
+
+	mngRepository := mngRepo.New(mngClient)
 
 	t, err := token.New(cfg.JwtConfig.Secret, cfg.JwtConfig.AccessTimeout, cfg.JwtConfig.RefreshTimeout)
 
@@ -49,6 +57,9 @@ func main() {
 
 	defer func() {
 		if closeErr := StorageCloser.Close(repository); closeErr != nil {
+			log.Error("Error closing storage", sl.Err(closeErr))
+		}
+		if closeErr := mngRepository.Close(context.Background()); closeErr != nil {
 			log.Error("Error closing storage", sl.Err(closeErr))
 		}
 	}()
@@ -66,7 +77,7 @@ func main() {
 	r.Use(logger.New(log))
 	r.Use(middleware.Recoverer)
 
-	router.SetupRoutes(r, log, t, repository)
+	router.SetupRoutes(r, log, t, repository, mngRepository)
 
 	srv := &http.Server{
 		Addr:         cfg.HttpServer.Address,
@@ -106,17 +117,4 @@ func setupLogger(env string) *slog.Logger {
 	}
 
 	return log
-}
-
-func setupDriver(env, storagePath, migrationsPath string) (*storage.Driver, error) {
-	var driver *storage.Driver
-	var err error
-
-	switch env {
-	case envLocal:
-		driver, err = sqlite.New(storagePath, migrationsPath)
-	case envDev:
-		driver, err = postgres.New(storagePath, migrationsPath)
-	}
-	return driver, err
 }

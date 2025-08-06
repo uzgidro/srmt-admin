@@ -15,14 +15,15 @@ import (
 	usersEdit "srmt-admin/internal/http-server/handlers/users/edit"
 	revokeRole "srmt-admin/internal/http-server/handlers/users/revoke-role"
 	mwauth "srmt-admin/internal/http-server/middleware/auth"
+	"srmt-admin/internal/storage/mongo"
 	"srmt-admin/internal/storage/repo"
 	"srmt-admin/internal/token"
 )
 
-func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, repository *repo.Repo) {
-	router.Post("/auth/sign-in", signIn.New(log, repository, token))
+func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo.Repo, mng *mongo.Repo) {
+	router.Post("/auth/sign-in", signIn.New(log, pg, token))
 
-	router.Post("/data/{id}", dataSet.New(log, repository))
+	router.Post("/data/{id}", dataSet.New(log, pg))
 
 	// Admin endpoints
 	router.Group(func(r chi.Router) {
@@ -30,15 +31,15 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, reposito
 		r.Use(mwauth.AdminOnly)
 
 		// Roles
-		r.Post("/roles", roleAdd.New(log, repository))
-		r.Patch("/roles/{id}", roleEdit.New(log, repository))
-		r.Delete("/roles/{id}", roleDelete.New(log, repository))
+		r.Post("/roles", roleAdd.New(log, pg))
+		r.Patch("/roles/{id}", roleEdit.New(log, pg))
+		r.Delete("/roles/{id}", roleDelete.New(log, pg))
 
 		// Users
-		r.Post("/users", usersAdd.New(log, repository))
-		r.Patch("/users/{userID}", usersEdit.New(log, repository))
-		r.Post("/users/{userID}/roles", assignRole.New(log, repository))
-		r.Delete("/users/{userID}/roles/{roleID}", revokeRole.New(log, repository))
+		r.Post("/users", usersAdd.New(log, pg))
+		r.Patch("/users/{userID}", usersEdit.New(log, pg))
+		r.Post("/users/{userID}/roles", assignRole.New(log, pg))
+		r.Delete("/users/{userID}/roles/{roleID}", revokeRole.New(log, pg))
 
 	})
 
@@ -47,9 +48,9 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, reposito
 		r.Use(mwauth.Authenticator(token))
 		r.Use(mwauth.RequireAnyRole("admin", "sc"))
 
-		r.Put("/indicators/{resID}", setIndicator.New(log, repository))
+		r.Put("/indicators/{resID}", setIndicator.New(log, pg))
 
 		// Reservoirs
-		r.Post("/reservoirs", resAdd.New(log, repository))
+		r.Post("/reservoirs", resAdd.New(log, pg))
 	})
 }
