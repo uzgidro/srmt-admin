@@ -3,6 +3,7 @@ package router
 import (
 	"github.com/go-chi/chi/v5"
 	"log/slog"
+	"net/http"
 	signIn "srmt-admin/internal/http-server/handlers/auth/sign-in"
 	dataSet "srmt-admin/internal/http-server/handlers/data/set"
 	setIndicator "srmt-admin/internal/http-server/handlers/indicators/set"
@@ -10,20 +11,29 @@ import (
 	roleAdd "srmt-admin/internal/http-server/handlers/role/add"
 	roleDelete "srmt-admin/internal/http-server/handlers/role/delete"
 	roleEdit "srmt-admin/internal/http-server/handlers/role/edit"
+	callbackStock "srmt-admin/internal/http-server/handlers/sc/callback/stock"
+	"srmt-admin/internal/http-server/handlers/sc/stock"
 	usersAdd "srmt-admin/internal/http-server/handlers/users/add"
 	assignRole "srmt-admin/internal/http-server/handlers/users/assign-role"
 	usersEdit "srmt-admin/internal/http-server/handlers/users/edit"
 	revokeRole "srmt-admin/internal/http-server/handlers/users/revoke-role"
+	mwapikey "srmt-admin/internal/http-server/middleware/api-key"
 	mwauth "srmt-admin/internal/http-server/middleware/auth"
 	"srmt-admin/internal/storage/mongo"
 	"srmt-admin/internal/storage/repo"
 	"srmt-admin/internal/token"
 )
 
-func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo.Repo, mng *mongo.Repo) {
+func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo.Repo, mng *mongo.Repo, apiKey string) {
 	router.Post("/auth/sign-in", signIn.New(log, pg, token))
 
 	router.Post("/data/{id}", dataSet.New(log, pg))
+
+	router.Group(func(r chi.Router) {
+		r.Use(mwapikey.RequireAPIKey(apiKey))
+
+		r.Post("/sc/stock", callbackStock.New(log, mng))
+	})
 
 	// Admin endpoints
 	router.Group(func(r chi.Router) {
@@ -48,7 +58,11 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 		r.Use(mwauth.Authenticator(token))
 		r.Use(mwauth.RequireAnyRole("admin", "sc"))
 
+		// Indicator
 		r.Put("/indicators/{resID}", setIndicator.New(log, pg))
+
+		// Upload
+		r.Post("/upload/stock", stock.New(log, &http.Client{}))
 
 		// Reservoirs
 		r.Post("/reservoirs", resAdd.New(log, pg))

@@ -12,6 +12,7 @@ type Config struct {
 	StoragePath string `yaml:"storage_path" env-required:"true"`
 	//LogPath     string `yaml:"log_path" env-required:"false"` TODO(): add service -> send logs to mongo
 	MigrationsPath string `yaml:"migrations_path" env-required:"true"`
+	CallbackApiKey string `yaml:"callback_api_key" env-required:"true"`
 	Mongo          `yaml:"mongo"`
 	JwtConfig      `yaml:"jwt"`
 	HttpServer     `yaml:"http_server"`

@@ -49,6 +49,13 @@ func InternalServerError(msg string) Response {
 	}
 }
 
+func BadGateway(msg string) Response {
+	return Response{
+		Status: http.StatusBadGateway,
+		Error:  msg,
+	}
+}
+
 func ValidationError(errs validator.ValidationErrors) Response {
 	var errMessages []string
 
