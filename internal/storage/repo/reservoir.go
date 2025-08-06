@@ -58,7 +58,7 @@ func (s *Repo) SetIndicator(ctx context.Context, resID int64, height float64) (i
 }
 
 func (s *Repo) GetIndicator(ctx context.Context, resID int64) (float64, error) {
-	const op = "storage.repo.GetIndicator"
+	const op = "storage.reservoir.GetIndicator"
 
 	stmt, err := s.Driver.Prepare("SELECT height FROM indicator_height WHERE res_id = $1")
 	if err != nil {
@@ -81,7 +81,7 @@ func (s *Repo) GetIndicator(ctx context.Context, resID int64) (float64, error) {
 }
 
 func (s *Repo) GetVolumeByLevel(ctx context.Context, resID int64, level float64) (float64, error) {
-	const op = "storage.repo.GetVolumeByLevel"
+	const op = "storage.reservoir.GetVolumeByLevel"
 
 	queryBelow := `SELECT level, volume FROM level_volume WHERE res_id = $1 AND level <= $2 ORDER BY level DESC LIMIT 1`
 	queryAbove := `SELECT level, volume FROM level_volume WHERE res_id = $1 AND level >= $2 ORDER BY level LIMIT 1`
