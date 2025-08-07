@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"srmt-admin/internal/config"
+	"srmt-admin/internal/http-server/middleware/cors"
 	"srmt-admin/internal/http-server/middleware/logger"
 	"srmt-admin/internal/http-server/router"
 	startupadmin "srmt-admin/internal/lib/admin/startup-admin"
@@ -76,6 +77,7 @@ func main() {
 	r.Use(middleware.RealIP)
 	r.Use(logger.New(log))
 	r.Use(middleware.Recoverer)
+	r.Use(cors.New(cfg.AllowedOrigins))
 
 	router.SetupRoutes(r, log, t, repository, mngRepository, cfg.ApiKey)
 

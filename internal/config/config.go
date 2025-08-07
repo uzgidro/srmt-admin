@@ -19,9 +19,10 @@ type Config struct {
 }
 
 type HttpServer struct {
-	Address     string        `yaml:"address" env-default:":9010"`
-	Timeout     time.Duration `yaml:"timeout" env-default:"4s"`
-	IdleTimeout time.Duration `yaml:"idle-timeout" env-default:"60s"`
+	AllowedOrigins []string      `yaml:"allowed_origins"`
+	Address        string        `yaml:"address" env-default:":9010"`
+	Timeout        time.Duration `yaml:"timeout" env-default:"4s"`
+	IdleTimeout    time.Duration `yaml:"idle-timeout" env-default:"60s"`
 }
 
 type JwtConfig struct {
