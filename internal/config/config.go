@@ -12,7 +12,7 @@ type Config struct {
 	StoragePath string `yaml:"storage_path" env-required:"true"`
 	//LogPath     string `yaml:"log_path" env-required:"false"` TODO(): add service -> send logs to mongo
 	MigrationsPath string `yaml:"migrations_path" env-required:"true"`
-	CallbackApiKey string `yaml:"callback_api_key" env-required:"true"`
+	ApiKey         string `yaml:"callback_api_key" env-required:"true"`
 	Mongo          `yaml:"mongo"`
 	JwtConfig      `yaml:"jwt"`
 	HttpServer     `yaml:"http_server"`
@@ -32,7 +32,7 @@ type JwtConfig struct {
 
 type Mongo struct {
 	Host       string `yaml:"host" env-required:"true"`
-	Port       int    `yaml:"port" env-required:"true"`
+	Port       string `yaml:"port" env-required:"true"`
 	Username   string `yaml:"username" env-required:"true"`
 	Password   string `yaml:"password" env-required:"true"`
 	AuthSource string `yaml:"auth_source" env-required:"true"`

@@ -2,10 +2,10 @@ package mongo
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
+	"time"
 )
 
 type Repo struct {
@@ -22,17 +22,24 @@ func (r *Repo) Close(ctx context.Context) error {
 
 func (r *Repo) SaveStockData(ctx context.Context, jsonData string) error {
 	const op = "storage.mongo.SaveStockData"
+	return r.saveRawJSON(ctx, "stock_data", jsonData, op)
+}
 
-	var doc bson.M
-	if err := json.Unmarshal([]byte(jsonData), &doc); err != nil {
-		return fmt.Errorf("%s: failed to unmarshal json to bson: %w", op, err)
+func (r *Repo) SaveSnowData(ctx context.Context, jsonData string) error {
+	const op = "storage.mongo.SaveSnowData"
+	return r.saveRawJSON(ctx, "modsnow_data", jsonData, op)
+}
+
+func (r *Repo) saveRawJSON(ctx context.Context, collectionName, jsonData, op string) error {
+	collection := r.Client.Database("srmt").Collection(collectionName)
+
+	doc := bson.D{
+		{Key: "data", Value: jsonData},
+		{Key: "createdAt", Value: time.Now()},
 	}
 
-	collection := r.Client.Database("srmt_db").Collection("stock_data")
-
-	_, err := collection.InsertOne(ctx, doc)
-	if err != nil {
-		return fmt.Errorf("%s: failed to insert document: %w", op, err)
+	if _, err := collection.InsertOne(ctx, doc); err != nil {
+		return fmt.Errorf("%s: failed to insert raw json document: %w", op, err)
 	}
 
 	return nil

@@ -77,7 +77,7 @@ func main() {
 	r.Use(logger.New(log))
 	r.Use(middleware.Recoverer)
 
-	router.SetupRoutes(r, log, t, repository, mngRepository)
+	router.SetupRoutes(r, log, t, repository, mngRepository, cfg.ApiKey)
 
 	srv := &http.Server{
 		Addr:         cfg.HttpServer.Address,

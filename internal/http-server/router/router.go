@@ -11,7 +11,10 @@ import (
 	roleAdd "srmt-admin/internal/http-server/handlers/role/add"
 	roleDelete "srmt-admin/internal/http-server/handlers/role/delete"
 	roleEdit "srmt-admin/internal/http-server/handlers/role/edit"
+	"srmt-admin/internal/http-server/handlers/sc/archive"
+	callbackModsnow "srmt-admin/internal/http-server/handlers/sc/callback/modsnow"
 	callbackStock "srmt-admin/internal/http-server/handlers/sc/callback/stock"
+	"srmt-admin/internal/http-server/handlers/sc/modsnow"
 	"srmt-admin/internal/http-server/handlers/sc/stock"
 	usersAdd "srmt-admin/internal/http-server/handlers/users/add"
 	assignRole "srmt-admin/internal/http-server/handlers/users/assign-role"
@@ -29,10 +32,12 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 
 	router.Post("/data/{id}", dataSet.New(log, pg))
 
+	// Parser callback endpoints
 	router.Group(func(r chi.Router) {
 		r.Use(mwapikey.RequireAPIKey(apiKey))
 
 		r.Post("/sc/stock", callbackStock.New(log, mng))
+		r.Post("/sc/modsnow", callbackModsnow.New(log, mng))
 	})
 
 	// Admin endpoints
@@ -63,6 +68,8 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 
 		// Upload
 		r.Post("/upload/stock", stock.New(log, &http.Client{}))
+		r.Post("/upload/modsnow", modsnow.New(log, &http.Client{}))
+		r.Post("/upload/archive", archive.New(log, &http.Client{}))
 
 		// Reservoirs
 		r.Post("/reservoirs", resAdd.New(log, pg))
