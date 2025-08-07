@@ -22,4 +22,8 @@ var (
 
 	ErrIndicatorNotFound    = errors.New("indicator not found")
 	ErrLevelOutOfCurveRange = errors.New("level is outside the defined curve range")
+
+	ErrDataNotFound      = errors.New("data not found")
+	ErrSnowDataNotFound  = errors.New("snow data not found")
+	ErrStockDataNotFound = errors.New("stock data not found")
 )

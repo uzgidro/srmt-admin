@@ -30,14 +30,16 @@ import (
 func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo.Repo, mng *mongo.Repo, apiKey string) {
 	router.Post("/auth/sign-in", signIn.New(log, pg, token))
 
-	router.Post("/data/{id}", dataSet.New(log, pg))
+	router.Get("/api/v3/modsnow", modsnow.Get(log, mng))
+	router.Get("/api/v3/stock", stock.Get(log, mng))
 
-	// Parser callback endpoints
+	// Service endpoints
 	router.Group(func(r chi.Router) {
 		r.Use(mwapikey.RequireAPIKey(apiKey))
 
 		r.Post("/sc/stock", callbackStock.New(log, mng))
 		r.Post("/sc/modsnow", callbackModsnow.New(log, mng))
+		r.Post("/data/{id}", dataSet.New(log, pg))
 	})
 
 	// Admin endpoints
@@ -67,8 +69,8 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 		r.Put("/indicators/{resID}", setIndicator.New(log, pg))
 
 		// Upload
-		r.Post("/upload/stock", stock.New(log, &http.Client{}))
-		r.Post("/upload/modsnow", modsnow.New(log, &http.Client{}))
+		r.Post("/upload/stock", stock.Upload(log, &http.Client{}))
+		r.Post("/upload/modsnow", modsnow.Upload(log, &http.Client{}))
 		r.Post("/upload/archive", archive.New(log, &http.Client{}))
 
 		// Reservoirs
