@@ -16,6 +16,7 @@ type Config struct {
 	Mongo          `yaml:"mongo"`
 	JwtConfig      `yaml:"jwt"`
 	HttpServer     `yaml:"http_server"`
+	Minio          `yaml:"minio"`
 }
 
 type HttpServer struct {
@@ -37,6 +38,13 @@ type Mongo struct {
 	Username   string `yaml:"username" env-required:"true"`
 	Password   string `yaml:"password" env-required:"true"`
 	AuthSource string `yaml:"auth_source" env-required:"true"`
+}
+
+type Minio struct {
+	Endpoint  string `yaml:"endpoint" env-required:"true"`
+	AccessKey string `yaml:"access_key" env-required:"true"`
+	SecretKey string `yaml:"secret_key" env-required:"true"`
+	UseSSL    bool   `yaml:"use_ssl" env-default:"false"`
 }
 
 func MustLoad() *Config {

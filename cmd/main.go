@@ -16,6 +16,7 @@ import (
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/storage/driver/mongo"
 	"srmt-admin/internal/storage/driver/postgres"
+	"srmt-admin/internal/storage/minio"
 	mngRepo "srmt-admin/internal/storage/mongo"
 	pgRepo "srmt-admin/internal/storage/repo"
 	"srmt-admin/internal/token"
@@ -41,7 +42,6 @@ func main() {
 	log.Info("pgDriver start")
 
 	repository := pgRepo.New(pgDriver)
-
 	log.Info("repository start")
 
 	mngClient, err := mongo.New(context.Background(), cfg.Mongo)
@@ -49,11 +49,19 @@ func main() {
 		log.Error("Error starting mongo", sl.Err(err))
 		os.Exit(1)
 	}
+	log.Info("mngClient start")
 
 	mngRepository := mngRepo.New(mngClient)
+	log.Info("mngRepository start")
+
+	minioRepository, err := minio.New(cfg.Minio, log)
+	if err != nil {
+		log.Error("Error starting minio client", sl.Err(err))
+		os.Exit(1)
+	}
+	log.Info("minio client started")
 
 	t, err := token.New(cfg.JwtConfig.Secret, cfg.JwtConfig.AccessTimeout, cfg.JwtConfig.RefreshTimeout)
-
 	log.Info("token start")
 
 	defer func() {
@@ -79,7 +87,8 @@ func main() {
 	r.Use(middleware.Recoverer)
 	r.Use(cors.New(cfg.AllowedOrigins))
 
-	router.SetupRoutes(r, log, t, repository, mngRepository, cfg.ApiKey)
+	router.SetupRoutes(r, log, t, repository, mngRepository, minioRepository, cfg.ApiKey)
+	log.Info("router start")
 
 	srv := &http.Server{
 		Addr:         cfg.HttpServer.Address,

@@ -1,4 +1,4 @@
-package modsnow
+package table
 
 import (
 	"context"
@@ -18,7 +18,7 @@ type Getter interface {
 
 func Get(log *slog.Logger, getter Getter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		const op = "handlers.sc.modsnow.Get"
+		const op = "handlers.sc.modsnow.table.Get"
 
 		log = log.With(
 			slog.String("op", op),

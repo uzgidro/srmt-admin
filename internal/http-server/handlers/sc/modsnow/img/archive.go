@@ -1,4 +1,4 @@
-package archive
+package img
 
 import (
 	"bytes"
@@ -18,10 +18,10 @@ const (
 	targetURL   = "http://localhost:19789/parse-archive"
 )
 
-// New теперь просто пересылает файл и ожидает подтверждения о приеме.
-func New(log *slog.Logger, client *http.Client) http.HandlerFunc {
+// Upload теперь просто пересылает файл и ожидает подтверждения о приеме.
+func Upload(log *slog.Logger, client *http.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		const op = "handlers.sc.archive.New"
+		const op = "handlers.sc.modsnow.img.Upload"
 
 		log = log.With(
 			slog.String("op", op),

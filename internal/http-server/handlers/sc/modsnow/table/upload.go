@@ -1,4 +1,4 @@
-package modsnow
+package table
 
 import (
 	"bytes"
@@ -21,7 +21,7 @@ const (
 // Upload теперь просто пересылает файл и ожидает подтверждения о приеме.
 func Upload(log *slog.Logger, client *http.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		const op = "handlers.sc.modsnow.Upload"
+		const op = "handlers.sc.modsnow.table.Upload"
 
 		log = log.With(
 			slog.String("op", op),

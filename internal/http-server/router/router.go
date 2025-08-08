@@ -11,10 +11,10 @@ import (
 	roleAdd "srmt-admin/internal/http-server/handlers/role/add"
 	roleDelete "srmt-admin/internal/http-server/handlers/role/delete"
 	roleEdit "srmt-admin/internal/http-server/handlers/role/edit"
-	"srmt-admin/internal/http-server/handlers/sc/archive"
 	callbackModsnow "srmt-admin/internal/http-server/handlers/sc/callback/modsnow"
 	callbackStock "srmt-admin/internal/http-server/handlers/sc/callback/stock"
-	"srmt-admin/internal/http-server/handlers/sc/modsnow"
+	modsnowImg "srmt-admin/internal/http-server/handlers/sc/modsnow/img"
+	"srmt-admin/internal/http-server/handlers/sc/modsnow/table"
 	"srmt-admin/internal/http-server/handlers/sc/stock"
 	usersAdd "srmt-admin/internal/http-server/handlers/users/add"
 	assignRole "srmt-admin/internal/http-server/handlers/users/assign-role"
@@ -22,16 +22,19 @@ import (
 	revokeRole "srmt-admin/internal/http-server/handlers/users/revoke-role"
 	mwapikey "srmt-admin/internal/http-server/middleware/api-key"
 	mwauth "srmt-admin/internal/http-server/middleware/auth"
+	"srmt-admin/internal/storage/minio"
 	"srmt-admin/internal/storage/mongo"
 	"srmt-admin/internal/storage/repo"
 	"srmt-admin/internal/token"
 )
 
-func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo.Repo, mng *mongo.Repo, apiKey string) {
+func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo.Repo, mng *mongo.Repo, minioClient *minio.Repo, apiKey string) {
 	router.Post("/auth/sign-in", signIn.New(log, pg, token))
 
-	router.Get("/api/v3/modsnow", modsnow.Get(log, mng))
+	router.Get("/api/v3/modsnow", table.Get(log, mng))
 	router.Get("/api/v3/stock", stock.Get(log, mng))
+	router.Get("/api/v3/modsnow/cover", modsnowImg.Get(log, minioClient, "modsnow-cover"))
+	router.Get("/api/v3/modsnow/dynamics", modsnowImg.Get(log, minioClient, "modsnow-dynamics"))
 
 	// Service endpoints
 	router.Group(func(r chi.Router) {
@@ -70,8 +73,8 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 
 		// Upload
 		r.Post("/upload/stock", stock.Upload(log, &http.Client{}))
-		r.Post("/upload/modsnow", modsnow.Upload(log, &http.Client{}))
-		r.Post("/upload/archive", archive.New(log, &http.Client{}))
+		r.Post("/upload/modsnow", table.Upload(log, &http.Client{}))
+		r.Post("/upload/archive", modsnowImg.Upload(log, &http.Client{}))
 
 		// Reservoirs
 		r.Post("/reservoirs", resAdd.New(log, pg))
