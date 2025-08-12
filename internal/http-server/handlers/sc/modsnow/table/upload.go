@@ -15,11 +15,10 @@ import (
 const (
 	formFileKey = "file"
 	maxMemory   = 32 << 20
-	targetURL   = "http://localhost:19789/parse-modsnow"
 )
 
 // Upload теперь просто пересылает файл и ожидает подтверждения о приеме.
-func Upload(log *slog.Logger, client *http.Client) http.HandlerFunc {
+func Upload(log *slog.Logger, client *http.Client, targetURL string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.sc.modsnow.table.Upload"
 

@@ -4,6 +4,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"log/slog"
 	"net/http"
+	"srmt-admin/internal/config"
 	signIn "srmt-admin/internal/http-server/handlers/auth/sign-in"
 	dataSet "srmt-admin/internal/http-server/handlers/data/set"
 	setIndicator "srmt-admin/internal/http-server/handlers/indicators/set"
@@ -28,7 +29,7 @@ import (
 	"srmt-admin/internal/token"
 )
 
-func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo.Repo, mng *mongo.Repo, minioClient *minio.Repo, apiKey string) {
+func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo.Repo, mng *mongo.Repo, minioClient *minio.Repo, uploadURL config.Upload, apiKey string) {
 	router.Post("/auth/sign-in", signIn.New(log, pg, token))
 
 	router.Get("/api/v3/modsnow", table.Get(log, mng))
@@ -72,9 +73,9 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 		r.Put("/indicators/{resID}", setIndicator.New(log, pg))
 
 		// Upload
-		r.Post("/upload/stock", stock.Upload(log, &http.Client{}))
-		r.Post("/upload/modsnow", table.Upload(log, &http.Client{}))
-		r.Post("/upload/archive", modsnowImg.Upload(log, &http.Client{}))
+		r.Post("/upload/stock", stock.Upload(log, &http.Client{}, uploadURL.Stock))
+		r.Post("/upload/modsnow", table.Upload(log, &http.Client{}, uploadURL.Modsnow))
+		r.Post("/upload/archive", modsnowImg.Upload(log, &http.Client{}, uploadURL.Archive))
 
 		// Reservoirs
 		r.Post("/reservoirs", resAdd.New(log, pg))

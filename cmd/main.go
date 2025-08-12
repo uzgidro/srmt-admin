@@ -87,7 +87,7 @@ func main() {
 	r.Use(middleware.Recoverer)
 	r.Use(cors.New(cfg.AllowedOrigins))
 
-	router.SetupRoutes(r, log, t, repository, mngRepository, minioRepository, cfg.ApiKey)
+	router.SetupRoutes(r, log, t, repository, mngRepository, minioRepository, cfg.Upload, cfg.ApiKey)
 	log.Info("router start")
 
 	srv := &http.Server{

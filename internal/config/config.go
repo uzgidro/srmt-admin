@@ -17,6 +17,7 @@ type Config struct {
 	JwtConfig      `yaml:"jwt"`
 	HttpServer     `yaml:"http_server"`
 	Minio          `yaml:"minio"`
+	Upload         `yaml:"upload"`
 }
 
 type HttpServer struct {
@@ -45,6 +46,12 @@ type Minio struct {
 	AccessKey string `yaml:"access_key" env-required:"true"`
 	SecretKey string `yaml:"secret_key" env-required:"true"`
 	UseSSL    bool   `yaml:"use_ssl" env-default:"false"`
+}
+
+type Upload struct {
+	Archive string `yaml:"archive" env-required:"true"`
+	Stock   string `yaml:"stock" env-required:"true"`
+	Modsnow string `yaml:"modsnow" env-required:"true"`
 }
 
 func MustLoad() *Config {

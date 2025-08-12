@@ -1,4 +1,4 @@
 migrate create -ext sql -dir migrations -seq NAME
 
-docker build -t suxa/srmt-prime:1.1.0 .
-docker push suxa/srmt-prime:1.1.0
+docker build -t suxa/srmt-prime:1.1.1 .
+docker push suxa/srmt-prime:1.1.1
