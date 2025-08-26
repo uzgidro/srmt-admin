@@ -21,6 +21,7 @@ import (
 	assignRole "srmt-admin/internal/http-server/handlers/users/assign-role"
 	usersEdit "srmt-admin/internal/http-server/handlers/users/edit"
 	revokeRole "srmt-admin/internal/http-server/handlers/users/revoke-role"
+	weatherProxy "srmt-admin/internal/http-server/handlers/weather/proxy"
 	mwapikey "srmt-admin/internal/http-server/middleware/api-key"
 	mwauth "srmt-admin/internal/http-server/middleware/auth"
 	"srmt-admin/internal/storage/minio"
@@ -29,17 +30,28 @@ import (
 	"srmt-admin/internal/token"
 )
 
-func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo.Repo, mng *mongo.Repo, minioClient *minio.Repo, uploadURL config.Upload, apiKey string) {
+func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo.Repo, mng *mongo.Repo, minioClient *minio.Repo, cfg config.Config) {
 	router.Post("/auth/sign-in", signIn.New(log, pg, token))
 
 	router.Get("/api/v3/modsnow", table.Get(log, mng))
 	router.Get("/api/v3/stock", stock.Get(log, mng))
 	router.Get("/api/v3/modsnow/cover", modsnowImg.Get(log, minioClient, "modsnow-cover"))
 	router.Get("/api/v3/modsnow/dynamics", modsnowImg.Get(log, minioClient, "modsnow-dynamics"))
+	router.Route("/api/v3/weather", func(r chi.Router) {
+		// Create a shared HTTP client for these requests
+		httpClient := &http.Client{}
+		weatherCfg := cfg.Weather
+
+		// Route for current weather
+		r.Get("/weather", weatherProxy.New(log, httpClient, weatherCfg.BaseURL, weatherCfg.APIKey, "/weather"))
+
+		// Route for forecast
+		r.Get("/forecast", weatherProxy.New(log, httpClient, weatherCfg.BaseURL, weatherCfg.APIKey, "/forecast"))
+	})
 
 	// Service endpoints
 	router.Group(func(r chi.Router) {
-		r.Use(mwapikey.RequireAPIKey(apiKey))
+		r.Use(mwapikey.RequireAPIKey(cfg.ApiKey))
 
 		r.Post("/sc/stock", callbackStock.New(log, mng))
 		r.Post("/sc/modsnow", callbackModsnow.New(log, mng))
@@ -73,9 +85,9 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 		r.Put("/indicators/{resID}", setIndicator.New(log, pg))
 
 		// Upload
-		r.Post("/upload/stock", stock.Upload(log, &http.Client{}, uploadURL.Stock))
-		r.Post("/upload/modsnow", table.Upload(log, &http.Client{}, uploadURL.Modsnow))
-		r.Post("/upload/archive", modsnowImg.Upload(log, &http.Client{}, uploadURL.Archive))
+		r.Post("/upload/stock", stock.Upload(log, &http.Client{}, cfg.Upload.Stock))
+		r.Post("/upload/modsnow", table.Upload(log, &http.Client{}, cfg.Upload.Modsnow))
+		r.Post("/upload/archive", modsnowImg.Upload(log, &http.Client{}, cfg.Upload.Archive))
 
 		// Reservoirs
 		r.Post("/reservoirs", resAdd.New(log, pg))
