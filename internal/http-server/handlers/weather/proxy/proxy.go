@@ -68,10 +68,8 @@ func New(log *slog.Logger, client *http.Client, baseURL, apiKey, path string) ht
 
 		// 5. Proxy the response back to the client
 		// Copy headers (like Content-Type) from the target response to our response
-		for key, values := range proxyResp.Header {
-			for _, value := range values {
-				w.Header().Add(key, value)
-			}
+		if contentType := proxyResp.Header.Get("Content-Type"); contentType != "" {
+			w.Header().Set("Content-Type", contentType)
 		}
 
 		// Write the same status code that we received
