@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"srmt-admin/internal/config"
 	signIn "srmt-admin/internal/http-server/handlers/auth/sign-in"
+	"srmt-admin/internal/http-server/handlers/data/analytics"
 	dataSet "srmt-admin/internal/http-server/handlers/data/set"
 	setIndicator "srmt-admin/internal/http-server/handlers/indicators/set"
 	resAdd "srmt-admin/internal/http-server/handlers/reservoirs/add"
@@ -33,20 +34,22 @@ import (
 func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo.Repo, mng *mongo.Repo, minioClient *minio.Repo, cfg config.Config) {
 	router.Post("/auth/sign-in", signIn.New(log, pg, token))
 
-	router.Get("/api/v3/modsnow", table.Get(log, mng))
-	router.Get("/api/v3/stock", stock.Get(log, mng))
-	router.Get("/api/v3/modsnow/cover", modsnowImg.Get(log, minioClient, "modsnow-cover"))
-	router.Get("/api/v3/modsnow/dynamics", modsnowImg.Get(log, minioClient, "modsnow-dynamics"))
-	router.Route("/api/v3/weather", func(r chi.Router) {
-		// Create a shared HTTP client for these requests
-		httpClient := &http.Client{}
-		weatherCfg := cfg.Weather
+	router.Route("/api/v3", func(r chi.Router) {
+		r.Get("/modsnow", table.Get(log, mng))
+		r.Get("/stock", stock.Get(log, mng))
+		r.Get("/modsnow/cover", modsnowImg.Get(log, minioClient, "modsnow-cover"))
+		r.Get("/modsnow/dynamics", modsnowImg.Get(log, minioClient, "modsnow-dynamics"))
 
-		// Route for current weather
-		r.Get("/weather", weatherProxy.New(log, httpClient, weatherCfg.BaseURL, weatherCfg.APIKey, "/weather"))
+		r.Get("/analytics", analytics.New(log))
 
-		// Route for forecast
-		r.Get("/forecast", weatherProxy.New(log, httpClient, weatherCfg.BaseURL, weatherCfg.APIKey, "/forecast"))
+		r.Route("/weather", func(r chi.Router) {
+			httpClient := &http.Client{}
+			weatherCfg := cfg.Weather
+
+			r.Get("/weather", weatherProxy.New(log, httpClient, weatherCfg.BaseURL, weatherCfg.APIKey, "/weather"))
+			r.Get("/forecast", weatherProxy.New(log, httpClient, weatherCfg.BaseURL, weatherCfg.APIKey, "/forecast"))
+		})
+
 	})
 
 	// Service endpoints
@@ -73,7 +76,6 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 		r.Patch("/users/{userID}", usersEdit.New(log, pg))
 		r.Post("/users/{userID}/roles", assignRole.New(log, pg))
 		r.Delete("/users/{userID}/roles/{roleID}", revokeRole.New(log, pg))
-
 	})
 
 	// SC endpoints
