@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS users_roles (
 CREATE TABLE IF NOT EXISTS reservoirs (
                                           id BIGSERIAL PRIMARY KEY,
                                           name TEXT NOT NULL UNIQUE,
-                                          position TEXT
+                                          position INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS level_volume (
@@ -32,8 +32,8 @@ CREATE TABLE IF NOT EXISTS level_volume (
 
 CREATE TABLE IF NOT EXISTS data (
                                     id BIGSERIAL PRIMARY KEY,
-                                    level DOUBLE PRECISION NOT NULL,
-                                    volume DOUBLE PRECISION NOT NULL,
+                                    level DOUBLE PRECISION,
+                                    volume DOUBLE PRECISION,
                                     "release" DOUBLE PRECISION,
                                     income DOUBLE PRECISION,
                                     res_id BIGINT NOT NULL REFERENCES reservoirs(id) ON DELETE CASCADE,
