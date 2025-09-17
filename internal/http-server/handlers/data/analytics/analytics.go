@@ -14,6 +14,7 @@ import (
 
 type DataGetter interface {
 	GetSelectedYearDataIncome(ctx context.Context, id, year int) (complexValue.ComplexValue, error)
+	GetDataByYears(ctx context.Context, id int) (complexValue.ComplexValue, error)
 }
 
 func New(log *slog.Logger, dataGetter DataGetter) http.HandlerFunc {
@@ -36,16 +37,24 @@ func New(log *slog.Logger, dataGetter DataGetter) http.HandlerFunc {
 		}
 
 		// 2. Получаем 'year' из query-параметров (ИСПРАВЛЕНО)
-		yearStr := r.URL.Query().Get("year")
-		year, err := strconv.Atoi(yearStr)
-		if err != nil {
-			log.Error("invalid 'year' parameter", sl.Err(err))
-			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, resp.BadRequest("Invalid or missing 'year' parameter"))
-			return
-		}
+		//yearStr := r.URL.Query().Get("year")
+		//year, err := strconv.Atoi(yearStr)
+		//if err != nil {
+		//	log.Error("invalid 'year' parameter", sl.Err(err))
+		//	render.Status(r, http.StatusBadRequest)
+		//	render.JSON(w, r, resp.BadRequest("Invalid or missing 'year' parameter"))
+		//	return
+		//}
+		//
+		//income, err := dataGetter.GetSelectedYearDataIncome(r.Context(), id, year)
+		//if err != nil {
+		//	log.Error("failed to get analytics data", sl.Err(err))
+		//	render.Status(r, http.StatusInternalServerError)
+		//	render.JSON(w, r, resp.InternalServerError("Internal server error"))
+		//	return
+		//}
 
-		income, err := dataGetter.GetSelectedYearDataIncome(r.Context(), id, year)
+		years, err := dataGetter.GetDataByYears(r.Context(), id)
 		if err != nil {
 			log.Error("failed to get analytics data", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)
@@ -53,6 +62,6 @@ func New(log *slog.Logger, dataGetter DataGetter) http.HandlerFunc {
 			return
 		}
 
-		render.JSON(w, r, income)
+		render.JSON(w, r, years)
 	}
 }
