@@ -8,7 +8,7 @@ import (
 	"srmt-admin/internal/storage"
 )
 
-func (s *Repo) GetSelectedYearDataIncome(ctx context.Context, id, year int) (complexValue.ComplexValue, error) {
+func (s *Repo) GetSelectedYearDataIncome(ctx context.Context, id, year int) (complexValue.Model, error) {
 	const op = "storage.repo.analytics.GetSelectedYearData"
 
 	const query = `
@@ -32,7 +32,7 @@ func (s *Repo) GetSelectedYearDataIncome(ctx context.Context, id, year int) (com
 
 	rows, err := s.Driver.QueryContext(ctx, query, id, year)
 	if err != nil {
-		return complexValue.ComplexValue{}, fmt.Errorf("%s: failed to execute query: %w", op, err)
+		return complexValue.Model{}, fmt.Errorf("%s: failed to execute query: %w", op, err)
 	}
 	defer rows.Close()
 
@@ -47,28 +47,28 @@ func (s *Repo) GetSelectedYearDataIncome(ctx context.Context, id, year int) (com
 	for rows.Next() {
 		var item rawData
 		if err := rows.Scan(&item.Month, &item.Value, &item.AvgIncome, &item.Reservoir); err != nil {
-			return complexValue.ComplexValue{}, fmt.Errorf("%s: failed to scan row: %w", op, err)
+			return complexValue.Model{}, fmt.Errorf("%s: failed to scan row: %w", op, err)
 		}
 		rawResults = append(rawResults, item)
 	}
 
 	if err := rows.Err(); err != nil {
-		return complexValue.ComplexValue{}, fmt.Errorf("%s: error during rows iteration: %w", op, err)
+		return complexValue.Model{}, fmt.Errorf("%s: error during rows iteration: %w", op, err)
 	}
 
 	if len(rawResults) == 0 {
-		return complexValue.ComplexValue{}, storage.ErrNotFound
+		return complexValue.Model{}, storage.ErrNotFound
 	}
 
-	result := complexValue.ComplexValue{
+	result := complexValue.Model{
 		ReservoirID: id,
 		Reservoir:   rawResults[0].Reservoir,
 		AvgIncome:   rawResults[0].AvgIncome,
-		Data:        make([]value.Value, 0, len(rawResults)),
+		Data:        make([]value.Model, 0, len(rawResults)),
 	}
 
 	for _, item := range rawResults {
-		result.Data = append(result.Data, value.Value{
+		result.Data = append(result.Data, value.Model{
 			Date:  fmt.Sprintf("%d-%02d-01", year, item.Month),
 			Value: item.Value,
 		})
@@ -77,7 +77,7 @@ func (s *Repo) GetSelectedYearDataIncome(ctx context.Context, id, year int) (com
 	return result, nil
 }
 
-func (s *Repo) GetDataByYears(ctx context.Context, id int) (complexValue.ComplexValue, error) {
+func (s *Repo) GetDataByYears(ctx context.Context, id int) (complexValue.Model, error) {
 	const op = "storage.repo.analytics.GetDataByYears"
 
 	const query = `
@@ -99,7 +99,7 @@ func (s *Repo) GetDataByYears(ctx context.Context, id int) (complexValue.Complex
 
 	rows, err := s.Driver.QueryContext(ctx, query, id)
 	if err != nil {
-		return complexValue.ComplexValue{}, fmt.Errorf("%s: failed to execute query: %w", op, err)
+		return complexValue.Model{}, fmt.Errorf("%s: failed to execute query: %w", op, err)
 	}
 	defer rows.Close()
 
@@ -113,27 +113,27 @@ func (s *Repo) GetDataByYears(ctx context.Context, id int) (complexValue.Complex
 	for rows.Next() {
 		var item rawData
 		if err := rows.Scan(&item.Year, &item.Value, &item.Reservoir); err != nil {
-			return complexValue.ComplexValue{}, fmt.Errorf("%s: failed to scan row: %w", op, err)
+			return complexValue.Model{}, fmt.Errorf("%s: failed to scan row: %w", op, err)
 		}
 		rawResults = append(rawResults, item)
 	}
 
 	if err := rows.Err(); err != nil {
-		return complexValue.ComplexValue{}, fmt.Errorf("%s: error during rows iteration: %w", op, err)
+		return complexValue.Model{}, fmt.Errorf("%s: error during rows iteration: %w", op, err)
 	}
 
 	if len(rawResults) == 0 {
-		return complexValue.ComplexValue{}, storage.ErrNotFound
+		return complexValue.Model{}, storage.ErrNotFound
 	}
 
-	result := complexValue.ComplexValue{
+	result := complexValue.Model{
 		ReservoirID: id,
 		Reservoir:   rawResults[0].Reservoir,
-		Data:        make([]value.Value, 0, len(rawResults)),
+		Data:        make([]value.Model, 0, len(rawResults)),
 	}
 
 	for _, item := range rawResults {
-		result.Data = append(result.Data, value.Value{
+		result.Data = append(result.Data, value.Model{
 			Date:  fmt.Sprintf("%d-01-01", item.Year),
 			Value: item.Value,
 		})

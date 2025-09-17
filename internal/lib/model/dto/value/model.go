@@ -1,6 +1,6 @@
 package value
 
-type Value struct {
+type Model struct {
 	Date  string  `json:"date"`
 	Value float64 `json:"value"`
 }
