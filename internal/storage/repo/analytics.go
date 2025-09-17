@@ -2,6 +2,8 @@ package repo
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	complexValue "srmt-admin/internal/lib/model/dto/complex-value"
 	"srmt-admin/internal/lib/model/dto/value"
@@ -307,4 +309,46 @@ func (s *Repo) GetTenYearsAvgData(ctx context.Context, id int) (complexValue.Mod
 	}
 
 	return result, nil
+}
+
+func (s *Repo) GetExtremumYear(ctx context.Context, id int, extremumType string) (int, error) {
+	const op = "storage.repo.analytics.GetExtremumYear"
+
+	var sortOrder string
+	switch extremumType {
+	case "max":
+		sortOrder = "DESC"
+	case "min":
+		sortOrder = "ASC"
+	default:
+		return 0, fmt.Errorf("%s: invalid extremum type: %s", op, extremumType)
+	}
+
+	query := fmt.Sprintf(`
+		SELECT
+			EXTRACT(YEAR FROM dv.date)::int AS year
+		FROM
+			data dv
+		WHERE
+			dv.res_id = $1
+			AND EXTRACT(YEAR FROM dv.date) != $2
+		GROUP BY
+			year
+		ORDER BY
+			SUM(dv.income * 86400) %s
+		LIMIT 1
+	`, sortOrder)
+
+	currentYear := time.Now().Year()
+	var resultYear int
+
+	err := s.Driver.QueryRowContext(ctx, query, id, currentYear).Scan(&resultYear)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, storage.ErrNotFound
+		}
+		return 0, fmt.Errorf("%s: failed to execute query: %w", op, err)
+	}
+
+	return resultYear, nil
 }

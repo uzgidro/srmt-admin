@@ -21,6 +21,7 @@ type DataGetter interface {
 	GetDataByYears(ctx context.Context, id int) (complexValue.Model, error)
 	GetAvgData(ctx context.Context, id int) (complexValue.Model, error)
 	GetTenYearsAvgData(ctx context.Context, id int) (complexValue.Model, error)
+	GetExtremumYear(ctx context.Context, id int, extremumType string) (int, error)
 }
 
 func New(log *slog.Logger, dataGetter DataGetter) http.HandlerFunc {
@@ -92,6 +93,30 @@ func New(log *slog.Logger, dataGetter DataGetter) http.HandlerFunc {
 		}
 		if tenAvg.Data != nil {
 			result.TenAvg = tenAvg.Data
+		}
+
+		maxYear, err := dataGetter.GetExtremumYear(r.Context(), id, "max")
+		if err != nil {
+			log.Warn("failed to get max year", sl.Err(err))
+		}
+		maxIncome, err := dataGetter.GetSelectedYearDataIncome(r.Context(), id, maxYear)
+		if err != nil {
+			log.Warn("failed to get max income", sl.Err(err))
+		}
+		if maxIncome.Data != nil {
+			result.Max = maxIncome.Data
+		}
+
+		minYear, err := dataGetter.GetExtremumYear(r.Context(), id, "min")
+		if err != nil {
+			log.Warn("failed to get min year", sl.Err(err))
+		}
+		minIncome, err := dataGetter.GetSelectedYearDataIncome(r.Context(), id, minYear)
+		if err != nil {
+			log.Warn("failed to get min income", sl.Err(err))
+		}
+		if minIncome.Data != nil {
+			result.Min = minIncome.Data
 		}
 
 		render.JSON(w, r, result)
