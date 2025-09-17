@@ -40,7 +40,7 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 		r.Get("/modsnow/cover", modsnowImg.Get(log, minioClient, "modsnow-cover"))
 		r.Get("/modsnow/dynamics", modsnowImg.Get(log, minioClient, "modsnow-dynamics"))
 
-		r.Get("/analytics", analytics.New(log))
+		r.Get("/analytics", analytics.New(log, pg))
 
 		r.Route("/weather", func(r chi.Router) {
 			httpClient := &http.Client{}

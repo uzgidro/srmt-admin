@@ -26,4 +26,6 @@ var (
 	ErrDataNotFound      = errors.New("data not found")
 	ErrSnowDataNotFound  = errors.New("snow data not found")
 	ErrStockDataNotFound = errors.New("stock data not found")
+
+	ErrNotFound = errors.New("not found")
 )
