@@ -19,6 +19,7 @@ import (
 type DataGetter interface {
 	GetSelectedYearDataIncome(ctx context.Context, id, year int) (complexValue.Model, error)
 	GetDataByYears(ctx context.Context, id int) (complexValue.Model, error)
+	GetAvgData(ctx context.Context, id int) (complexValue.Model, error)
 }
 
 func New(log *slog.Logger, dataGetter DataGetter) http.HandlerFunc {
@@ -74,6 +75,14 @@ func New(log *slog.Logger, dataGetter DataGetter) http.HandlerFunc {
 		}
 		if pastYearData.Data != nil {
 			result.PastYears = pastYearData.Data
+		}
+
+		avg, err := dataGetter.GetAvgData(r.Context(), id)
+		if err != nil {
+			log.Warn("failed to get avg data", sl.Err(err))
+		}
+		if avg.Data != nil {
+			result.Avg = avg.Data
 		}
 
 		render.JSON(w, r, result)
