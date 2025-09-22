@@ -76,7 +76,7 @@ func New(log *slog.Logger, dataGetter DataGetter) http.HandlerFunc {
 			log.Warn("failed to get past year data", sl.Err(err), slog.Int("year", year-1))
 		}
 		if pastYearData.Data != nil {
-			result.PastYears = pastYearData.Data
+			result.PastYear = pastYearData.Data
 		}
 
 		avg, err := dataGetter.GetAvgData(r.Context(), id)
