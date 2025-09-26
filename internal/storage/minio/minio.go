@@ -3,7 +3,9 @@ package minio
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/url"
 	"path"
 	"regexp"
 	"sort"
@@ -112,4 +114,38 @@ func (r *Repo) ListImageURLs(ctx context.Context, bucketName string) ([]ImageURL
 	}
 
 	return result, nil
+}
+
+func (r *Repo) UploadFile(ctx context.Context, bucketName, objectName string, reader io.Reader, size int64, contentType string) error {
+	const op = "repo.minio.UploadFile"
+
+	_, err := r.client.PutObject(ctx, bucketName, objectName, reader, size, minio.PutObjectOptions{
+		ContentType: contentType,
+	})
+	if err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+	return nil
+}
+
+// GetPresignedURL генерирует временную ссылку для скачивания файла.
+func (r *Repo) GetPresignedURL(ctx context.Context, bucketName, objectName string, expires time.Duration) (*url.URL, error) {
+	const op = "repo.minio.GetPresignedURL"
+
+	presignedURL, err := r.client.PresignedGetObject(ctx, bucketName, objectName, expires, nil)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+	return presignedURL, nil
+}
+
+// DeleteFile удаляет файл из бакета.
+func (r *Repo) DeleteFile(ctx context.Context, bucketName, objectName string) error {
+	const op = "repo.minio.DeleteFile"
+
+	err := r.client.RemoveObject(ctx, bucketName, objectName, minio.RemoveObjectOptions{})
+	if err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+	return nil
 }

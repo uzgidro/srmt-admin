@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-func (s *Repo) GetSelectedYearDataIncome(ctx context.Context, id, year int) (complexValue.Model, error) {
+func (r *Repo) GetSelectedYearDataIncome(ctx context.Context, id, year int) (complexValue.Model, error) {
 	const op = "storage.repo.analytics.GetSelectedYearData"
 
 	const query = `
@@ -33,7 +33,7 @@ func (s *Repo) GetSelectedYearDataIncome(ctx context.Context, id, year int) (com
 				month
 		`
 
-	rows, err := s.Driver.QueryContext(ctx, query, id, year)
+	rows, err := r.db.QueryContext(ctx, query, id, year)
 	if err != nil {
 		return complexValue.Model{}, fmt.Errorf("%s: failed to execute query: %w", op, err)
 	}
@@ -80,7 +80,7 @@ func (s *Repo) GetSelectedYearDataIncome(ctx context.Context, id, year int) (com
 	return result, nil
 }
 
-func (s *Repo) GetDataByYears(ctx context.Context, id int) (complexValue.Model, error) {
+func (r *Repo) GetDataByYears(ctx context.Context, id int) (complexValue.Model, error) {
 	const op = "storage.repo.analytics.GetDataByYears"
 
 	const query = `
@@ -100,7 +100,7 @@ func (s *Repo) GetDataByYears(ctx context.Context, id int) (complexValue.Model, 
 				year
 		`
 
-	rows, err := s.Driver.QueryContext(ctx, query, id)
+	rows, err := r.db.QueryContext(ctx, query, id)
 	if err != nil {
 		return complexValue.Model{}, fmt.Errorf("%s: failed to execute query: %w", op, err)
 	}
@@ -145,7 +145,7 @@ func (s *Repo) GetDataByYears(ctx context.Context, id int) (complexValue.Model, 
 	return result, nil
 }
 
-func (s *Repo) GetAvgData(ctx context.Context, id int) (complexValue.Model, error) {
+func (r *Repo) GetAvgData(ctx context.Context, id int) (complexValue.Model, error) {
 	const op = "storage.repo.analytics.GetAverageMonthlyData"
 
 	const query = `
@@ -177,7 +177,7 @@ func (s *Repo) GetAvgData(ctx context.Context, id int) (complexValue.Model, erro
 			mt.month;
 	`
 
-	rows, err := s.Driver.QueryContext(ctx, query, id)
+	rows, err := r.db.QueryContext(ctx, query, id)
 	if err != nil {
 		return complexValue.Model{}, fmt.Errorf("%s: failed to execute query: %w", op, err)
 	}
@@ -224,7 +224,7 @@ func (s *Repo) GetAvgData(ctx context.Context, id int) (complexValue.Model, erro
 	return result, nil
 }
 
-func (s *Repo) GetTenYearsAvgData(ctx context.Context, id int) (complexValue.Model, error) {
+func (r *Repo) GetTenYearsAvgData(ctx context.Context, id int) (complexValue.Model, error) {
 	const op = "storage.repo.analytics.GetTenYearsAvgData"
 
 	// 1. Определяем диапазон дат: 10 полных лет до текущего года.
@@ -264,7 +264,7 @@ func (s *Repo) GetTenYearsAvgData(ctx context.Context, id int) (complexValue.Mod
 			mt.month;
 	`
 
-	rows, err := s.Driver.QueryContext(ctx, query, id, lowerYearStart, upperYearEnd)
+	rows, err := r.db.QueryContext(ctx, query, id, lowerYearStart, upperYearEnd)
 	if err != nil {
 		return complexValue.Model{}, fmt.Errorf("%s: failed to execute query: %w", op, err)
 	}
@@ -311,7 +311,7 @@ func (s *Repo) GetTenYearsAvgData(ctx context.Context, id int) (complexValue.Mod
 	return result, nil
 }
 
-func (s *Repo) GetExtremumYear(ctx context.Context, id int, extremumType string) (int, error) {
+func (r *Repo) GetExtremumYear(ctx context.Context, id int, extremumType string) (int, error) {
 	const op = "storage.repo.analytics.GetExtremumYear"
 
 	var sortOrder string
@@ -342,7 +342,7 @@ func (s *Repo) GetExtremumYear(ctx context.Context, id int, extremumType string)
 	currentYear := time.Now().Year()
 	var resultYear int
 
-	err := s.Driver.QueryRowContext(ctx, query, id, currentYear).Scan(&resultYear)
+	err := r.db.QueryRowContext(ctx, query, id, currentYear).Scan(&resultYear)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return 0, storage.ErrNotFound

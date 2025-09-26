@@ -10,10 +10,10 @@ import (
 	"strings"
 )
 
-func (s *Repo) AddRole(ctx context.Context, name string, description string) (int64, error) {
+func (r *Repo) AddRole(ctx context.Context, name string, description string) (int64, error) {
 	const op = "storage.role.AddRole"
 
-	stmt, err := s.Driver.Prepare("INSERT INTO roles(name, description) VALUES($1, $2) RETURNING id")
+	stmt, err := r.db.Prepare("INSERT INTO roles(name, description) VALUES($1, $2) RETURNING id")
 	if err != nil {
 		return 0, fmt.Errorf("%s: failed to prepare statement: %w", op, err)
 	}
@@ -21,7 +21,7 @@ func (s *Repo) AddRole(ctx context.Context, name string, description string) (in
 
 	var id int64
 	if err := stmt.QueryRowContext(ctx, name, description).Scan(&id); err != nil {
-		if err := s.ErrorHandler.Translate(err, op); err != nil {
+		if err := r.translator.Translate(err, op); err != nil {
 			return 0, err
 		}
 		return 0, fmt.Errorf("%s: failed to execute statement: %w", op, err)
@@ -30,7 +30,7 @@ func (s *Repo) AddRole(ctx context.Context, name string, description string) (in
 	return id, nil
 }
 
-func (s *Repo) EditRole(ctx context.Context, id int64, name, description string) error {
+func (r *Repo) EditRole(ctx context.Context, id int64, name, description string) error {
 	const op = "storage.role.EditRole"
 
 	var query strings.Builder
@@ -59,7 +59,7 @@ func (s *Repo) EditRole(ctx context.Context, id int64, name, description string)
 	query.WriteString(fmt.Sprintf("WHERE id = $%d", argID))
 	args = append(args, id)
 
-	stmt, err := s.Driver.Prepare(query.String())
+	stmt, err := r.db.Prepare(query.String())
 	if err != nil {
 		return fmt.Errorf("%s: failed to prepare statement: %w", op, err)
 	}
@@ -67,7 +67,7 @@ func (s *Repo) EditRole(ctx context.Context, id int64, name, description string)
 
 	res, err := stmt.ExecContext(ctx, args...)
 	if err != nil {
-		if err := s.ErrorHandler.Translate(err, op); err != nil {
+		if err := r.translator.Translate(err, op); err != nil {
 			return err
 		}
 		return fmt.Errorf("%s: failed to execute statement: %w", op, err)
@@ -84,10 +84,10 @@ func (s *Repo) EditRole(ctx context.Context, id int64, name, description string)
 	return nil
 }
 
-func (s *Repo) DeleteRole(ctx context.Context, id int64) error {
+func (r *Repo) DeleteRole(ctx context.Context, id int64) error {
 	const op = "storage.role.DeleteRole"
 
-	stmt, err := s.Driver.Prepare("DELETE FROM roles WHERE id = $1")
+	stmt, err := r.db.Prepare("DELETE FROM roles WHERE id = $1")
 	if err != nil {
 		return fmt.Errorf("%s: failed to prepare statement: %w", op, err)
 	}
@@ -109,9 +109,9 @@ func (s *Repo) DeleteRole(ctx context.Context, id int64) error {
 	return nil
 }
 
-func (s *Repo) GetRoleByName(ctx context.Context, name string) (role.Model, error) {
+func (r *Repo) GetRoleByName(ctx context.Context, name string) (role.Model, error) {
 	const op = "storage.role.GetRoleByName"
-	stmt, err := s.Driver.Prepare("SELECT id, name FROM roles WHERE name = $1")
+	stmt, err := r.db.Prepare("SELECT id, name FROM roles WHERE name = $1")
 	if err != nil {
 		return role.Model{}, fmt.Errorf("%s: failed to prepare statement: %w", op, err)
 	}
@@ -131,10 +131,10 @@ func (s *Repo) GetRoleByName(ctx context.Context, name string) (role.Model, erro
 	return r, nil
 }
 
-func (s *Repo) AssignRole(ctx context.Context, userID, roleID int64) error {
+func (r *Repo) AssignRole(ctx context.Context, userID, roleID int64) error {
 	const op = "storage.role.AssignRole"
 
-	stmt, err := s.Driver.Prepare("INSERT INTO users_roles(user_id, role_id) VALUES($1, $2)")
+	stmt, err := r.db.Prepare("INSERT INTO users_roles(user_id, role_id) VALUES($1, $2)")
 	if err != nil {
 		return fmt.Errorf("%s: failed to prepare statement: %w", op, err)
 	}
@@ -142,7 +142,7 @@ func (s *Repo) AssignRole(ctx context.Context, userID, roleID int64) error {
 
 	_, err = stmt.ExecContext(ctx, userID, roleID)
 	if err != nil {
-		if err := s.ErrorHandler.Translate(err, op); err != nil {
+		if err := r.translator.Translate(err, op); err != nil {
 			return err
 		}
 		return fmt.Errorf("%s: failed to execute statement: %w", op, err)
@@ -151,10 +151,10 @@ func (s *Repo) AssignRole(ctx context.Context, userID, roleID int64) error {
 	return nil
 }
 
-func (s *Repo) RevokeRole(ctx context.Context, userID, roleID int64) error {
+func (r *Repo) RevokeRole(ctx context.Context, userID, roleID int64) error {
 	const op = "storage.role.RevokeRole"
 
-	stmt, err := s.Driver.Prepare("DELETE FROM users_roles WHERE user_id = $1 AND role_id = $2")
+	stmt, err := r.db.Prepare("DELETE FROM users_roles WHERE user_id = $1 AND role_id = $2")
 	if err != nil {
 		return fmt.Errorf("%s: failed to prepare statement: %w", op, err)
 	}
@@ -168,7 +168,7 @@ func (s *Repo) RevokeRole(ctx context.Context, userID, roleID int64) error {
 	return nil
 }
 
-func (s *Repo) GetUserRoles(ctx context.Context, userID int64) ([]role.Model, error) {
+func (r *Repo) GetUserRoles(ctx context.Context, userID int64) ([]role.Model, error) {
 	const op = "storage.role.GetUserRoles"
 
 	const query = `
@@ -176,7 +176,7 @@ func (s *Repo) GetUserRoles(ctx context.Context, userID int64) ([]role.Model, er
 		JOIN users_roles ur ON r.id = ur.role_id
 		WHERE ur.user_id = $1
 	`
-	stmt, err := s.Driver.Prepare(query)
+	stmt, err := r.db.Prepare(query)
 	if err != nil {
 		return nil, fmt.Errorf("%s: failed to prepare statement: %w", op, err)
 	}

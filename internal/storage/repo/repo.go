@@ -8,19 +8,19 @@ import (
 )
 
 type Repo struct {
-	Driver       *sql.DB
-	ErrorHandler storage.ErrorTranslator
+	db         *sql.DB
+	translator storage.ErrorTranslator
 }
 
 func New(driver *storage.Driver) *Repo {
 	return &Repo{driver.DB, driver.Translator}
 }
 
-func (s *Repo) Close() error {
-	return s.Driver.Close()
+func (r *Repo) Close() error {
+	return r.db.Close()
 }
 
-func (s *Repo) SaveData(ctx context.Context, data data.Model) error {
+func (r *Repo) SaveData(ctx context.Context, data data.Model) error {
 	//TODO implement me
 	panic("implement me")
 }

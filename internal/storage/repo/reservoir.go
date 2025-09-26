@@ -9,10 +9,10 @@ import (
 	"srmt-admin/internal/storage"
 )
 
-func (s *Repo) AddReservoir(ctx context.Context, name string) (int64, error) {
+func (r *Repo) AddReservoir(ctx context.Context, name string) (int64, error) {
 	const op = "storage.reservoir.AddReservoir"
 
-	stmt, err := s.Driver.Prepare("INSERT INTO reservoirs(name) VALUES($1) RETURNING id")
+	stmt, err := r.db.Prepare("INSERT INTO reservoirs(name) VALUES($1) RETURNING id")
 	if err != nil {
 		return 0, fmt.Errorf("%s: failed to prepare statement: %w", op, err)
 	}
@@ -20,7 +20,7 @@ func (s *Repo) AddReservoir(ctx context.Context, name string) (int64, error) {
 
 	var id int64
 	if err := stmt.QueryRowContext(ctx, name).Scan(&id); err != nil {
-		if err := s.ErrorHandler.Translate(err, op); err != nil {
+		if err := r.translator.Translate(err, op); err != nil {
 			return 0, err
 		}
 		return 0, fmt.Errorf("%s: failed to execute statement: %w", op, err)
@@ -29,7 +29,7 @@ func (s *Repo) AddReservoir(ctx context.Context, name string) (int64, error) {
 	return id, nil
 }
 
-func (s *Repo) SetIndicator(ctx context.Context, resID int64, height float64) (int64, error) {
+func (r *Repo) SetIndicator(ctx context.Context, resID int64, height float64) (int64, error) {
 	const op = "storage.reservoir.SetIndicator"
 
 	const query = `
@@ -40,7 +40,7 @@ func (s *Repo) SetIndicator(ctx context.Context, resID int64, height float64) (i
 		RETURNING id
 	`
 
-	stmt, err := s.Driver.Prepare(query)
+	stmt, err := r.db.Prepare(query)
 	if err != nil {
 		return 0, fmt.Errorf("%s: failed to prepare statement: %w", op, err)
 	}
@@ -48,7 +48,7 @@ func (s *Repo) SetIndicator(ctx context.Context, resID int64, height float64) (i
 
 	var id int64
 	if err := stmt.QueryRowContext(ctx, resID, height).Scan(&id); err != nil {
-		if translatedErr := s.ErrorHandler.Translate(err, op); translatedErr != nil {
+		if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
 			return 0, translatedErr
 		}
 		return 0, fmt.Errorf("%s: failed to execute statement: %w", op, err)
@@ -57,10 +57,10 @@ func (s *Repo) SetIndicator(ctx context.Context, resID int64, height float64) (i
 	return id, nil
 }
 
-func (s *Repo) GetIndicator(ctx context.Context, resID int64) (float64, error) {
+func (r *Repo) GetIndicator(ctx context.Context, resID int64) (float64, error) {
 	const op = "storage.reservoir.GetIndicator"
 
-	stmt, err := s.Driver.Prepare("SELECT height FROM indicator_height WHERE res_id = $1")
+	stmt, err := r.db.Prepare("SELECT height FROM indicator_height WHERE res_id = $1")
 	if err != nil {
 		return 0, fmt.Errorf("%s: failed to prepare statement: %w", op, err)
 	}
@@ -71,7 +71,7 @@ func (s *Repo) GetIndicator(ctx context.Context, resID int64) (float64, error) {
 		if errors.Is(err, sql.ErrNoRows) {
 			return 0, storage.ErrIndicatorNotFound
 		}
-		if translatedErr := s.ErrorHandler.Translate(err, op); translatedErr != nil {
+		if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
 			return 0, translatedErr
 		}
 		return 0, fmt.Errorf("%s: failed to execute statement: %w", op, err)
@@ -80,7 +80,7 @@ func (s *Repo) GetIndicator(ctx context.Context, resID int64) (float64, error) {
 	return height, nil
 }
 
-func (s *Repo) GetVolumeByLevel(ctx context.Context, resID int64, level float64) (float64, error) {
+func (r *Repo) GetVolumeByLevel(ctx context.Context, resID int64, level float64) (float64, error) {
 	const op = "storage.reservoir.GetVolumeByLevel"
 
 	queryBelow := `SELECT level, volume FROM level_volume WHERE res_id = $1 AND level <= $2 ORDER BY level DESC LIMIT 1`
@@ -88,10 +88,10 @@ func (s *Repo) GetVolumeByLevel(ctx context.Context, resID int64, level float64)
 
 	var p1, p2 data.Model
 
-	rowBelow := s.Driver.QueryRowContext(ctx, queryBelow, resID, level)
+	rowBelow := r.db.QueryRowContext(ctx, queryBelow, resID, level)
 	err1 := rowBelow.Scan(&p1.Level, &p1.Volume)
 
-	rowAbove := s.Driver.QueryRowContext(ctx, queryAbove, resID, level)
+	rowAbove := r.db.QueryRowContext(ctx, queryAbove, resID, level)
 	err2 := rowAbove.Scan(&p2.Level, &p2.Volume)
 
 	if err1 != nil || err2 != nil {

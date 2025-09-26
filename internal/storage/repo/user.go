@@ -11,12 +11,12 @@ import (
 	"strings"
 )
 
-func (s *Repo) AddUser(ctx context.Context, name, passHash string) (int64, error) {
+func (r *Repo) AddUser(ctx context.Context, name, passHash string) (int64, error) {
 	const op = "storage.user.AddUser"
 
 	query := `INSERT INTO users (name, pass_hash) VALUES ($1, $2) RETURNING id`
 
-	stmt, err := s.Driver.Prepare(query)
+	stmt, err := r.db.Prepare(query)
 	if err != nil {
 		return 0, fmt.Errorf("%s: %w", op, err)
 	}
@@ -30,7 +30,7 @@ func (s *Repo) AddUser(ctx context.Context, name, passHash string) (int64, error
 	return id, nil
 }
 
-func (s *Repo) GetUserByName(ctx context.Context, name string) (user.Model, error) {
+func (r *Repo) GetUserByName(ctx context.Context, name string) (user.Model, error) {
 	const op = "storage.user.GetUserByName"
 
 	const query = `
@@ -51,7 +51,7 @@ func (s *Repo) GetUserByName(ctx context.Context, name string) (user.Model, erro
 		WHERE
 			u.name = $1
 	`
-	stmt, err := s.Driver.Prepare(query)
+	stmt, err := r.db.Prepare(query)
 	if err != nil {
 		return user.Model{}, fmt.Errorf("%s: failed to prepare statement: %w", op, err)
 	}
@@ -76,7 +76,7 @@ func (s *Repo) GetUserByName(ctx context.Context, name string) (user.Model, erro
 	return u, nil
 }
 
-func (s *Repo) EditUser(ctx context.Context, id int64, name, passHash string) error {
+func (r *Repo) EditUser(ctx context.Context, id int64, name, passHash string) error {
 	const op = "storage.user.EditUser"
 
 	var query strings.Builder
@@ -105,7 +105,7 @@ func (s *Repo) EditUser(ctx context.Context, id int64, name, passHash string) er
 	query.WriteString(fmt.Sprintf("WHERE id = $%d", argID))
 	args = append(args, id)
 
-	stmt, err := s.Driver.Prepare(query.String())
+	stmt, err := r.db.Prepare(query.String())
 	if err != nil {
 		return fmt.Errorf("%s: failed to prepare statement: %w", op, err)
 	}
@@ -113,7 +113,7 @@ func (s *Repo) EditUser(ctx context.Context, id int64, name, passHash string) er
 
 	res, err := stmt.ExecContext(ctx, args...)
 	if err != nil {
-		if err := s.ErrorHandler.Translate(err, op); err != nil {
+		if err := r.translator.Translate(err, op); err != nil {
 			return err
 		}
 		return fmt.Errorf("%s: failed to execute statement: %w", op, err)
