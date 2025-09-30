@@ -29,9 +29,10 @@ func BadRequest(msg string) Response {
 	}
 }
 
-func Unauthorized() Response {
+func Unauthorized(msg string) Response {
 	return Response{
 		Status: http.StatusUnauthorized,
+		Error:  msg,
 	}
 }
 

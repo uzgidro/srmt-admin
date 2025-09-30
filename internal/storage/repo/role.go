@@ -119,16 +119,15 @@ func (r *Repo) GetRoleByName(ctx context.Context, name string) (role.Model, erro
 
 	row := stmt.QueryRowContext(ctx, name)
 
-	var r role.Model
-	if err := row.Scan(&r.ID, &r.Name); err != nil {
-		// Если Scan вернул sql.ErrNoRows, значит запись не найдена.
+	var resp role.Model
+	if err := row.Scan(&resp.ID, &resp.Name); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return role.Model{}, storage.ErrRoleNotFound
 		}
 		return role.Model{}, fmt.Errorf("%s: failed to scan row: %w", op, err)
 	}
 
-	return r, nil
+	return resp, nil
 }
 
 func (r *Repo) AssignRole(ctx context.Context, userID, roleID int64) error {

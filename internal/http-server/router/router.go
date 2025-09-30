@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"srmt-admin/internal/config"
+	"srmt-admin/internal/http-server/handlers/auth/refresh"
 	signIn "srmt-admin/internal/http-server/handlers/auth/sign-in"
 	"srmt-admin/internal/http-server/handlers/data/analytics"
 	dataSet "srmt-admin/internal/http-server/handlers/data/set"
@@ -35,6 +36,7 @@ import (
 
 func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo.Repo, mng *mongo.Repo, minioClient *minio.Repo, cfg config.Config) {
 	router.Post("/auth/sign-in", signIn.New(log, pg, token))
+	router.Post("/auth/refresh", refresh.New(log, pg, token))
 
 	router.Route("/api/v3", func(r chi.Router) {
 		r.Get("/modsnow", table.Get(log, mng))

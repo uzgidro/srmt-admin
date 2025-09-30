@@ -76,6 +76,52 @@ func (r *Repo) GetUserByName(ctx context.Context, name string) (user.Model, erro
 	return u, nil
 }
 
+func (r *Repo) GetUserByID(ctx context.Context, id int64) (user.Model, error) {
+	const op = "storage.user.GetUserByName"
+
+	const query = `
+		SELECT
+			u.id,
+			u.name,
+			u.pass_hash,
+			-- COALESCE нужен, чтобы вернуть пустой массив '[]', если у пользователя нет ролей, вместо NULL.
+			COALESCE(
+				(SELECT json_agg(r.name)
+				 FROM users_roles ur
+				 JOIN roles r ON ur.role_id = r.id
+				 WHERE ur.user_id = u.id),
+				'[]'
+			) as roles_json
+		FROM
+			users u
+		WHERE
+			u.id = $1
+	`
+	stmt, err := r.db.Prepare(query)
+	if err != nil {
+		return user.Model{}, fmt.Errorf("%s: failed to prepare statement: %w", op, err)
+	}
+	defer stmt.Close()
+
+	row := stmt.QueryRowContext(ctx, id)
+
+	var u user.Model
+	var rolesJSON string
+
+	if err := row.Scan(&u.ID, &u.Name, &u.PassHash, &rolesJSON); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return user.Model{}, storage.ErrUserNotFound
+		}
+		return user.Model{}, fmt.Errorf("%s: failed to scan user row: %w", op, err)
+	}
+
+	if err := json.Unmarshal([]byte(rolesJSON), &u.Roles); err != nil {
+		return user.Model{}, fmt.Errorf("%s: failed to unmarshal roles: %w", op, err)
+	}
+
+	return u, nil
+}
+
 func (r *Repo) EditUser(ctx context.Context, id int64, name, passHash string) error {
 	const op = "storage.user.EditUser"
 
