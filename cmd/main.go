@@ -54,7 +54,7 @@ func main() {
 	mngRepository := mngRepo.New(mngClient)
 	log.Info("mngRepository start")
 
-	minioRepository, err := minio.New(cfg.Minio, log)
+	minioRepository, err := minio.New(cfg.Minio, log, cfg.Bucket)
 	if err != nil {
 		log.Error("Error starting minio client", sl.Err(err))
 		os.Exit(1)

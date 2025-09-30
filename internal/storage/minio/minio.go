@@ -27,12 +27,13 @@ type ImageURL struct {
 type Repo struct {
 	client *minio.Client
 	log    *slog.Logger
+	bucket string
 }
 
 var fileNameRegex = regexp.MustCompile(`^(\d+)(.*)`)
 
 // New creates a new MinIO repository.
-func New(cfg config.Minio, log *slog.Logger) (*Repo, error) {
+func New(cfg config.Minio, log *slog.Logger, bucket string) (*Repo, error) {
 	const op = "storage.minio.New"
 
 	client, err := minio.New(cfg.Endpoint, &minio.Options{
@@ -43,7 +44,7 @@ func New(cfg config.Minio, log *slog.Logger) (*Repo, error) {
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
-	return &Repo{client: client, log: log}, nil
+	return &Repo{client: client, log: log, bucket: bucket}, nil
 }
 
 // ListImageURLs lists all objects in a bucket and returns them as presigned URLs.
@@ -116,10 +117,10 @@ func (r *Repo) ListImageURLs(ctx context.Context, bucketName string) ([]ImageURL
 	return result, nil
 }
 
-func (r *Repo) UploadFile(ctx context.Context, bucketName, objectName string, reader io.Reader, size int64, contentType string) error {
+func (r *Repo) UploadFile(ctx context.Context, objectName string, reader io.Reader, size int64, contentType string) error {
 	const op = "repo.minio.UploadFile"
 
-	_, err := r.client.PutObject(ctx, bucketName, objectName, reader, size, minio.PutObjectOptions{
+	_, err := r.client.PutObject(ctx, r.bucket, objectName, reader, size, minio.PutObjectOptions{
 		ContentType: contentType,
 	})
 	if err != nil {
@@ -129,10 +130,10 @@ func (r *Repo) UploadFile(ctx context.Context, bucketName, objectName string, re
 }
 
 // GetPresignedURL генерирует временную ссылку для скачивания файла.
-func (r *Repo) GetPresignedURL(ctx context.Context, bucketName, objectName string, expires time.Duration) (*url.URL, error) {
+func (r *Repo) GetPresignedURL(ctx context.Context, objectName string, expires time.Duration) (*url.URL, error) {
 	const op = "repo.minio.GetPresignedURL"
 
-	presignedURL, err := r.client.PresignedGetObject(ctx, bucketName, objectName, expires, nil)
+	presignedURL, err := r.client.PresignedGetObject(ctx, r.bucket, objectName, expires, nil)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
@@ -140,10 +141,10 @@ func (r *Repo) GetPresignedURL(ctx context.Context, bucketName, objectName strin
 }
 
 // DeleteFile удаляет файл из бакета.
-func (r *Repo) DeleteFile(ctx context.Context, bucketName, objectName string) error {
+func (r *Repo) DeleteFile(ctx context.Context, objectName string) error {
 	const op = "repo.minio.DeleteFile"
 
-	err := r.client.RemoveObject(ctx, bucketName, objectName, minio.RemoveObjectOptions{})
+	err := r.client.RemoveObject(ctx, r.bucket, objectName, minio.RemoveObjectOptions{})
 	if err != nil {
 		return fmt.Errorf("%s: %w", op, err)
 	}

@@ -75,3 +75,10 @@ func ValidationError(errs validator.ValidationErrors) Response {
 		Error:  strings.Join(errMessages, "; "),
 	}
 }
+
+func Conflict(msg string) Response {
+	return Response{
+		Status: http.StatusConflict,
+		Error:  msg,
+	}
+}

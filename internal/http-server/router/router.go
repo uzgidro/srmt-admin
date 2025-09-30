@@ -8,6 +8,8 @@ import (
 	signIn "srmt-admin/internal/http-server/handlers/auth/sign-in"
 	"srmt-admin/internal/http-server/handlers/data/analytics"
 	dataSet "srmt-admin/internal/http-server/handlers/data/set"
+	"srmt-admin/internal/http-server/handlers/file/category"
+	"srmt-admin/internal/http-server/handlers/file/upload"
 	setIndicator "srmt-admin/internal/http-server/handlers/indicators/set"
 	resAdd "srmt-admin/internal/http-server/handlers/reservoirs/add"
 	roleAdd "srmt-admin/internal/http-server/handlers/role/add"
@@ -76,6 +78,9 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 		r.Patch("/users/{userID}", usersEdit.New(log, pg))
 		r.Post("/users/{userID}/roles", assignRole.New(log, pg))
 		r.Delete("/users/{userID}/roles/{roleID}", revokeRole.New(log, pg))
+
+		// File category
+		r.Post("/files/categories", category.New(log, pg))
 	})
 
 	// SC endpoints
@@ -90,6 +95,7 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 		r.Post("/upload/stock", stock.Upload(log, &http.Client{}, cfg.Upload.Stock))
 		r.Post("/upload/modsnow", table.Upload(log, &http.Client{}, cfg.Upload.Modsnow))
 		r.Post("/upload/archive", modsnowImg.Upload(log, &http.Client{}, cfg.Upload.Archive))
+		r.Post("/upload/file", upload.New(log, minioClient, pg))
 
 		// Reservoirs
 		r.Post("/reservoirs", resAdd.New(log, pg))

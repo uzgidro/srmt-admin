@@ -7,7 +7,7 @@ import (
 )
 
 func (r *Repo) AddFile(ctx context.Context, fileData file.Model) (int64, error) {
-	const op = "repo.AddFile"
+	const op = "repo.file.AddFile"
 	const query = `
 		INSERT INTO files(file_name, object_key, category_id, mime_type, size_bytes)
 		VALUES ($1, $2, $3, $4, $5)
@@ -35,7 +35,7 @@ func (r *Repo) AddFile(ctx context.Context, fileData file.Model) (int64, error) 
 }
 
 func (r *Repo) GetLatestFiles(ctx context.Context) ([]file.LatestFile, error) {
-	const op = "repo.GetLatestFiles"
+	const op = "repo.file.GetLatestFiles"
 	const query = `
 		WITH ranked_files AS (
 			SELECT
