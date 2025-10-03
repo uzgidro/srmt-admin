@@ -114,6 +114,7 @@ func New(log *slog.Logger, uploader FileUploader, saver FileMetaSaver) http.Hand
 			CategoryID: categoryID,
 			MimeType:   handler.Header.Get("Content-Type"),
 			SizeBytes:  handler.Size,
+			CreatedAt:  fileDate,
 		}
 
 		fileID, err := saver.AddFile(r.Context(), fileModel)

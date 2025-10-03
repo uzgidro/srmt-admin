@@ -11,6 +11,7 @@ import (
 	"srmt-admin/internal/http-server/handlers/data/analytics"
 	dataSet "srmt-admin/internal/http-server/handlers/data/set"
 	"srmt-admin/internal/http-server/handlers/file/category"
+	"srmt-admin/internal/http-server/handlers/file/latest"
 	"srmt-admin/internal/http-server/handlers/file/upload"
 	setIndicator "srmt-admin/internal/http-server/handlers/indicators/set"
 	resAdd "srmt-admin/internal/http-server/handlers/reservoirs/add"
@@ -84,9 +85,6 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 			r.Patch("/users/{userID}", usersEdit.New(log, pg))
 			r.Post("/users/{userID}/roles", assignRole.New(log, pg))
 			r.Delete("/users/{userID}/roles/{roleID}", revokeRole.New(log, pg))
-
-			// File category
-			r.Post("/files/categories", category.New(log, pg))
 		})
 
 		// SC endpoints
@@ -104,6 +102,15 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 
 			// Reservoirs
 			r.Post("/reservoirs", resAdd.New(log, pg))
+
+			// File category
+			r.Post("/files/categories", category.New(log, pg))
+		})
+
+		r.Group(func(r chi.Router) {
+			r.Use(mwauth.RequireAnyRole("admin", "sc", "rais"))
+
+			r.Get("/files/latest", latest.New(log, pg))
 		})
 
 	})

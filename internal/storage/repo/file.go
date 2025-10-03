@@ -9,23 +9,18 @@ import (
 func (r *Repo) AddFile(ctx context.Context, fileData file.Model) (int64, error) {
 	const op = "repo.file.AddFile"
 	const query = `
-		INSERT INTO files(file_name, object_key, category_id, mime_type, size_bytes)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO files(file_name, object_key, category_id, mime_type, size_bytes, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id
 	`
-	stmt, err := r.db.Prepare(query)
-	if err != nil {
-		return 0, fmt.Errorf("%s: %w", op, err)
-	}
-	defer stmt.Close()
-
 	var id int64
-	err = stmt.QueryRowContext(ctx,
+	err := r.db.QueryRowContext(ctx, query,
 		fileData.FileName,
 		fileData.ObjectKey,
 		fileData.CategoryID,
 		fileData.MimeType,
 		fileData.SizeBytes,
+		fileData.CreatedAt,
 	).Scan(&id)
 	if err != nil {
 		return 0, r.translator.Translate(err, op)
@@ -42,13 +37,14 @@ func (r *Repo) GetLatestFiles(ctx context.Context) ([]file.LatestFile, error) {
 				f.id,
 				f.file_name,
 				f.object_key,
+				f.size_bytes,
 				f.created_at,
 				c.display_name as category_name,
 				ROW_NUMBER() OVER(PARTITION BY f.category_id ORDER BY f.created_at DESC) as rn
 			FROM files f
 			JOIN categories c ON f.category_id = c.id
 		)
-		SELECT id, file_name, object_key, created_at, category_name
+		SELECT id, file_name, object_key, size_bytes, created_at, category_name
 		FROM ranked_files
 		WHERE rn = 1
 		ORDER BY category_name;
@@ -59,10 +55,10 @@ func (r *Repo) GetLatestFiles(ctx context.Context) ([]file.LatestFile, error) {
 	}
 	defer rows.Close()
 
-	var latestFiles []file.LatestFile // Используем специальную модель для результата
+	var latestFiles []file.LatestFile
 	for rows.Next() {
 		var f file.LatestFile
-		if err := rows.Scan(&f.ID, &f.FileName, &f.ObjectKey, &f.CreatedAt, &f.CategoryName); err != nil {
+		if err := rows.Scan(&f.ID, &f.FileName, &f.ObjectKey, &f.SizeBytes, &f.CreatedAt, &f.CategoryName); err != nil {
 			return nil, fmt.Errorf("%s: failed to scan row: %w", op, err)
 		}
 		latestFiles = append(latestFiles, f)
