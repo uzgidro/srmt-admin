@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"srmt-admin/internal/config"
+	"srmt-admin/internal/http-server/handlers/auth/me"
 	"srmt-admin/internal/http-server/handlers/auth/refresh"
 	signIn "srmt-admin/internal/http-server/handlers/auth/sign-in"
 	"srmt-admin/internal/http-server/handlers/data/analytics"
@@ -65,41 +66,45 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 		r.Post("/data/{id}", dataSet.New(log, pg))
 	})
 
-	// Admin endpoints
+	// Token required routes
 	router.Group(func(r chi.Router) {
 		r.Use(mwauth.Authenticator(token))
-		r.Use(mwauth.AdminOnly)
 
-		// Roles
-		r.Post("/roles", roleAdd.New(log, pg))
-		r.Patch("/roles/{id}", roleEdit.New(log, pg))
-		r.Delete("/roles/{id}", roleDelete.New(log, pg))
+		r.Get("/auth/me", me.New(log))
 
-		// Users
-		r.Post("/users", usersAdd.New(log, pg))
-		r.Patch("/users/{userID}", usersEdit.New(log, pg))
-		r.Post("/users/{userID}/roles", assignRole.New(log, pg))
-		r.Delete("/users/{userID}/roles/{roleID}", revokeRole.New(log, pg))
+		// Admin routes
+		r.Group(func(r chi.Router) {
+			// Roles
+			r.Post("/roles", roleAdd.New(log, pg))
+			r.Patch("/roles/{id}", roleEdit.New(log, pg))
+			r.Delete("/roles/{id}", roleDelete.New(log, pg))
 
-		// File category
-		r.Post("/files/categories", category.New(log, pg))
-	})
+			// Users
+			r.Post("/users", usersAdd.New(log, pg))
+			r.Patch("/users/{userID}", usersEdit.New(log, pg))
+			r.Post("/users/{userID}/roles", assignRole.New(log, pg))
+			r.Delete("/users/{userID}/roles/{roleID}", revokeRole.New(log, pg))
 
-	// SC endpoints
-	router.Group(func(r chi.Router) {
-		r.Use(mwauth.Authenticator(token))
-		r.Use(mwauth.RequireAnyRole("admin", "sc"))
+			// File category
+			r.Post("/files/categories", category.New(log, pg))
+		})
 
-		// Indicator
-		r.Put("/indicators/{resID}", setIndicator.New(log, pg))
+		// SC endpoints
+		r.Group(func(r chi.Router) {
+			r.Use(mwauth.RequireAnyRole("admin", "sc"))
 
-		// Upload
-		r.Post("/upload/stock", stock.Upload(log, &http.Client{}, cfg.Upload.Stock))
-		r.Post("/upload/modsnow", table.Upload(log, &http.Client{}, cfg.Upload.Modsnow))
-		r.Post("/upload/archive", modsnowImg.Upload(log, &http.Client{}, cfg.Upload.Archive))
-		r.Post("/upload/file", upload.New(log, minioClient, pg))
+			// Indicator
+			r.Put("/indicators/{resID}", setIndicator.New(log, pg))
 
-		// Reservoirs
-		r.Post("/reservoirs", resAdd.New(log, pg))
+			// Upload
+			r.Post("/upload/stock", stock.Upload(log, &http.Client{}, cfg.Upload.Stock))
+			r.Post("/upload/modsnow", table.Upload(log, &http.Client{}, cfg.Upload.Modsnow))
+			r.Post("/upload/archive", modsnowImg.Upload(log, &http.Client{}, cfg.Upload.Archive))
+			r.Post("/upload/file", upload.New(log, minioClient, pg))
+
+			// Reservoirs
+			r.Post("/reservoirs", resAdd.New(log, pg))
+		})
+
 	})
 }
