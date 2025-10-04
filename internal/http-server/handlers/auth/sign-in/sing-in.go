@@ -14,6 +14,7 @@ import (
 	"srmt-admin/internal/lib/model/user"
 	"srmt-admin/internal/storage"
 	"srmt-admin/internal/token"
+	"time"
 )
 
 type Request struct {
@@ -23,8 +24,7 @@ type Request struct {
 
 type Response struct {
 	resp.Response
-	AccessToken  string `json:"access_token,omitempty"`
-	RefreshToken string `json:"refresh_token,omitempty"`
+	AccessToken string `json:"access_token,omitempty"`
 }
 
 type UserGetter interface {
@@ -33,6 +33,7 @@ type UserGetter interface {
 
 type TokenCreator interface {
 	Create(u user.Model) (token.Pair, error)
+	GetRefreshTTL() time.Duration
 }
 
 func New(log *slog.Logger, userGetter UserGetter, tokenCreator TokenCreator) http.HandlerFunc {
@@ -99,7 +100,18 @@ func New(log *slog.Logger, userGetter UserGetter, tokenCreator TokenCreator) htt
 			render.JSON(w, r, resp.InternalServerError("Internal server error"))
 			return
 		}
-		render.JSON(w, r, Response{resp.Ok(), pair.AccessToken, pair.RefreshToken})
+
+		http.SetCookie(w, &http.Cookie{
+			Name:     "refresh_token",
+			Value:    pair.RefreshToken,
+			Path:     "/",                               // Доступен на всем сайте
+			HttpOnly: true,                              // Запрещаем доступ из JS
+			Secure:   true,                              // Отправлять только по HTTPS (в продакшене)
+			SameSite: http.SameSiteLaxMode,              // Защита от CSRF
+			MaxAge:   int(tokenCreator.GetRefreshTTL()), // Время жизни cookie
+		})
+
+		render.JSON(w, r, Response{resp.Ok(), pair.AccessToken})
 		return
 	}
 }

@@ -75,6 +75,10 @@ func (s *Token) Verify(token string) (*Claims, error) {
 	return s.verifyToken(token)
 }
 
+func (s *Token) GetRefreshTTL() time.Duration {
+	return s.refreshTTL
+}
+
 // createToken — это внутренний хелпер для создания токена.
 func (s *Token) createAccessToken(u user.Model) (string, error) {
 	claims := Claims{

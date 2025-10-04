@@ -2,6 +2,7 @@ package refresh
 
 import (
 	"context"
+	"errors"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
 	"log/slog"
@@ -10,16 +11,11 @@ import (
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/lib/model/user"
 	"srmt-admin/internal/token"
+	"time"
 )
 
-type Request struct {
-	RefreshToken string `json:"refresh_token"`
-}
-
-// Response определяет структуру для успешного ответа.
 type Response struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
+	AccessToken string `json:"access_token"`
 }
 
 type UserGetter interface {
@@ -29,6 +25,7 @@ type UserGetter interface {
 type TokenRefresher interface {
 	Verify(token string) (*token.Claims, error)
 	Create(u user.Model) (token.Pair, error)
+	GetRefreshTTL() time.Duration
 }
 
 // New создает новый HTTP-хендлер для обновления токенов.
@@ -40,23 +37,24 @@ func New(log *slog.Logger, userService UserGetter, refresher TokenRefresher) htt
 			slog.String("request_id", middleware.GetReqID(r.Context())),
 		)
 
-		// 1. Декодируем JSON из тела запроса
-		var req Request
-		if err := render.DecodeJSON(r.Body, &req); err != nil {
-			log.Error("failed to decode request body", sl.Err(err))
+		cookie, err := r.Cookie("refresh_token")
+		if err != nil {
+			if errors.Is(err, http.ErrNoCookie) {
+				log.Warn("refresh token cookie not found")
+				render.Status(r, http.StatusUnauthorized)
+				render.JSON(w, r, resp.Unauthorized("Refresh token not provided"))
+				return
+			}
+			// Другие возможные ошибки
+			log.Warn("failed to get refresh token cookie", sl.Err(err))
 			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, resp.BadRequest("Invalid request format"))
+			render.JSON(w, r, resp.BadRequest("Invalid request"))
 			return
 		}
 
-		if req.RefreshToken == "" {
-			log.Warn("refresh token is empty")
-			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, resp.BadRequest("Refresh token is required"))
-			return
-		}
+		refreshToken := cookie.Value
 
-		claims, err := refresher.Verify(req.RefreshToken)
+		claims, err := refresher.Verify(refreshToken)
 		if err != nil {
 			log.Warn("failed to verify token", sl.Err(err))
 			render.Status(r, http.StatusUnauthorized)
@@ -80,12 +78,21 @@ func New(log *slog.Logger, userService UserGetter, refresher TokenRefresher) htt
 			return
 		}
 
+		http.SetCookie(w, &http.Cookie{
+			Name:     "refresh_token",
+			Value:    pair.RefreshToken,
+			Path:     "/",
+			HttpOnly: true,
+			Secure:   true,
+			SameSite: http.SameSiteLaxMode,
+			MaxAge:   int(refresher.GetRefreshTTL()),
+		})
+
 		log.Info("token refreshed successfully")
 
 		// 3. Отправляем новую пару токенов
 		render.JSON(w, r, Response{
-			AccessToken:  pair.AccessToken,
-			RefreshToken: pair.RefreshToken,
+			AccessToken: pair.AccessToken,
 		})
 	}
 }
