@@ -2,8 +2,11 @@ package repo
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"srmt-admin/internal/lib/model/file"
+	"srmt-admin/internal/storage"
 )
 
 func (r *Repo) AddFile(ctx context.Context, fileData file.Model) (int64, error) {
@@ -69,4 +72,34 @@ func (r *Repo) GetLatestFiles(ctx context.Context) ([]file.LatestFile, error) {
 	}
 
 	return latestFiles, nil
+}
+
+func (r *Repo) GetFileByID(ctx context.Context, id int64) (file.Model, error) {
+	const op = "repo.file.GetFileByID"
+
+	const query = `
+		SELECT id, file_name, object_key, category_id, mime_type, size_bytes, created_at
+		FROM files
+		WHERE id = $1
+	`
+
+	var f file.Model
+	err := r.db.QueryRowContext(ctx, query, id).Scan(
+		&f.ID,
+		&f.FileName,
+		&f.ObjectKey,
+		&f.CategoryID,
+		&f.MimeType,
+		&f.SizeBytes,
+		&f.CreatedAt,
+	)
+
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return file.Model{}, storage.ErrNotFound // Используем кастомную ошибку
+		}
+		return file.Model{}, fmt.Errorf("%s: failed to scan row: %w", op, err)
+	}
+
+	return f, nil
 }

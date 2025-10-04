@@ -11,6 +11,7 @@ import (
 	"srmt-admin/internal/http-server/handlers/data/analytics"
 	dataSet "srmt-admin/internal/http-server/handlers/data/set"
 	"srmt-admin/internal/http-server/handlers/file/category"
+	"srmt-admin/internal/http-server/handlers/file/download"
 	"srmt-admin/internal/http-server/handlers/file/latest"
 	"srmt-admin/internal/http-server/handlers/file/upload"
 	setIndicator "srmt-admin/internal/http-server/handlers/indicators/set"
@@ -75,6 +76,8 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 
 		// Admin routes
 		r.Group(func(r chi.Router) {
+			r.Use(mwauth.AdminOnly)
+
 			// Roles
 			r.Post("/roles", roleAdd.New(log, pg))
 			r.Patch("/roles/{id}", roleEdit.New(log, pg))
@@ -111,6 +114,7 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 			r.Use(mwauth.RequireAnyRole("admin", "sc", "rais"))
 
 			r.Get("/files/latest", latest.New(log, pg))
+			r.Get("/files/{fileID}/download", download.New(log, pg, minioClient))
 		})
 
 	})
