@@ -10,6 +10,7 @@ import (
 	"net/http"
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
+	"srmt-admin/internal/lib/model/user"
 )
 
 type Request struct {
@@ -23,6 +24,8 @@ type Response struct {
 
 type RoleCreator interface {
 	AddRole(ctx context.Context, name string, description string) (int64, error)
+	GetUsersByRole(ctx context.Context, roleID int64) ([]user.Model, error)
+	AssignRoleToUsers(ctx context.Context, roleID int64, userIDs []int64) error
 }
 
 func New(log *slog.Logger, roleCreator RoleCreator) http.HandlerFunc {
@@ -67,6 +70,26 @@ func New(log *slog.Logger, roleCreator RoleCreator) http.HandlerFunc {
 
 			render.Status(r, http.StatusInternalServerError)
 			render.JSON(w, r, resp.InternalServerError("failed to add role"))
+			return
+		}
+
+		// Get users with admin role
+		users, err := roleCreator.GetUsersByRole(r.Context(), 2)
+		if err != nil {
+			log.Info("failed to get users by role", sl.Err(err))
+
+			render.Status(r, http.StatusInternalServerError)
+			return
+		}
+
+		var userIDs []int64
+		for _, u := range users {
+			userIDs = append(userIDs, u.ID)
+		}
+
+		if err := roleCreator.AssignRoleToUsers(r.Context(), id, userIDs); err != nil {
+			log.Info("failed to assign role to user", sl.Err(err))
+			render.Status(r, http.StatusInternalServerError)
 			return
 		}
 

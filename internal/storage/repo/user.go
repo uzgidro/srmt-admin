@@ -16,14 +16,11 @@ func (r *Repo) AddUser(ctx context.Context, name, passHash string) (int64, error
 
 	query := `INSERT INTO users (name, pass_hash) VALUES ($1, $2) RETURNING id`
 
-	stmt, err := r.db.Prepare(query)
-	if err != nil {
-		return 0, fmt.Errorf("%s: %w", op, err)
-	}
-	defer stmt.Close()
-
 	var id int64
-	if err = stmt.QueryRowContext(ctx, name, passHash).Scan(&id); err != nil {
+	if err := r.db.QueryRowContext(ctx, query, name, passHash).Scan(&id); err != nil {
+		if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
+			return 0, translatedErr
+		}
 		return 0, fmt.Errorf("%s: execute query: %w", op, err)
 	}
 
@@ -51,13 +48,8 @@ func (r *Repo) GetUserByName(ctx context.Context, name string) (user.Model, erro
 		WHERE
 			u.name = $1
 	`
-	stmt, err := r.db.Prepare(query)
-	if err != nil {
-		return user.Model{}, fmt.Errorf("%s: failed to prepare statement: %w", op, err)
-	}
-	defer stmt.Close()
 
-	row := stmt.QueryRowContext(ctx, name)
+	row := r.db.QueryRowContext(ctx, query, name)
 
 	var u user.Model
 	var rolesJSON string
@@ -97,13 +89,8 @@ func (r *Repo) GetUserByID(ctx context.Context, id int64) (user.Model, error) {
 		WHERE
 			u.id = $1
 	`
-	stmt, err := r.db.Prepare(query)
-	if err != nil {
-		return user.Model{}, fmt.Errorf("%s: failed to prepare statement: %w", op, err)
-	}
-	defer stmt.Close()
 
-	row := stmt.QueryRowContext(ctx, id)
+	row := r.db.QueryRowContext(ctx, query, id)
 
 	var u user.Model
 	var rolesJSON string
@@ -120,6 +107,37 @@ func (r *Repo) GetUserByID(ctx context.Context, id int64) (user.Model, error) {
 	}
 
 	return u, nil
+}
+
+func (r *Repo) GetUsersByRole(ctx context.Context, roleID int64) ([]user.Model, error) {
+	const op = "storage.user.GetUserByRole"
+
+	const query = `
+		SELECT u.id, u.name FROM users u
+		JOIN users_roles ur ON u.id = ur.user_id
+		WHERE ur.role_id = $1
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, roleID)
+	if err != nil {
+		return nil, fmt.Errorf("%s: failed to query users: %w", op, err)
+	}
+	defer rows.Close()
+
+	var users []user.Model
+	for rows.Next() {
+		var u user.Model
+		if err := rows.Scan(&u.ID, &u.Name); err != nil {
+			return nil, fmt.Errorf("%s: failed to scan user row: %w", op, err)
+		}
+		users = append(users, u)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: rows iteration error: %w", op, err)
+	}
+
+	return users, nil
 }
 
 func (r *Repo) EditUser(ctx context.Context, id int64, name, passHash string) error {

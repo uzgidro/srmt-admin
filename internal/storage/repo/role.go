@@ -150,6 +150,36 @@ func (r *Repo) AssignRole(ctx context.Context, userID, roleID int64) error {
 	return nil
 }
 
+func (r *Repo) AssignRoleToUsers(ctx context.Context, roleID int64, userIDs []int64) error {
+	const op = "storage.role.AssignRoleToUsers"
+
+	if len(userIDs) == 0 {
+		return nil
+	}
+
+	var valueStrings []string
+	var valueArgs []interface{}
+	paramIndex := 1
+	for _, userID := range userIDs {
+		valueStrings = append(valueStrings, fmt.Sprintf("($%d, $%d)", paramIndex, paramIndex+1))
+		valueArgs = append(valueArgs, userID)
+		valueArgs = append(valueArgs, roleID)
+		paramIndex += 2
+	}
+
+	fullQuery := "INSERT INTO users_roles (user_id, role_id) VALUES " + strings.Join(valueStrings, ",") + " ON CONFLICT DO NOTHING"
+
+	_, err := r.db.ExecContext(ctx, fullQuery, valueArgs...)
+	if err != nil {
+		if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
+			return translatedErr
+		}
+		return fmt.Errorf("%s: failed to execute bulk insert: %w", op, err)
+	}
+
+	return nil
+}
+
 func (r *Repo) RevokeRole(ctx context.Context, userID, roleID int64) error {
 	const op = "storage.role.RevokeRole"
 
