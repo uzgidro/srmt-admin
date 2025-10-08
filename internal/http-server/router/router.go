@@ -29,6 +29,7 @@ import (
 	usersAdd "srmt-admin/internal/http-server/handlers/users/add"
 	assignRole "srmt-admin/internal/http-server/handlers/users/assign-role"
 	usersEdit "srmt-admin/internal/http-server/handlers/users/edit"
+	usersGet "srmt-admin/internal/http-server/handlers/users/get"
 	revokeRole "srmt-admin/internal/http-server/handlers/users/revoke-role"
 	weatherProxy "srmt-admin/internal/http-server/handlers/weather/proxy"
 	mwapikey "srmt-admin/internal/http-server/middleware/api-key"
@@ -88,6 +89,7 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 			r.Delete("/roles/{id}", roleDelete.New(log, pg))
 
 			// Users
+			r.Get("/users", usersGet.New(log, pg))
 			r.Post("/users", usersAdd.New(log, pg))
 			r.Patch("/users/{userID}", usersEdit.New(log, pg))
 			r.Post("/users/{userID}/roles", assignRole.New(log, pg))

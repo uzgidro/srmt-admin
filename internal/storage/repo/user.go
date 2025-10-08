@@ -27,6 +27,64 @@ func (r *Repo) AddUser(ctx context.Context, name, passHash string) (int64, error
 	return id, nil
 }
 
+func (r *Repo) GetAllUsers(ctx context.Context) ([]user.Model, error) {
+	const op = "storage.repo.GetAllUsers"
+
+	const query = `
+		SELECT
+			u.id,
+			u.name,
+			COALESCE(r.roles_json, '[]'::json) as roles_json
+		FROM
+			users u
+		LEFT JOIN (
+			SELECT
+				ur.user_id,
+				json_agg(ro.name ORDER BY ro.name) as roles_json
+			FROM
+				users_roles ur
+			JOIN
+				roles ro ON ur.role_id = ro.id
+			GROUP BY
+				ur.user_id
+		) r ON u.id = r.user_id
+		ORDER BY
+			u.name;
+	`
+
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("%s: failed to query users: %w", op, err)
+	}
+	defer rows.Close()
+
+	var users []user.Model
+	for rows.Next() {
+		var u user.Model
+		var rolesJSON []byte
+
+		if err := rows.Scan(&u.ID, &u.Name, &rolesJSON); err != nil {
+			return nil, fmt.Errorf("%s: failed to scan user row: %w", op, err)
+		}
+
+		if err := json.Unmarshal(rolesJSON, &u.Roles); err != nil {
+			return nil, fmt.Errorf("%s: failed to unmarshal roles: %w", op, err)
+		}
+
+		users = append(users, u)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: rows iteration error: %w", op, err)
+	}
+
+	if users == nil {
+		users = make([]user.Model, 0)
+	}
+
+	return users, nil
+}
+
 func (r *Repo) GetUserByName(ctx context.Context, name string) (user.Model, error) {
 	const op = "storage.user.GetUserByName"
 
