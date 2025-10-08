@@ -20,6 +20,7 @@ import (
 	roleAdd "srmt-admin/internal/http-server/handlers/role/add"
 	roleDelete "srmt-admin/internal/http-server/handlers/role/delete"
 	roleEdit "srmt-admin/internal/http-server/handlers/role/edit"
+	roleGet "srmt-admin/internal/http-server/handlers/role/get"
 	callbackModsnow "srmt-admin/internal/http-server/handlers/sc/callback/modsnow"
 	callbackStock "srmt-admin/internal/http-server/handlers/sc/callback/stock"
 	modsnowImg "srmt-admin/internal/http-server/handlers/sc/modsnow/img"
@@ -81,6 +82,7 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 			r.Use(mwauth.AdminOnly)
 
 			// Roles
+			r.Get("/roles", roleGet.New(log, pg))
 			r.Post("/roles", roleAdd.New(log, pg))
 			r.Patch("/roles/{id}", roleEdit.New(log, pg))
 			r.Delete("/roles/{id}", roleDelete.New(log, pg))

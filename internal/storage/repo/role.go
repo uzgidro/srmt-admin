@@ -30,6 +30,37 @@ func (r *Repo) AddRole(ctx context.Context, name string, description string) (in
 	return id, nil
 }
 
+func (r *Repo) GetAllRoles(ctx context.Context) ([]role.Model, error) {
+	const op = "storage.repo.GetAllRoles"
+
+	const query = `SELECT id, name, description FROM roles WHERE id != 1 ORDER BY name`
+
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("%s: failed to query roles: %w", op, err)
+	}
+	defer rows.Close()
+
+	var roles []role.Model
+	for rows.Next() {
+		var rl role.Model
+		if err := rows.Scan(&rl.ID, &rl.Name, &rl.Description); err != nil {
+			return nil, fmt.Errorf("%s: failed to scan role row: %w", op, err)
+		}
+		roles = append(roles, rl)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: rows iteration error: %w", op, err)
+	}
+
+	if roles == nil {
+		roles = make([]role.Model, 0)
+	}
+
+	return roles, nil
+}
+
 func (r *Repo) EditRole(ctx context.Context, id int64, name, description string) error {
 	const op = "storage.role.EditRole"
 
