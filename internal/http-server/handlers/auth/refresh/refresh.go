@@ -79,13 +79,14 @@ func New(log *slog.Logger, userService UserGetter, refresher TokenRefresher) htt
 		}
 
 		http.SetCookie(w, &http.Cookie{
-			Name:     "refresh_token",
-			Value:    pair.RefreshToken,
-			Path:     "/",
-			HttpOnly: true,
-			Secure:   true,
-			SameSite: http.SameSiteLaxMode,
-			MaxAge:   int(refresher.GetRefreshTTL()),
+			Name:        "refresh_token",
+			Value:       pair.RefreshToken,
+			Path:        "/",                   // Доступен на всем сайте
+			HttpOnly:    true,                  // Запрещаем доступ из JS
+			Secure:      true,                  // Отправлять только по HTTPS (в продакшене)
+			SameSite:    http.SameSiteNoneMode, // Защита от CSRF
+			Partitioned: true,
+			MaxAge:      int(refresher.GetRefreshTTL()), // Время жизни cookie
 		})
 
 		log.Info("token refreshed successfully")

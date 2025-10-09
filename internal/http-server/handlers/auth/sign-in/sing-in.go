@@ -102,13 +102,14 @@ func New(log *slog.Logger, userGetter UserGetter, tokenCreator TokenCreator) htt
 		}
 
 		http.SetCookie(w, &http.Cookie{
-			Name:     "refresh_token",
-			Value:    pair.RefreshToken,
-			Path:     "/",                               // Доступен на всем сайте
-			HttpOnly: true,                              // Запрещаем доступ из JS
-			Secure:   true,                              // Отправлять только по HTTPS (в продакшене)
-			SameSite: http.SameSiteLaxMode,              // Защита от CSRF
-			MaxAge:   int(tokenCreator.GetRefreshTTL()), // Время жизни cookie
+			Name:        "refresh_token",
+			Value:       pair.RefreshToken,
+			Path:        "/",                   // Доступен на всем сайте
+			HttpOnly:    true,                  // Запрещаем доступ из JS
+			Secure:      true,                  // Отправлять только по HTTPS (в продакшене)
+			SameSite:    http.SameSiteNoneMode, // Защита от CSRF
+			Partitioned: true,
+			MaxAge:      int(tokenCreator.GetRefreshTTL()), // Время жизни cookie
 		})
 
 		render.JSON(w, r, Response{resp.Ok(), pair.AccessToken})
