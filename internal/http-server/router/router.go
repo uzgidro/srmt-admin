@@ -11,7 +11,8 @@ import (
 	signOut "srmt-admin/internal/http-server/handlers/auth/sign-out"
 	"srmt-admin/internal/http-server/handlers/data/analytics"
 	dataSet "srmt-admin/internal/http-server/handlers/data/set"
-	"srmt-admin/internal/http-server/handlers/file/category"
+	catAdd "srmt-admin/internal/http-server/handlers/file/category/add"
+	catGet "srmt-admin/internal/http-server/handlers/file/category/list"
 	"srmt-admin/internal/http-server/handlers/file/download"
 	"srmt-admin/internal/http-server/handlers/file/latest"
 	"srmt-admin/internal/http-server/handlers/file/upload"
@@ -113,7 +114,8 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 			r.Post("/reservoirs", resAdd.New(log, pg))
 
 			// File category
-			r.Post("/files/categories", category.New(log, pg))
+			r.Get("/files/categories", catGet.New(log, pg))
+			r.Post("/files/categories", catAdd.New(log, pg))
 		})
 
 		r.Group(func(r chi.Router) {

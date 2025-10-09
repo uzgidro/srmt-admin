@@ -1,8 +1,9 @@
-package category
+package add
 
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
 	"log/slog"
@@ -11,18 +12,17 @@ import (
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/lib/model/category"
 	"srmt-admin/internal/storage"
-	"strings"
 )
 
 type Request struct {
 	Name        string `json:"name"`
-	DisplayName string `json:"display_name"`
 	Description string `json:"description,omitempty"`
 	ParentID    *int64 `json:"parent_id,omitempty"`
 }
 
 type CategorySaver interface {
 	AddCategory(ctx context.Context, cat category.Model) (int64, error)
+	GetCategoryByID(ctx context.Context, id int64) (category.Model, error)
 }
 
 func New(log *slog.Logger, saver CategorySaver) http.HandlerFunc {
@@ -41,16 +41,28 @@ func New(log *slog.Logger, saver CategorySaver) http.HandlerFunc {
 			return
 		}
 
-		if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.DisplayName) == "" {
-			log.Error("required fields are empty", slog.String("name", req.Name), slog.String("display_name", req.DisplayName))
-			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, resp.BadRequest("Fields 'name' and 'display_name' are required"))
-			return
+		displayName := req.Name
+
+		if req.ParentID != nil {
+			parent, err := saver.GetCategoryByID(r.Context(), *req.ParentID)
+			if err != nil {
+				if errors.Is(err, storage.ErrNotFound) {
+					log.Warn("parent category not found", "parent_id", *req.ParentID)
+					render.Status(r, http.StatusBadRequest) // 400, т.к. клиент передал неверный ID
+					render.JSON(w, r, resp.BadRequest("Parent category not found"))
+					return
+				}
+				log.Error("failed to get parent category", sl.Err(err))
+				render.Status(r, http.StatusInternalServerError)
+				render.JSON(w, r, resp.InternalServerError("Failed to process category"))
+				return
+			}
+			displayName = fmt.Sprintf("%s/%s", parent.DisplayName, req.Name)
 		}
 
 		categoryModel := category.Model{
 			Name:        req.Name,
-			DisplayName: req.DisplayName,
+			DisplayName: displayName,
 			Description: req.Description,
 			ParentID:    req.ParentID,
 		}
