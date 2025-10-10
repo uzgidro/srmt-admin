@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/go-chi/chi/v5/middleware"
@@ -17,6 +18,10 @@ type FileGetter interface {
 	GetLatestFiles(ctx context.Context) ([]file.LatestFile, error)
 }
 
+type URLGetter interface {
+	GetPresignedURL(ctx context.Context, objectName string, expires time.Duration) (*url.URL, error)
+}
+
 type ResponseItem struct {
 	ID           int64     `json:"id"`
 	FileName     string    `json:"file_name"`
@@ -24,9 +29,10 @@ type ResponseItem struct {
 	SizeBytes    int64     `json:"size_bytes"`
 	CreatedAt    time.Time `json:"created_at"`
 	CategoryName string    `json:"category_name"`
+	URL          string    `json:"url"`
 }
 
-func New(log *slog.Logger, fileGetter FileGetter) http.HandlerFunc {
+func New(log *slog.Logger, fileGetter FileGetter, urlGetter URLGetter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.file.latest.New"
 		log := log.With(
@@ -50,6 +56,14 @@ func New(log *slog.Logger, fileGetter FileGetter) http.HandlerFunc {
 
 		responseItems := make([]ResponseItem, 0, len(latestFiles))
 		for _, f := range latestFiles {
+			u, err := urlGetter.GetPresignedURL(r.Context(), f.ObjectKey, time.Hour)
+			if err != nil {
+				log.Error("failed to get presigned URL", sl.Err(err))
+				render.Status(r, http.StatusInternalServerError)
+				render.JSON(w, r, resp.InternalServerError("Failed to retrieve presigned URL"))
+				return
+			}
+
 			responseItems = append(responseItems, ResponseItem{
 				ID:           f.ID,
 				FileName:     f.FileName,
@@ -57,6 +71,7 @@ func New(log *slog.Logger, fileGetter FileGetter) http.HandlerFunc {
 				SizeBytes:    f.SizeBytes,
 				CreatedAt:    f.CreatedAt,
 				CategoryName: f.CategoryName,
+				URL:          u.String(),
 			})
 		}
 

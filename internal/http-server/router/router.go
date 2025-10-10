@@ -125,7 +125,7 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 		r.Group(func(r chi.Router) {
 			r.Use(mwauth.RequireAnyRole("sc", "rais"))
 
-			r.Get("/files/latest", latest.New(log, pg))
+			r.Get("/files/latest", latest.New(log, pg, minioClient))
 			r.Get("/files/{fileID}/download", download.New(log, pg, minioClient))
 		})
 

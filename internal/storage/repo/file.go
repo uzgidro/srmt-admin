@@ -47,7 +47,7 @@ func (r *Repo) GetLatestFiles(ctx context.Context) ([]file.LatestFile, error) {
 			FROM files f
 			JOIN categories c ON f.category_id = c.id
 		)
-		SELECT id, file_name, object_key, size_bytes, created_at, category_name
+		SELECT id, file_name, object_key, size_bytes, category_name, created_at
 		FROM ranked_files
 		WHERE rn = 1
 		ORDER BY category_name;
@@ -58,10 +58,11 @@ func (r *Repo) GetLatestFiles(ctx context.Context) ([]file.LatestFile, error) {
 	}
 	defer rows.Close()
 
+	// Get Presigned URL needs object key
 	var latestFiles []file.LatestFile
 	for rows.Next() {
 		var f file.LatestFile
-		if err := rows.Scan(&f.ID, &f.FileName, &f.ObjectKey, &f.SizeBytes, &f.CreatedAt, &f.CategoryName); err != nil {
+		if err := rows.Scan(&f.ID, &f.FileName, &f.ObjectKey, &f.SizeBytes, &f.CategoryName, &f.CreatedAt); err != nil {
 			return nil, fmt.Errorf("%s: failed to scan row: %w", op, err)
 		}
 		latestFiles = append(latestFiles, f)
