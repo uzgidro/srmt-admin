@@ -108,7 +108,7 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 			r.Post("/upload/stock", stock.Upload(log, &http.Client{}, cfg.Upload.Stock))
 			r.Post("/upload/modsnow", table.Upload(log, &http.Client{}, cfg.Upload.Modsnow))
 			r.Post("/upload/archive", modsnowImg.Upload(log, &http.Client{}, cfg.Upload.Archive))
-			r.Post("/upload/file", upload.New(log, minioClient, pg))
+			r.Post("/upload/files", upload.New(log, minioClient, pg))
 
 			// Reservoirs
 			r.Post("/reservoirs", resAdd.New(log, pg))

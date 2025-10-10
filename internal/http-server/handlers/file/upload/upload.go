@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
+	"srmt-admin/internal/lib/model/category"
 	"srmt-admin/internal/lib/model/file"
 	"strconv"
 	"time"
@@ -25,7 +26,7 @@ type FileUploader interface {
 // FileMetaSaver определяет интерфейс для сохранения метаданных файла в БД.
 type FileMetaSaver interface {
 	AddFile(ctx context.Context, fileData file.Model) (int64, error)
-	// Можно добавить и другие методы, если они понадобятся, например, для удаления.
+	GetCategoryByID(ctx context.Context, id int64) (category.Model, error)
 }
 
 // New создает новый HTTP-хендлер для загрузки файлов.
@@ -68,6 +69,13 @@ func New(log *slog.Logger, uploader FileUploader, saver FileMetaSaver) http.Hand
 			return
 		}
 
+		cat, err := saver.GetCategoryByID(r.Context(), categoryID)
+		if err != nil {
+			log.Warn("failed to get category", sl.Err(err))
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, resp.BadRequest("Incorrect category"))
+		}
+
 		var fileDate time.Time
 		dateStr := r.FormValue("date") // Ожидаем формат "YYYY-MM-DD"
 
@@ -89,9 +97,10 @@ func New(log *slog.Logger, uploader FileUploader, saver FileMetaSaver) http.Hand
 		}
 
 		// 4. Генерируем уникальное имя для объекта в MinIO, чтобы избежать конфликтов.
-		// Формат: <uuid>.<original_extension> (e.g., "a1b2c3d4-....-e5f6.pdf")
+		// Формат: <category>/<date>/<uuid>.<ext>
 		datePrefix := fileDate.Format("2006/01/02")
-		objectKey := fmt.Sprintf("%s/%s%s",
+		objectKey := fmt.Sprintf("%s/%s/%s%s",
+			cat.DisplayName,
 			datePrefix,
 			uuid.New().String(),
 			filepath.Ext(handler.Filename),
@@ -120,13 +129,7 @@ func New(log *slog.Logger, uploader FileUploader, saver FileMetaSaver) http.Hand
 		fileID, err := saver.AddFile(r.Context(), fileModel)
 		if err != nil {
 			log.Error("failed to save file metadata to database", sl.Err(err))
-			// ВАЖНО: Здесь в идеале нужна логика компенсации:
-			// если запись в БД не удалась, нужно удалить уже загруженный файл из MinIO.
-			// uploader.DeleteFile(r.Context(), bucketName, objectKey)
-
 			if delErr := uploader.DeleteFile(r.Context(), objectKey); delErr != nil {
-				// Это плохая ситуация: не смогли записать в БД и не смогли удалить из MinIO.
-				// Логируем это как критическую ошибку, чтобы администратор мог разобраться вручную.
 				log.Error("COMPENSATION FAILED: could not delete orphaned file from storage",
 					sl.Err(delErr),
 					slog.String("object_key", objectKey),
@@ -142,10 +145,6 @@ func New(log *slog.Logger, uploader FileUploader, saver FileMetaSaver) http.Hand
 
 		log.Info("file uploaded successfully", slog.Int64("id", fileID), slog.String("object_key", objectKey))
 
-		// 7. Отправляем успешный ответ.
-		render.JSON(w, r, map[string]interface{}{
-			"message": "File uploaded successfully",
-			"id":      fileID,
-		})
+		render.JSON(w, r, resp.Created())
 	}
 }
