@@ -103,3 +103,24 @@ func (r *Repo) GetFileByID(ctx context.Context, id int64) (file.Model, error) {
 
 	return f, nil
 }
+
+func (r *Repo) DeleteFile(ctx context.Context, id int64) error {
+	const op = "repo.file.DeleteFile"
+	const query = "DELETE FROM files WHERE id = $1"
+
+	res, err := r.db.ExecContext(ctx, query, id)
+	if err != nil {
+		return fmt.Errorf("%s: failed to execute statement: %w", op, err)
+	}
+
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("%s: failed to get affected rows: %w", op, err)
+	}
+
+	if rowsAffected == 0 {
+		return storage.ErrNotFound
+	}
+
+	return nil
+}

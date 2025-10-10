@@ -13,6 +13,7 @@ import (
 	dataSet "srmt-admin/internal/http-server/handlers/data/set"
 	catAdd "srmt-admin/internal/http-server/handlers/file/category/add"
 	catGet "srmt-admin/internal/http-server/handlers/file/category/list"
+	fileDelete "srmt-admin/internal/http-server/handlers/file/delete"
 	"srmt-admin/internal/http-server/handlers/file/download"
 	"srmt-admin/internal/http-server/handlers/file/latest"
 	"srmt-admin/internal/http-server/handlers/file/upload"
@@ -116,6 +117,9 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 			// File category
 			r.Get("/files/categories", catGet.New(log, pg))
 			r.Post("/files/categories", catAdd.New(log, pg))
+
+			// Delete
+			r.Delete("/files/{fileID}", fileDelete.New(log, pg, minioClient))
 		})
 
 		r.Group(func(r chi.Router) {
