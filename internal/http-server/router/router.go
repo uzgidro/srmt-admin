@@ -28,6 +28,7 @@ import (
 	modsnowImg "srmt-admin/internal/http-server/handlers/sc/modsnow/img"
 	"srmt-admin/internal/http-server/handlers/sc/modsnow/table"
 	"srmt-admin/internal/http-server/handlers/sc/stock"
+	"srmt-admin/internal/http-server/handlers/telegram/gidro/test"
 	usersAdd "srmt-admin/internal/http-server/handlers/users/add"
 	assignRole "srmt-admin/internal/http-server/handlers/users/assign-role"
 	usersEdit "srmt-admin/internal/http-server/handlers/users/edit"
@@ -63,6 +64,7 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 			r.Get("/forecast", weatherProxy.New(log, httpClient, weatherCfg.BaseURL, weatherCfg.APIKey, "/forecast"))
 		})
 
+		r.Get("/telegram/gidro/test", test.New(log, mng))
 	})
 
 	// Service endpoints
