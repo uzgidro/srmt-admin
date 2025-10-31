@@ -57,7 +57,7 @@ func BadGateway(msg string) Response {
 	}
 }
 
-func ValidationError(errs validator.ValidationErrors) Response {
+func ValidationErrors(errs validator.ValidationErrors) Response {
 	var errMessages []string
 
 	for _, err := range errs {

@@ -52,7 +52,7 @@ func New(log *slog.Logger, adder PositionAdder) http.HandlerFunc {
 			errors.As(err, &validationErrors)
 			log.Error("failed to validate request", sl.Err(err))
 			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, resp.ValidationError(validationErrors))
+			render.JSON(w, r, resp.ValidationErrors(validationErrors))
 			return
 		}
 
