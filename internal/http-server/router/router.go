@@ -18,6 +18,10 @@ import (
 	"srmt-admin/internal/http-server/handlers/file/latest"
 	"srmt-admin/internal/http-server/handlers/file/upload"
 	setIndicator "srmt-admin/internal/http-server/handlers/indicators/set"
+	positionsAdd "srmt-admin/internal/http-server/handlers/positions/add"
+	positionsDelete "srmt-admin/internal/http-server/handlers/positions/delete"
+	positionsGet "srmt-admin/internal/http-server/handlers/positions/get"
+	positionsPatch "srmt-admin/internal/http-server/handlers/positions/patch"
 	resAdd "srmt-admin/internal/http-server/handlers/reservoirs/add"
 	roleAdd "srmt-admin/internal/http-server/handlers/role/add"
 	roleDelete "srmt-admin/internal/http-server/handlers/role/delete"
@@ -91,6 +95,12 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 			r.Post("/roles", roleAdd.New(log, pg))
 			r.Patch("/roles/{id}", roleEdit.New(log, pg))
 			r.Delete("/roles/{id}", roleDelete.New(log, pg))
+
+			// Positions
+			r.Get("/positions", positionsGet.New(log, pg))
+			r.Post("/positions", positionsAdd.New(log, pg))
+			r.Patch("/positions/{id}", positionsPatch.New(log, pg))
+			r.Delete("/positions/{id}", positionsDelete.New(log, pg))
 
 			// Users
 			r.Get("/users", usersGet.New(log, pg))
