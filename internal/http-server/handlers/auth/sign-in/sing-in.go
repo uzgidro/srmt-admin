@@ -112,7 +112,7 @@ func New(log *slog.Logger, userGetter UserGetter, tokenCreator TokenCreator) htt
 			MaxAge:      int(tokenCreator.GetRefreshTTL()), // Время жизни cookie
 		})
 
-		render.JSON(w, r, Response{resp.Ok(), pair.AccessToken})
+		render.JSON(w, r, Response{resp.OK(), pair.AccessToken})
 		return
 	}
 }

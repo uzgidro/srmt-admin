@@ -72,6 +72,6 @@ func New(log *slog.Logger, adder OrganizationAdder) http.HandlerFunc {
 
 		log.Info("organization added", slog.Int64("id", id))
 		render.Status(r, http.StatusCreated)
-		render.JSON(w, r, Response{Response: resp.Ok(), ID: id})
+		render.JSON(w, r, Response{Response: resp.OK(), ID: id})
 	}
 }

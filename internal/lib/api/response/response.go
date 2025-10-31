@@ -12,7 +12,7 @@ type Response struct {
 	Error  string `json:"error,omitempty"`
 }
 
-func Ok() Response {
+func OK() Response {
 	return Response{Status: http.StatusOK}
 }
 

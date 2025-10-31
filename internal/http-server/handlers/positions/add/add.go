@@ -78,7 +78,7 @@ func New(log *slog.Logger, adder PositionAdder) http.HandlerFunc {
 		// Отправка успешного ответа
 		render.Status(r, http.StatusCreated)
 		render.JSON(w, r, Response{
-			Response: resp.Ok(),
+			Response: resp.OK(),
 			ID:       id,
 		})
 	}
