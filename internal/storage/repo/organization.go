@@ -3,60 +3,15 @@ package repo
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/lib/pq"
 	"srmt-admin/internal/lib/model/organization"
 	"srmt-admin/internal/storage"
 	"strings"
 )
 
-func (r *Repo) AddOrganization(ctx context.Context, name string, parentID *int64, typeIDs []int64) (int64, error) {
-	const op = "storage.repo.AddOrganization"
-
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, fmt.Errorf("%s: failed to begin transaction: %w", op, err)
-	}
-	defer tx.Rollback()
-
-	const orgQuery = "INSERT INTO organizations (name, parent_organization_id) VALUES ($1, $2) RETURNING id"
-	var orgID int64
-	err = tx.QueryRowContext(ctx, orgQuery, name, parentID).Scan(&orgID)
-	if err != nil {
-		if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
-			return 0, translatedErr
-		}
-		return 0, fmt.Errorf("%s: failed to insert organization: %w", op, err)
-	}
-
-	if len(typeIDs) > 0 {
-		var valueStrings []string
-		var valueArgs []interface{}
-		paramIndex := 1
-		for _, typeID := range typeIDs {
-			valueStrings = append(valueStrings, fmt.Sprintf("($%d, $%d)", paramIndex, paramIndex+1))
-			valueArgs = append(valueArgs, orgID)
-			valueArgs = append(valueArgs, typeID)
-			paramIndex += 2
-		}
-
-		linkQuery := "INSERT INTO organization_type_links (organization_id, type_id) VALUES " + strings.Join(valueStrings, ",")
-		_, err = tx.ExecContext(ctx, linkQuery, valueArgs...)
-		if err != nil {
-			if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
-				return 0, translatedErr
-			}
-			return 0, fmt.Errorf("%s: failed to link organization types: %w", op, err)
-		}
-	}
-
-	if err = tx.Commit(); err != nil {
-		return 0, fmt.Errorf("%s: failed to commit transaction: %w", op, err)
-	}
-
-	return orgID, nil
-}
-
-func (r *Repo) GetAllOrganizations(ctx context.Context) ([]organization.Model, error) {
+func (r *Repo) GetAllOrganizations(ctx context.Context, orgType *string) ([]*organization.Model, error) {
 	const op = "storage.repo.GetAllOrganizations"
 
 	const query = `
@@ -64,9 +19,12 @@ func (r *Repo) GetAllOrganizations(ctx context.Context) ([]organization.Model, e
 			o.id,
 			o.name,
 			o.parent_organization_id,
+			po.name as parent_organization_name,
 			COALESCE(t.types_json, '[]'::json) as types
 		FROM
 			organizations o
+		LEFT JOIN
+			organizations po ON o.parent_organization_id = po.id
 		LEFT JOIN (
 			SELECT
 				otl.organization_id,
@@ -87,28 +45,119 @@ func (r *Repo) GetAllOrganizations(ctx context.Context) ([]organization.Model, e
 	}
 	defer rows.Close()
 
-	var orgs []organization.Model
+	var allOrgs []*organization.Model
 	for rows.Next() {
 		var org organization.Model
 		var typesJSON []byte
-		if err := rows.Scan(&org.ID, &org.Name, &org.ParentOrganizationID, &typesJSON); err != nil {
+		if err := rows.Scan(&org.ID, &org.Name, &org.ParentOrganizationID, &org.ParentOrganizationName, &typesJSON); err != nil {
 			return nil, fmt.Errorf("%s: failed to scan organization: %w", op, err)
 		}
 		if err := json.Unmarshal(typesJSON, &org.Types); err != nil {
 			return nil, fmt.Errorf("%s: failed to unmarshal types: %w", op, err)
 		}
-		orgs = append(orgs, org)
+		allOrgs = append(allOrgs, &org)
 	}
 
 	if err = rows.Err(); err != nil {
 		return nil, fmt.Errorf("%s: rows iteration error: %w", op, err)
 	}
 
-	if orgs == nil {
-		orgs = make([]organization.Model, 0)
+	orgsMap := make(map[int64]*organization.Model, len(allOrgs))
+	for _, org := range allOrgs {
+		orgsMap[org.ID] = org
 	}
 
-	return orgs, nil
+	for _, org := range allOrgs {
+		if org.ParentOrganizationID != nil {
+			if parent, ok := orgsMap[*org.ParentOrganizationID]; ok {
+				parent.Children = append(parent.Children, org)
+			}
+		}
+	}
+
+	var result []*organization.Model
+	if orgType == nil {
+		// No type filter, return only root organizations
+		for _, org := range allOrgs {
+			if org.ParentOrganizationID == nil {
+				result = append(result, org)
+			}
+		}
+	} else {
+		// Type filter is present, find all orgs with this type
+		for _, org := range allOrgs {
+			hasType := false
+			for _, t := range org.Types {
+				if t == *orgType {
+					hasType = true
+					break
+				}
+			}
+			if hasType {
+				result = append(result, org)
+			}
+		}
+	}
+
+	if result == nil {
+		result = make([]*organization.Model, 0)
+	}
+
+	return result, nil
+}
+
+func (r *Repo) AddOrganization(ctx context.Context, name string, parentID *int64, typeIDs []int64) (int64, error) {
+	const op = "storage.repo.AddOrganization"
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("%s: failed to begin transaction: %w", op, err)
+	}
+	defer tx.Rollback()
+
+	// Insert organization
+	var orgID int64
+	err = tx.QueryRowContext(ctx,
+		"INSERT INTO organizations(name, parent_organization_id) VALUES($1, $2) RETURNING id",
+		name, parentID,
+	).Scan(&orgID)
+
+	if err != nil {
+		var pqErr *pq.Error
+		if errors.As(err, &pqErr) {
+			if pqErr.Code.Name() == "unique_violation" {
+				return 0, storage.ErrDuplicate
+			}
+			if pqErr.Code.Name() == "foreign_key_violation" {
+				return 0, storage.ErrForeignKeyViolation
+			}
+		}
+		return 0, fmt.Errorf("%s: failed to insert organization: %w", op, err)
+	}
+
+	// Link types
+	stmt, err := tx.PrepareContext(ctx, "INSERT INTO organization_type_links(organization_id, type_id) VALUES($1, $2)")
+	if err != nil {
+		return 0, fmt.Errorf("%s: failed to prepare type link statement: %w", op, err)
+	}
+	defer stmt.Close()
+
+	for _, typeID := range typeIDs {
+		_, err := stmt.ExecContext(ctx, orgID, typeID)
+		if err != nil {
+			var pqErr *pq.Error
+			if errors.As(err, &pqErr) && pqErr.Code.Name() == "foreign_key_violation" {
+				return 0, storage.ErrForeignKeyViolation
+			}
+			return 0, fmt.Errorf("%s: failed to link type id %d: %w", op, typeID, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("%s: failed to commit transaction: %w", op, err)
+	}
+
+	return orgID, nil
 }
 
 func (r *Repo) EditOrganization(ctx context.Context, id int64, name *string, parentID **int64, typeIDs []int64) error {
@@ -120,59 +169,68 @@ func (r *Repo) EditOrganization(ctx context.Context, id int64, name *string, par
 	}
 	defer tx.Rollback()
 
-	var setClauses []string
+	// Update organization fields
+	var updates []string
 	var args []interface{}
 	argID := 1
 
 	if name != nil {
-		setClauses = append(setClauses, fmt.Sprintf("name = $%d", argID))
+		updates = append(updates, fmt.Sprintf("name = $%d", argID))
 		args = append(args, *name)
 		argID++
 	}
 	if parentID != nil {
-		setClauses = append(setClauses, fmt.Sprintf("parent_organization_id = $%d", argID))
+		updates = append(updates, fmt.Sprintf("parent_organization_id = $%d", argID))
 		args = append(args, *parentID)
 		argID++
 	}
 
-	if len(setClauses) > 0 {
-		query := "UPDATE organizations SET " + strings.Join(setClauses, ", ") + fmt.Sprintf(" WHERE id = $%d", argID)
+	if len(updates) > 0 {
+		query := fmt.Sprintf("UPDATE organizations SET %s WHERE id = $%d", strings.Join(updates, ", "), argID)
 		args = append(args, id)
 
 		res, err := tx.ExecContext(ctx, query, args...)
 		if err != nil {
-			if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
-				return translatedErr
+			var pqErr *pq.Error
+			if errors.As(err, &pqErr) {
+				if pqErr.Code.Name() == "unique_violation" {
+					return storage.ErrDuplicate
+				}
+				if pqErr.Code.Name() == "foreign_key_violation" {
+					return storage.ErrForeignKeyViolation
+				}
 			}
 			return fmt.Errorf("%s: failed to update organization: %w", op, err)
 		}
-		if rows, _ := res.RowsAffected(); rows == 0 {
+		rowsAffected, _ := res.RowsAffected()
+		if rowsAffected == 0 {
 			return storage.ErrNotFound
 		}
 	}
 
-	if typeIDs != nil {
-		const deleteQuery = "DELETE FROM organization_type_links WHERE organization_id = $1"
-		if _, err := tx.ExecContext(ctx, deleteQuery, id); err != nil {
-			return fmt.Errorf("%s: failed to delete old types: %w", op, err)
+	// Update types if provided
+	if len(typeIDs) > 0 {
+		// Delete old links
+		_, err := tx.ExecContext(ctx, "DELETE FROM organization_type_links WHERE organization_id = $1", id)
+		if err != nil {
+			return fmt.Errorf("%s: failed to delete old type links: %w", op, err)
 		}
 
-		if len(typeIDs) > 0 {
-			var valueStrings []string
-			var valueArgs []interface{}
-			paramIndex := 1
-			for _, typeID := range typeIDs {
-				valueStrings = append(valueStrings, fmt.Sprintf("($%d, $%d)", paramIndex, paramIndex+1))
-				valueArgs = append(valueArgs, id)
-				valueArgs = append(valueArgs, typeID)
-				paramIndex += 2
-			}
-			linkQuery := "INSERT INTO organization_type_links (organization_id, type_id) VALUES " + strings.Join(valueStrings, ",")
-			if _, err := tx.ExecContext(ctx, linkQuery, valueArgs...); err != nil {
-				if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
-					return translatedErr
+		// Insert new links
+		stmt, err := tx.PrepareContext(ctx, "INSERT INTO organization_type_links(organization_id, type_id) VALUES($1, $2)")
+		if err != nil {
+			return fmt.Errorf("%s: failed to prepare type link statement: %w", op, err)
+		}
+		defer stmt.Close()
+
+		for _, typeID := range typeIDs {
+			_, err := stmt.ExecContext(ctx, id, typeID)
+			if err != nil {
+				var pqErr *pq.Error
+				if errors.As(err, &pqErr) && pqErr.Code.Name() == "foreign_key_violation" {
+					return storage.ErrForeignKeyViolation
 				}
-				return fmt.Errorf("%s: failed to link new types: %w", op, err)
+				return fmt.Errorf("%s: failed to link type id %d: %w", op, typeID, err)
 			}
 		}
 	}
@@ -182,17 +240,17 @@ func (r *Repo) EditOrganization(ctx context.Context, id int64, name *string, par
 
 func (r *Repo) DeleteOrganization(ctx context.Context, id int64) error {
 	const op = "storage.repo.DeleteOrganization"
-	const query = "DELETE FROM organizations WHERE id = $1"
 
-	res, err := r.db.ExecContext(ctx, query, id)
+	res, err := r.db.ExecContext(ctx, "DELETE FROM organizations WHERE id = $1", id)
 	if err != nil {
-		return fmt.Errorf("%s: failed to execute statement: %w", op, err)
+		return fmt.Errorf("%s: failed to delete organization: %w", op, err)
 	}
 
 	rowsAffected, err := res.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("%s: failed to get affected rows: %w", op, err)
 	}
+
 	if rowsAffected == 0 {
 		return storage.ErrNotFound
 	}

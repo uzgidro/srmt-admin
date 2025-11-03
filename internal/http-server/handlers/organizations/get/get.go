@@ -12,7 +12,7 @@ import (
 )
 
 type OrganizationGetter interface {
-	GetAllOrganizations(ctx context.Context) ([]organization.Model, error)
+	GetAllOrganizations(ctx context.Context, orgType *string) ([]*organization.Model, error)
 }
 
 func New(log *slog.Logger, getter OrganizationGetter) http.HandlerFunc {
@@ -20,7 +20,14 @@ func New(log *slog.Logger, getter OrganizationGetter) http.HandlerFunc {
 		const op = "handlers.organizations.get.New"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
 
-		orgs, err := getter.GetAllOrganizations(r.Context())
+		orgTypeQuery := r.URL.Query().Get("type")
+		var orgType *string
+		if orgTypeQuery != "" {
+			orgType = &orgTypeQuery
+			log = log.With(slog.String("type", *orgType))
+		}
+
+		orgs, err := getter.GetAllOrganizations(r.Context(), orgType)
 		if err != nil {
 			log.Error("failed to get all organizations", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)
