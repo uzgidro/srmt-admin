@@ -37,29 +37,18 @@ func (r *Repo) AddDischarge(ctx context.Context, orgID, createdByID int64, start
 }
 
 // GetAllDischarges получает список всех сбросов, используя VIEW для вычисления объема.
-func (r *Repo) GetAllDischarges(ctx context.Context) ([]discharge.Model, error) {
+func (r *Repo) GetAllDischarges(ctx context.Context, isOngoing *bool, startDate, endDate *time.Time) ([]discharge.Model, error) {
 	const op = "storage.repo.discharge.GetAllDischarges"
-	// Мы запрашиваем данные из VIEW, чтобы получить is_ongoing и total_volume_m3
-	const query = `
+
+	// Базовый запрос с JOIN'ами
+	baseQuery := `
 		SELECT
-			d.id,
-			d.start_time,
-			d.end_time,
-			d.flow_rate_m3_s,
-			d.reason,
-			d.is_ongoing,
-			d.total_volume_m3,
-			-- Organization data
-			o.id as org_id,
-			o.name as org_name,
-			o.parent_organization_id as org_parent_id,
+			d.id, d.start_time, d.end_time, d.flow_rate_m3_s, d.reason,
+			d.is_ongoing, d.total_volume_m3,
+			o.id as org_id, o.name as org_name, o.parent_organization_id as org_parent_id,
 			COALESCE(ot.types_json, '[]'::json) as org_types,
-			-- Creator data
-			creator.id as creator_id,
-			creator.fio as creator_fio,
-			-- Updater data
-			updater.id as updater_id,
-			updater.fio as updater_fio
+			creator.id as creator_id, creator.fio as creator_fio,
+			updater.id as updater_id, updater.fio as updater_fio
 		FROM
 			v_idle_water_discharges_with_volume d
 		JOIN organizations o ON d.organization_id = o.id
@@ -73,15 +62,56 @@ func (r *Repo) GetAllDischarges(ctx context.Context) ([]discharge.Model, error) 
 			JOIN organization_types ot ON otl.type_id = ot.id
 			GROUP BY otl.organization_id
 		) ot ON o.id = ot.organization_id
-		ORDER BY d.start_time DESC;
 	`
 
-	rows, err := r.db.QueryContext(ctx, query)
+	var conditions []string
+	var args []interface{}
+	argID := 1
+
+	// Добавляем условия фильтрации
+	if isOngoing != nil {
+		conditions = append(conditions, fmt.Sprintf("d.is_ongoing = $%d", argID))
+		args = append(args, *isOngoing)
+		argID++
+	}
+
+	// Фильтр по временному диапазону. Ищем пересечения.
+	if startDate != nil && endDate != nil {
+		// Период сброса [start_time, COALESCE(end_time, NOW())]
+		// Период фильтра [startDate, endDate]
+		// Условие пересечения: start1 <= end2 AND end1 >= start2
+		conditions = append(conditions, fmt.Sprintf("(d.start_time <= $%d AND COALESCE(d.end_time, NOW()) >= $%d)", argID, argID+1))
+		args = append(args, *endDate, *startDate)
+		argID += 2
+	} else if startDate != nil {
+		// Если задана только начальная дата, ищем все, что началось или продолжалось после нее
+		conditions = append(conditions, fmt.Sprintf("COALESCE(d.end_time, NOW()) >= $%d", argID))
+		args = append(args, *startDate)
+		argID++
+	} else if endDate != nil {
+		// Если задана только конечная дата, ищем все, что началось до нее
+		conditions = append(conditions, fmt.Sprintf("d.start_time <= $%d", argID))
+		args = append(args, *endDate)
+		argID++
+	}
+
+	// Собираем финальный запрос
+	var finalQuery strings.Builder
+	finalQuery.WriteString(baseQuery)
+	if len(conditions) > 0 {
+		finalQuery.WriteString(" WHERE ")
+		finalQuery.WriteString(strings.Join(conditions, " AND "))
+	}
+	finalQuery.WriteString(" ORDER BY d.start_time DESC;")
+
+	// Выполняем запрос
+	rows, err := r.db.QueryContext(ctx, finalQuery.String(), args...)
 	if err != nil {
 		return nil, fmt.Errorf("%s: failed to query discharges: %w", op, err)
 	}
 	defer rows.Close()
 
+	// Сканирование результатов (код остается таким же, как у вас был)
 	var discharges []discharge.Model
 	for rows.Next() {
 		var d discharge.Model
@@ -89,7 +119,7 @@ func (r *Repo) GetAllDischarges(ctx context.Context) ([]discharge.Model, error) 
 		var creator user.ShortInfo
 		var updater user.ShortInfo
 		var orgTypesJSON []byte
-		var updaterID sql.NullInt64 // Используем Null-типы для LEFT JOIN полей
+		var updaterID sql.NullInt64
 		var updaterFIO sql.NullString
 
 		err := rows.Scan(

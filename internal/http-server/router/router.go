@@ -11,6 +11,10 @@ import (
 	signOut "srmt-admin/internal/http-server/handlers/auth/sign-out"
 	"srmt-admin/internal/http-server/handlers/data/analytics"
 	dataSet "srmt-admin/internal/http-server/handlers/data/set"
+	dischargeAdd "srmt-admin/internal/http-server/handlers/discharge/add"
+	dischargeDelete "srmt-admin/internal/http-server/handlers/discharge/delete"
+	dischargePatch "srmt-admin/internal/http-server/handlers/discharge/edit"
+	dischargeGet "srmt-admin/internal/http-server/handlers/discharge/get"
 	catAdd "srmt-admin/internal/http-server/handlers/file/category/add"
 	catGet "srmt-admin/internal/http-server/handlers/file/category/list"
 	fileDelete "srmt-admin/internal/http-server/handlers/file/delete"
@@ -118,6 +122,12 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 			r.Patch("/users/{userID}", usersEdit.New(log, pg))
 			r.Post("/users/{userID}/roles", assignRole.New(log, pg))
 			r.Delete("/users/{userID}/roles/{roleID}", revokeRole.New(log, pg))
+
+			// Discharges (Сбросы)
+			r.Get("/discharges", dischargeGet.New(log, pg))
+			r.Post("/discharges", dischargeAdd.New(log, pg))
+			r.Patch("/discharges/{id}", dischargePatch.New(log, pg))
+			r.Delete("/discharges/{id}", dischargeDelete.New(log, pg))
 		})
 
 		// SC endpoints
