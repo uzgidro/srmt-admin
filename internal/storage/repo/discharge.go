@@ -14,16 +14,18 @@ import (
 )
 
 // AddDischarge создает новую запись о холостом сбросе.
-func (r *Repo) AddDischarge(ctx context.Context, orgID, createdByID int64, startTime time.Time, flowRate float64, reason string) (int64, error) {
-	const op = "storage.repo.AddDischarge"
+func (r *Repo) AddDischarge(ctx context.Context, orgID, createdByID int64, startTime time.Time, endTime *time.Time, flowRate float64, reason string) (int64, error) {
+	const op = "storage.repo.discharge.AddDischarge"
+	// Обновляем запрос, добавляя end_time
 	const query = `
-		INSERT INTO idle_water_discharges (organization_id, start_time, flow_rate_m3_s, reason, created_by)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO idle_water_discharges (organization_id, start_time, end_time, flow_rate_m3_s, reason, created_by)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id
 	`
 
 	var id int64
-	err := r.db.QueryRowContext(ctx, query, orgID, startTime, flowRate, reason, createdByID).Scan(&id)
+	// Обновляем параметры для запроса
+	err := r.db.QueryRowContext(ctx, query, orgID, startTime, endTime, flowRate, reason, createdByID).Scan(&id)
 	if err != nil {
 		if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
 			return 0, translatedErr
@@ -36,7 +38,7 @@ func (r *Repo) AddDischarge(ctx context.Context, orgID, createdByID int64, start
 
 // GetAllDischarges получает список всех сбросов, используя VIEW для вычисления объема.
 func (r *Repo) GetAllDischarges(ctx context.Context) ([]discharge.Model, error) {
-	const op = "storage.repo.GetAllDischarges"
+	const op = "storage.repo.discharge.GetAllDischarges"
 	// Мы запрашиваем данные из VIEW, чтобы получить is_ongoing и total_volume_m3
 	const query = `
 		SELECT
@@ -130,7 +132,7 @@ func (r *Repo) GetAllDischarges(ctx context.Context) ([]discharge.Model, error) 
 // EditDischarge обновляет запись о сбросе.
 // Обновляются только не-nil поля.
 func (r *Repo) EditDischarge(ctx context.Context, id, updatedByID int64, endTime *time.Time, flowRate *float64, reason *string) error {
-	const op = "storage.repo.EditDischarge"
+	const op = "storage.repo.discharge.EditDischarge"
 
 	var query strings.Builder
 	query.WriteString("UPDATE idle_water_discharges SET updated_by = $1, ")
@@ -183,7 +185,7 @@ func (r *Repo) EditDischarge(ctx context.Context, id, updatedByID int64, endTime
 
 // DeleteDischarge удаляет запись о сбросе по ID.
 func (r *Repo) DeleteDischarge(ctx context.Context, id int64) error {
-	const op = "storage.repo.DeleteDischarge"
+	const op = "storage.repo.discharge.DeleteDischarge"
 	const query = "DELETE FROM idle_water_discharges WHERE id = $1"
 
 	res, err := r.db.ExecContext(ctx, query, id)
