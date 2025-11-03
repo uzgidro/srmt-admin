@@ -12,7 +12,7 @@ import (
 )
 
 type OrganizationTypeGetter interface {
-	GetAllOrganizationTypes(ctx context.Context) ([]organization_type.OrganizationType, error)
+	GetAllOrganizationTypes(ctx context.Context) ([]organization_type.Model, error)
 }
 
 func New(log *slog.Logger, getter OrganizationTypeGetter) http.HandlerFunc {

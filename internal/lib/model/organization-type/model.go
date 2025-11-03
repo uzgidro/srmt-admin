@@ -1,6 +1,7 @@
 package organization_type
 
-type OrganizationType struct {
-	ID   string `bson:"_id,omitempty" json:"id"`
-	Name string `bson:"name" json:"name"`
+type Model struct {
+	ID          string `json:"id"`
+	Name        string ` json:"name"`
+	Description string `json:"description"`
 }

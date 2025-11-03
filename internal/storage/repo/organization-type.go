@@ -2,68 +2,132 @@ package repo
 
 import (
 	"context"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo"
+	"fmt"
 	"srmt-admin/internal/lib/model/organization-type"
+	"srmt-admin/internal/storage"
+	"strings"
 )
 
-const organizationTypeCollection = "organization-types"
+// AddOrganizationType добавляет новый тип организации в базу данных.
+func (r *Repo) AddOrganizationType(ctx context.Context, name, description string) (int64, error) {
+	const op = "storage.repo.AddOrganizationType"
+	const query = "INSERT INTO organization_types (name, description) VALUES ($1, $2) RETURNING id"
 
-type OrganizationTypeRepository struct {
-	coll *mongo.Collection
-}
-
-func NewOrganizationTypeRepository(db *mongo.Database) *OrganizationTypeRepository {
-	return &OrganizationTypeRepository{
-		coll: db.Collection(organizationTypeCollection),
-	}
-}
-
-func (r *OrganizationTypeRepository) GetAllOrganizationTypes(ctx context.Context) ([]organization_type.OrganizationType, error) {
-	var organizationTypes []organization_type.OrganizationType
-
-	cur, err := r.coll.Find(ctx, bson.D{})
+	var id int64
+	err := r.db.QueryRowContext(ctx, query, name, description).Scan(&id)
 	if err != nil {
-		return nil, err
+		if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
+			return 0, translatedErr
+		}
+		return 0, fmt.Errorf("%s: failed to execute query: %w", op, err)
 	}
 
-	if err := cur.All(ctx, &organizationTypes); err != nil {
-		return nil, err
-	}
-
-	return organizationTypes, nil
+	return id, nil
 }
 
-func (r *OrganizationTypeRepository) SaveOrganizationType(ctx context.Context, name string) (string, error) {
-	result, err := r.coll.InsertOne(ctx, organization_type.OrganizationType{Name: name})
+// GetAllOrganizationTypes получает список всех типов организаций.
+func (r *Repo) GetAllOrganizationTypes(ctx context.Context) ([]organization_type.Model, error) {
+	const op = "storage.repo.GetAllOrganizationTypes"
+	const query = "SELECT id, name, description FROM organization_types ORDER BY name"
+
+	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
-		return "", err
+		return nil, fmt.Errorf("%s: failed to query organization types: %w", op, err)
+	}
+	defer rows.Close()
+
+	var types []organization_type.Model
+	for rows.Next() {
+		var ot organization_type.Model
+		if err := rows.Scan(&ot.ID, &ot.Name, &ot.Description); err != nil {
+			return nil, fmt.Errorf("%s: failed to scan organization type row: %w", op, err)
+		}
+		types = append(types, ot)
 	}
 
-	return result.InsertedID.(primitive.ObjectID).Hex(), nil
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: rows iteration error: %w", op, err)
+	}
+
+	if types == nil {
+		types = make([]organization_type.Model, 0)
+	}
+
+	return types, nil
 }
 
-func (r *OrganizationTypeRepository) DeleteOrganizationType(ctx context.Context, id string) error {
-	objectID, err := primitive.ObjectIDFromHex(id)
-	if err != nil {
-		return err
+// EditOrganizationType обновляет данные типа организации по его ID.
+// Обновляются только не-nil поля.
+func (r *Repo) EditOrganizationType(ctx context.Context, id int64, name, description *string) error {
+	const op = "storage.repo.EditOrganizationType"
+
+	var query strings.Builder
+	query.WriteString("UPDATE organization_types SET ")
+
+	var args []interface{}
+	var setClauses []string
+	argID := 1
+
+	if name != nil {
+		setClauses = append(setClauses, fmt.Sprintf("name = $%d", argID))
+		args = append(args, *name)
+		argID++
+	}
+	if description != nil {
+		setClauses = append(setClauses, fmt.Sprintf("description = $%d", argID))
+		args = append(args, *description)
+		argID++
 	}
 
-	_, err = r.coll.DeleteOne(ctx, bson.M{"_id": objectID})
-	return err
+	if len(setClauses) == 0 {
+		return nil // Нечего обновлять
+	}
+
+	query.WriteString(strings.Join(setClauses, ", "))
+	query.WriteString(fmt.Sprintf(" WHERE id = $%d", argID))
+	args = append(args, id)
+
+	res, err := r.db.ExecContext(ctx, query.String(), args...)
+	if err != nil {
+		if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
+			return translatedErr
+		}
+		return fmt.Errorf("%s: failed to execute statement: %w", op, err)
+	}
+
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("%s: failed to get affected rows: %w", op, err)
+	}
+	if rowsAffected == 0 {
+		return storage.ErrNotFound
+	}
+
+	return nil
 }
 
-func (r *OrganizationTypeRepository) EditOrganizationType(ctx context.Context, id string, name string) error {
-	objectID, err := primitive.ObjectIDFromHex(id)
+// DeleteOrganizationType удаляет тип организации по его ID.
+func (r *Repo) DeleteOrganizationType(ctx context.Context, id int64) error {
+	const op = "storage.repo.DeleteOrganizationType"
+	const query = "DELETE FROM organization_types WHERE id = $1"
+
+	res, err := r.db.ExecContext(ctx, query, id)
 	if err != nil {
-		return err
+		// Здесь может быть ошибка внешнего ключа, если тип используется
+		if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
+			return translatedErr
+		}
+		return fmt.Errorf("%s: failed to execute statement: %w", op, err)
 	}
 
-	_, err = r.coll.UpdateOne(
-		ctx,
-		bson.M{"_id": objectID},
-		bson.M{"$set": bson.M{"name": name}},
-	)
-	return err
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("%s: failed to get affected rows: %w", op, err)
+	}
+
+	if rowsAffected == 0 {
+		return storage.ErrNotFound
+	}
+
+	return nil
 }
