@@ -154,6 +154,141 @@ func (r *Repo) GetAllDischarges(ctx context.Context, isOngoing *bool, startDate,
 	return discharges, nil
 }
 
+func (r *Repo) GetDischargesByCascades(ctx context.Context, isOngoing *bool, startDate, endDate *time.Time) ([]discharge.Cascade, error) {
+	const op = "storage.repo.discharge.GetDischargesByCascades"
+
+	// 1. SQL-запрос остается таким же, он эффективно получает все нужные данные в плоском виде.
+	// Важнейшая часть - ORDER BY, который группирует строки по каскадам и ГЭС.
+	const query = `
+		SELECT
+			cascade_org.id as cascade_id,
+			cascade_org.name as cascade_name,
+			hpp_org.id as hpp_id,
+			hpp_org.name as hpp_name,
+			d.id, d.start_time, d.end_time, d.flow_rate_m3_s, d.reason, d.approved,
+			d.is_ongoing, d.total_volume_mln_m3,
+			creator.id as creator_id, creator.fio as creator_fio,
+			approver.id as approver_id, approver.fio as approver_fio
+		FROM
+			v_idle_water_discharges_with_volume d
+		JOIN
+			organizations hpp_org ON d.organization_id = hpp_org.id
+		JOIN
+			organizations cascade_org ON hpp_org.parent_organization_id = cascade_org.id
+		JOIN
+			users creator ON d.created_by = creator.id
+		LEFT JOIN
+			users approver ON d.approved_by = approver.id
+	`
+
+	var conditions []string
+	var args []interface{}
+	argID := 1
+
+	// 2. Динамическое добавление фильтров (код без изменений)
+	if isOngoing != nil {
+		conditions = append(conditions, fmt.Sprintf("d.is_ongoing = $%d", argID))
+		args = append(args, *isOngoing)
+		argID++
+	}
+	if startDate != nil && endDate != nil {
+		conditions = append(conditions, fmt.Sprintf("(d.start_time <= $%d AND COALESCE(d.end_time, NOW()) >= $%d)", argID, argID+1))
+		args = append(args, *endDate, *startDate)
+		argID += 2
+	} else if startDate != nil {
+		conditions = append(conditions, fmt.Sprintf("COALESCE(d.end_time, NOW()) >= $%d", argID))
+		args = append(args, *startDate)
+		argID++
+	} else if endDate != nil {
+		conditions = append(conditions, fmt.Sprintf("d.start_time <= $%d", argID))
+		args = append(args, *endDate)
+		argID++
+	}
+
+	var finalQuery strings.Builder
+	finalQuery.WriteString(query)
+	if len(conditions) > 0 {
+		finalQuery.WriteString(" WHERE " + strings.Join(conditions, " AND "))
+	}
+	finalQuery.WriteString(" ORDER BY cascade_name, hpp_name, d.start_time DESC;")
+
+	rows, err := r.db.QueryContext(ctx, finalQuery.String(), args...)
+	if err != nil {
+		return nil, fmt.Errorf("%s: failed to query discharges: %w", op, err)
+	}
+	defer rows.Close()
+
+	// 3. Упрощенная и корректная сборка иерархии
+	var result []discharge.Cascade
+	var currentCascade *discharge.Cascade
+	var currentHPP *discharge.HPP
+
+	for rows.Next() {
+		var cascadeID int64
+		var cascadeName string
+		var hppID int64
+		var hppName string
+		var d discharge.Model
+		var creator user.ShortInfo
+		var approver user.ShortInfo
+		var approverID sql.NullInt64
+		var approverFIO sql.NullString
+
+		err := rows.Scan(
+			&cascadeID, &cascadeName, &hppID, &hppName,
+			&d.ID, &d.StartedAt, &d.EndedAt, &d.FlowRate, &d.Reason, &d.Approved,
+			&d.IsOngoing, &d.TotalVolume,
+			&creator.ID, &creator.FIO,
+			&approverID, &approverFIO,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("%s: failed to scan row: %w", op, err)
+		}
+
+		// Заполняем информацию о пользователях
+		d.CreatedByUser = &creator
+		if approverID.Valid {
+			approver.ID = approverID.Int64
+			approver.FIO = approverFIO.String
+			d.ApprovedByUser = &approver
+		}
+
+		// Если это новый каскад, создаем его и добавляем в результат
+		if currentCascade == nil || currentCascade.ID != cascadeID {
+			result = append(result, discharge.Cascade{
+				ID:   cascadeID,
+				Name: cascadeName,
+				HPPs: []discharge.HPP{},
+			})
+			currentCascade = &result[len(result)-1]
+			currentHPP = nil // Сбрасываем текущую ГЭС при смене каскада
+		}
+
+		// Если это новая ГЭС (в рамках текущего каскада), создаем ее
+		if currentHPP == nil || currentHPP.ID != hppID {
+			currentCascade.HPPs = append(currentCascade.HPPs, discharge.HPP{
+				ID:         hppID,
+				Name:       hppName,
+				Discharges: []discharge.Model{},
+			})
+			currentHPP = &currentCascade.HPPs[len(currentCascade.HPPs)-1]
+		}
+
+		// Добавляем сброс к текущей ГЭС
+		currentHPP.Discharges = append(currentHPP.Discharges, d)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: rows iteration error: %w", op, err)
+	}
+
+	if result == nil {
+		return []discharge.Cascade{}, nil // Возвращаем пустой срез, а не nil
+	}
+
+	return result, nil
+}
+
 // EditDischarge обновляет запись о сбросе.
 // Обновляются только не-nil поля.
 func (r *Repo) EditDischarge(ctx context.Context, id, approvedByID int64, endTime *time.Time, flowRate *float64, reason *string, approved *bool) error {
