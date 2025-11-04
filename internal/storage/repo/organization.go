@@ -70,7 +70,7 @@ func (r *Repo) GetAllOrganizations(ctx context.Context, orgType *string) ([]*org
 	for _, org := range allOrgs {
 		if org.ParentOrganizationID != nil {
 			if parent, ok := orgsMap[*org.ParentOrganizationID]; ok {
-				parent.Children = append(parent.Children, org)
+				parent.Items = append(parent.Items, org)
 			}
 		}
 	}

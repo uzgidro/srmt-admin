@@ -6,5 +6,5 @@ type Model struct {
 	ParentOrganizationID   *int64   `json:"parent_organization_id,omitempty"`
 	ParentOrganizationName *string  `json:"parent_organization,omitempty"`
 	Types                  []string `json:"types"`
-	Children               []*Model `json:"children,omitempty"`
+	Items                  []*Model `json:"items,omitempty"`
 }

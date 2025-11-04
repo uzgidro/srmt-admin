@@ -20,7 +20,7 @@ type Request struct {
 	StartedAt      time.Time  `json:"started_at" validate:"required"`
 	EndedAt        *time.Time `json:"ended_at,omitempty"`
 	FlowRate       float64    `json:"flow_rate" validate:"required,gt=0"`
-	Reason         string     `json:"reason"`
+	Reason         string     `json:"reason" validate:"required"`
 }
 
 type Response struct {
@@ -29,7 +29,6 @@ type Response struct {
 }
 
 type DischargeAdder interface {
-	// Обновляем интерфейс, чтобы он принимал новое поле
 	AddDischarge(ctx context.Context, orgID, createdByID int64, startTime time.Time, endTime *time.Time, flowRate float64, reason string) (int64, error)
 }
 
