@@ -20,10 +20,11 @@ type Request struct {
 	EndedAt  *time.Time `json:"ended_at,omitempty"`
 	FlowRate *float64   `json:"flow_rate,omitempty"`
 	Reason   *string    `json:"reason,omitempty"`
+	Approved *bool      `json:"approved,omitempty"`
 }
 
 type DischargeEditor interface {
-	EditDischarge(ctx context.Context, id, updatedByID int64, endTime *time.Time, flowRate *float64, reason *string) error
+	EditDischarge(ctx context.Context, id, approvedByID int64, endTime *time.Time, flowRate *float64, reason *string, approved *bool) error
 }
 
 func New(log *slog.Logger, editor DischargeEditor) http.HandlerFunc {
@@ -55,7 +56,7 @@ func New(log *slog.Logger, editor DischargeEditor) http.HandlerFunc {
 			return
 		}
 
-		err = editor.EditDischarge(r.Context(), dischargeID, userID, req.EndedAt, req.FlowRate, req.Reason)
+		err = editor.EditDischarge(r.Context(), dischargeID, userID, req.EndedAt, req.FlowRate, req.Reason, req.Approved)
 		if err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
 				log.Warn("discharge not found", "id", dischargeID)

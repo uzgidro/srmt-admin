@@ -43,17 +43,17 @@ func (r *Repo) GetAllDischarges(ctx context.Context, isOngoing *bool, startDate,
 	// Базовый запрос с JOIN'ами
 	baseQuery := `
 		SELECT
-			d.id, d.start_time, d.end_time, d.flow_rate_m3_s, d.reason,
-			d.is_ongoing, d.total_volume_m3,
+			d.id, d.start_time, d.end_time, d.flow_rate_m3_s, d.reason, d.approved, -- <<< ДОБАВЛЕНО d.approved
+			d.is_ongoing, d.total_volume_mln_m3,
 			o.id as org_id, o.name as org_name, o.parent_organization_id as org_parent_id,
 			COALESCE(ot.types_json, '[]'::json) as org_types,
 			creator.id as creator_id, creator.fio as creator_fio,
-			updater.id as updater_id, updater.fio as updater_fio
+			approver.id as approver_id, approver.fio as approver_fio -- <<< ИЗМЕНЕНЫ АЛИАСЫ
 		FROM
 			v_idle_water_discharges_with_volume d
 		JOIN organizations o ON d.organization_id = o.id
 		JOIN users creator ON d.created_by = creator.id
-		LEFT JOIN users updater ON d.updated_by = updater.id
+		LEFT JOIN users approver ON d.approved_by = approver.id -- <<< ИЗМЕНЕН АЛИАС
 		LEFT JOIN (
 			SELECT
 				otl.organization_id,
@@ -77,19 +77,14 @@ func (r *Repo) GetAllDischarges(ctx context.Context, isOngoing *bool, startDate,
 
 	// Фильтр по временному диапазону. Ищем пересечения.
 	if startDate != nil && endDate != nil {
-		// Период сброса [start_time, COALESCE(end_time, NOW())]
-		// Период фильтра [startDate, endDate]
-		// Условие пересечения: start1 <= end2 AND end1 >= start2
 		conditions = append(conditions, fmt.Sprintf("(d.start_time <= $%d AND COALESCE(d.end_time, NOW()) >= $%d)", argID, argID+1))
 		args = append(args, *endDate, *startDate)
 		argID += 2
 	} else if startDate != nil {
-		// Если задана только начальная дата, ищем все, что началось или продолжалось после нее
 		conditions = append(conditions, fmt.Sprintf("COALESCE(d.end_time, NOW()) >= $%d", argID))
 		args = append(args, *startDate)
 		argID++
 	} else if endDate != nil {
-		// Если задана только конечная дата, ищем все, что началось до нее
 		conditions = append(conditions, fmt.Sprintf("d.start_time <= $%d", argID))
 		args = append(args, *endDate)
 		argID++
@@ -111,22 +106,22 @@ func (r *Repo) GetAllDischarges(ctx context.Context, isOngoing *bool, startDate,
 	}
 	defer rows.Close()
 
-	// Сканирование результатов (код остается таким же, как у вас был)
 	var discharges []discharge.Model
 	for rows.Next() {
 		var d discharge.Model
 		var org organization.Model
 		var creator user.ShortInfo
-		var updater user.ShortInfo
+		var approver user.ShortInfo
 		var orgTypesJSON []byte
-		var updaterID sql.NullInt64
-		var updaterFIO sql.NullString
+		var approverID sql.NullInt64 // Используем Null-типы для LEFT JOIN полей
+		var approverFIO sql.NullString
 
 		err := rows.Scan(
-			&d.ID, &d.StartedAt, &d.EndedAt, &d.FlowRate, &d.Reason, &d.IsOngoing, &d.TotalVolume,
+			&d.ID, &d.StartedAt, &d.EndedAt, &d.FlowRate, &d.Reason, &d.Approved,
+			&d.IsOngoing, &d.TotalVolume,
 			&org.ID, &org.Name, &org.ParentOrganizationID, &orgTypesJSON,
 			&creator.ID, &creator.FIO,
-			&updaterID, &updaterFIO,
+			&approverID, &approverFIO, // <<< ИЗМЕНЕНЫ ПЕРЕМЕННЫЕ
 		)
 		if err != nil {
 			return nil, fmt.Errorf("%s: failed to scan discharge row: %w", op, err)
@@ -137,12 +132,12 @@ func (r *Repo) GetAllDischarges(ctx context.Context, isOngoing *bool, startDate,
 		}
 
 		d.Organization = &org
-		d.CreatedBy = &creator
+		d.CreatedByUser = &creator // Предполагается, что в модели поле называется CreatedBy
 
-		if updaterID.Valid {
-			updater.ID = updaterID.Int64
-			updater.FIO = updaterFIO.String
-			d.UpdatedBy = &updater
+		if approverID.Valid {
+			approver.ID = approverID.Int64
+			approver.FIO = approverFIO.String
+			d.ApprovedByUser = &approver // Предполагается, что в модели поле называется ApprovedBy
 		}
 
 		discharges = append(discharges, d)
@@ -161,15 +156,16 @@ func (r *Repo) GetAllDischarges(ctx context.Context, isOngoing *bool, startDate,
 
 // EditDischarge обновляет запись о сбросе.
 // Обновляются только не-nil поля.
-func (r *Repo) EditDischarge(ctx context.Context, id, updatedByID int64, endTime *time.Time, flowRate *float64, reason *string) error {
+func (r *Repo) EditDischarge(ctx context.Context, id, approvedByID int64, endTime *time.Time, flowRate *float64, reason *string, approved *bool) error {
 	const op = "storage.repo.discharge.EditDischarge"
 
 	var query strings.Builder
-	query.WriteString("UPDATE idle_water_discharges SET updated_by = $1, ")
-	args := []interface{}{updatedByID}
-	argID := 2
+	query.WriteString("UPDATE idle_water_discharges SET ")
 
+	var args []interface{}
 	var setClauses []string
+	argID := 1
+
 	if endTime != nil {
 		setClauses = append(setClauses, fmt.Sprintf("end_time = $%d", argID))
 		args = append(args, *endTime)
@@ -185,9 +181,20 @@ func (r *Repo) EditDischarge(ctx context.Context, id, updatedByID int64, endTime
 		args = append(args, *reason)
 		argID++
 	}
+	// Если меняется статус 'approved', также записываем, кто это сделал
+	if approved != nil {
+		setClauses = append(setClauses, fmt.Sprintf("approved = $%d", argID))
+		args = append(args, *approved)
+		argID++
 
+		setClauses = append(setClauses, fmt.Sprintf("approved_by = $%d", argID))
+		args = append(args, approvedByID) // Тот, кто обновляет, тот и утверждает
+		argID++
+	}
+
+	// Если нечего обновлять, выходим
 	if len(setClauses) == 0 {
-		return nil // Нечего обновлять, кроме updated_by, что уже добавлено
+		return nil
 	}
 
 	query.WriteString(strings.Join(setClauses, ", "))
