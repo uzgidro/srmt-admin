@@ -14,7 +14,7 @@ import (
 )
 
 // AddDischarge создает новую запись о холостом сбросе.
-func (r *Repo) AddDischarge(ctx context.Context, orgID, createdByID int64, startTime time.Time, endTime *time.Time, flowRate float64, reason string) (int64, error) {
+func (r *Repo) AddDischarge(ctx context.Context, orgID, createdByID int64, startTime time.Time, endTime *time.Time, flowRate float64, reason *string) (int64, error) {
 	const op = "storage.repo.discharge.AddDischarge"
 	// Обновляем запрос, добавляя end_time
 	const query = `
