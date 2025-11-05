@@ -21,7 +21,7 @@ type Model struct {
 	EndedAt     *time.Time `json:"ended_at"`
 	FlowRate    float64    `json:"flow_rate"`
 	TotalVolume float64    `json:"total_volume"`
-	Reason      string     `json:"reason"`
+	Reason      *string    `json:"reason"`
 	IsOngoing   bool       `json:"is_ongoing"`
 	Approved    *bool      `json:"approved"`
 }
