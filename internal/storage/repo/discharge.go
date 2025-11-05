@@ -136,7 +136,7 @@ func (r *Repo) GetAllDischarges(ctx context.Context, isOngoing *bool, startDate,
 
 		if approverID.Valid {
 			approver.ID = approverID.Int64
-			approver.FIO = approverFIO.String
+			approver.FIO = &approverFIO.String
 			d.ApprovedByUser = &approver // Предполагается, что в модели поле называется ApprovedBy
 		}
 
@@ -249,7 +249,7 @@ func (r *Repo) GetDischargesByCascades(ctx context.Context, isOngoing *bool, sta
 		d.CreatedByUser = &creator
 		if approverID.Valid {
 			approver.ID = approverID.Int64
-			approver.FIO = approverFIO.String
+			approver.FIO = &approverFIO.String
 			d.ApprovedByUser = &approver
 		}
 

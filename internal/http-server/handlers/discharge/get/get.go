@@ -14,7 +14,7 @@ import (
 )
 
 type DischargeGetter interface {
-	GetAllDischarges(ctx context.Context, isOngoing *bool, startDate, endDate *time.Time) ([]discharge.Model, error)
+	GetDischargesByCascades(ctx context.Context, isOngoing *bool, startDate, endDate *time.Time) ([]discharge.Cascade, error)
 }
 
 func New(log *slog.Logger, getter DischargeGetter) http.HandlerFunc {
@@ -63,7 +63,7 @@ func New(log *slog.Logger, getter DischargeGetter) http.HandlerFunc {
 		}
 
 		// 2. Вызываем метод репозитория с фильтрами
-		discharges, err := getter.GetAllDischarges(r.Context(), isOngoing, startDate, endDate)
+		discharges, err := getter.GetDischargesByCascades(r.Context(), isOngoing, startDate, endDate)
 		if err != nil {
 			log.Error("failed to get all discharges", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)
