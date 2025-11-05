@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"math"
 	"srmt-admin/internal/lib/model/discharge"
 	"srmt-admin/internal/lib/model/organization"
 	"srmt-admin/internal/lib/model/user"
@@ -245,11 +246,14 @@ func (r *Repo) GetDischargesByCascades(ctx context.Context, isOngoing *bool, sta
 			return nil, fmt.Errorf("%s: failed to scan row: %w", op, err)
 		}
 
-		// Заполняем информацию о пользователях
 		d.CreatedByUser = &creator
 		if approverID.Valid {
 			approver.ID = approverID.Int64
-			approver.FIO = &approverFIO.String
+			if approverFIO.Valid {
+				approver.FIO = &approverFIO.String
+			} else {
+				approver.FIO = nil
+			}
 			d.ApprovedByUser = &approver
 		}
 
@@ -259,6 +263,7 @@ func (r *Repo) GetDischargesByCascades(ctx context.Context, isOngoing *bool, sta
 				ID:   cascadeID,
 				Name: cascadeName,
 				HPPs: []discharge.HPP{},
+				// TotalVolume будет 0.0 (zero value), что нам и нужно
 			})
 			currentCascade = &result[len(result)-1]
 			currentHPP = nil // Сбрасываем текущую ГЭС при смене каскада
@@ -270,11 +275,16 @@ func (r *Repo) GetDischargesByCascades(ctx context.Context, isOngoing *bool, sta
 				ID:         hppID,
 				Name:       hppName,
 				Discharges: []discharge.Model{},
+				// TotalVolume будет 0.0 (zero value)
 			})
 			currentHPP = &currentCascade.HPPs[len(currentCascade.HPPs)-1]
 		}
 
-		// Добавляем сброс к текущей ГЭС
+		currentHPP.TotalVolume += d.TotalVolume
+		currentCascade.TotalVolume += d.TotalVolume
+
+		d.TotalVolume = roundToTwo(d.TotalVolume)
+
 		currentHPP.Discharges = append(currentHPP.Discharges, d)
 	}
 
@@ -282,8 +292,15 @@ func (r *Repo) GetDischargesByCascades(ctx context.Context, isOngoing *bool, sta
 		return nil, fmt.Errorf("%s: rows iteration error: %w", op, err)
 	}
 
+	for i := range result {
+		for j := range result[i].HPPs {
+			result[i].HPPs[j].TotalVolume = roundToTwo(result[i].HPPs[j].TotalVolume)
+		}
+		result[i].TotalVolume = roundToTwo(result[i].TotalVolume)
+	}
+
 	if result == nil {
-		return []discharge.Cascade{}, nil // Возвращаем пустой срез, а не nil
+		return []discharge.Cascade{}, nil
 	}
 
 	return result, nil
@@ -377,4 +394,8 @@ func (r *Repo) DeleteDischarge(ctx context.Context, id int64) error {
 	}
 
 	return nil
+}
+
+func roundToTwo(val float64) float64 {
+	return math.Round(val*100) / 100
 }
