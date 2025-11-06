@@ -15,7 +15,7 @@ type Model struct {
 
 	Organization   *organization.Model `json:"organization"`
 	CreatedByUser  *user.ShortInfo     `json:"created_by"`
-	ApprovedByUser *user.ShortInfo     `json:"updated_by,omitempty"`
+	ApprovedByUser *user.ShortInfo     `json:"approved_by"`
 
 	StartedAt   time.Time  `json:"started_at"`
 	EndedAt     *time.Time `json:"ended_at"`

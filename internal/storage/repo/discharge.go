@@ -231,7 +231,7 @@ func (r *Repo) GetDischargesByCascades(ctx context.Context, isOngoing *bool, sta
 		var hppName string
 		var d discharge.Model
 		var creator user.ShortInfo
-		var approver user.ShortInfo
+		//var approver user.ShortInfo
 		var approverID sql.NullInt64
 		var approverFIO sql.NullString
 
@@ -246,15 +246,24 @@ func (r *Repo) GetDischargesByCascades(ctx context.Context, isOngoing *bool, sta
 			return nil, fmt.Errorf("%s: failed to scan row: %w", op, err)
 		}
 
-		d.CreatedByUser = &creator
+		d.Organization = &organization.Model{
+			ID:   hppID,
+			Name: hppName,
+		}
+
+		d.CreatedByUser = &user.ShortInfo{
+			ID:  creator.ID,
+			FIO: creator.FIO,
+		}
+
 		if approverID.Valid {
-			approver.ID = approverID.Int64
+			approver := &user.ShortInfo{
+				ID: approverID.Int64,
+			}
 			if approverFIO.Valid {
 				approver.FIO = &approverFIO.String
-			} else {
-				approver.FIO = nil
 			}
-			d.ApprovedByUser = &approver
+			d.ApprovedByUser = approver
 		}
 
 		// Если это новый каскад, создаем его и добавляем в результат
