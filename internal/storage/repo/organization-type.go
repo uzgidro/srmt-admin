@@ -9,7 +9,7 @@ import (
 )
 
 // AddOrganizationType добавляет новый тип организации в базу данных.
-func (r *Repo) AddOrganizationType(ctx context.Context, name, description string) (int64, error) {
+func (r *Repo) AddOrganizationType(ctx context.Context, name string, description *string) (int64, error) {
 	const op = "storage.repo.AddOrganizationType"
 	const query = "INSERT INTO organization_types (name, description) VALUES ($1, $2) RETURNING id"
 
@@ -107,7 +107,7 @@ func (r *Repo) EditOrganizationType(ctx context.Context, id int64, name, descrip
 }
 
 // DeleteOrganizationType удаляет тип организации по его ID.
-func (r *Repo) DeleteOrganizationType(ctx context.Context, id int64) error {
+func (r *Repo) DeleteOrganizationType(ctx context.Context, id string) error {
 	const op = "storage.repo.DeleteOrganizationType"
 	const query = "DELETE FROM organization_types WHERE id = $1"
 

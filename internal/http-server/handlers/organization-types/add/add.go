@@ -9,10 +9,12 @@ import (
 	"net/http"
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
+	"strconv"
 )
 
 type Request struct {
-	Name string `json:"name" validate:"required"`
+	Name        string  `json:"name" validate:"required"`
+	Description *string `json:"description,omitempty"`
 }
 
 type Response struct {
@@ -21,7 +23,7 @@ type Response struct {
 }
 
 type OrganizationTypeSaver interface {
-	SaveOrganizationType(ctx context.Context, name string) (string, error)
+	AddOrganizationType(ctx context.Context, name string, description *string) (int64, error)
 }
 
 func New(log *slog.Logger, saver OrganizationTypeSaver) http.HandlerFunc {
@@ -49,18 +51,18 @@ func New(log *slog.Logger, saver OrganizationTypeSaver) http.HandlerFunc {
 			return
 		}
 
-		id, err := saver.SaveOrganizationType(r.Context(), req.Name)
+		id, err := saver.AddOrganizationType(r.Context(), req.Name, req.Description)
 		if err != nil {
 			log.Error("failed to save organization type", sl.Err(err))
 			render.JSON(w, r, resp.InternalServerError("failed to save organization type"))
 			return
 		}
 
-		log.Info("organization type saved", slog.String("id", id))
+		log.Info("organization type saved", slog.String("id", strconv.FormatInt(id, 10)))
 
 		render.JSON(w, r, Response{
 			Response: resp.OK(),
-			ID:       id,
+			ID:       strconv.FormatInt(id, 10),
 		})
 	}
 }

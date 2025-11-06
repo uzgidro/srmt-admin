@@ -22,6 +22,9 @@ import (
 	"srmt-admin/internal/http-server/handlers/file/latest"
 	"srmt-admin/internal/http-server/handlers/file/upload"
 	setIndicator "srmt-admin/internal/http-server/handlers/indicators/set"
+	orgTypeAdd "srmt-admin/internal/http-server/handlers/organization-types/add"
+	orgTypeDelete "srmt-admin/internal/http-server/handlers/organization-types/delete"
+	orgTypeGet "srmt-admin/internal/http-server/handlers/organization-types/get"
 	orgAdd "srmt-admin/internal/http-server/handlers/organizations/add"
 	orgDelete "srmt-admin/internal/http-server/handlers/organizations/delete"
 	orgPatch "srmt-admin/internal/http-server/handlers/organizations/edit"
@@ -93,6 +96,10 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 		r.Use(mwauth.Authenticator(token))
 
 		r.Get("/auth/me", me.New(log))
+
+		r.Get("/organization-type", orgTypeGet.New(log, pg))
+		r.Post("/organization-type", orgTypeAdd.New(log, pg))
+		r.Delete("/organization-type/{id}", orgTypeDelete.New(log, pg))
 
 		// Admin routes
 		r.Group(func(r chi.Router) {
