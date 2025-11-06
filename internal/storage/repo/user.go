@@ -14,7 +14,7 @@ import (
 func (r *Repo) AddUser(ctx context.Context, name, passHash string) (int64, error) {
 	const op = "storage.user.AddUser"
 
-	query := `INSERT INTO users (name, pass_hash) VALUES ($1, $2) RETURNING id`
+	query := `INSERT INTO users (login, pass_hash) VALUES ($1, $2) RETURNING id`
 
 	var id int64
 	if err := r.db.QueryRowContext(ctx, query, name, passHash).Scan(&id); err != nil {
@@ -33,7 +33,7 @@ func (r *Repo) GetAllUsers(ctx context.Context) ([]user.Model, error) {
 	const query = `
 		SELECT
 			u.id,
-			u.name,
+			u.login,
 			COALESCE(r.roles_json, '[]'::json) as roles_json
 		FROM
 			users u
@@ -49,7 +49,7 @@ func (r *Repo) GetAllUsers(ctx context.Context) ([]user.Model, error) {
 				ur.user_id
 		) r ON u.id = r.user_id
 		ORDER BY
-			u.name;
+			u.login;
 	`
 
 	rows, err := r.db.QueryContext(ctx, query)
@@ -91,7 +91,7 @@ func (r *Repo) GetUserByName(ctx context.Context, name string) (user.Model, erro
 	const query = `
 		SELECT
 			u.id,
-			u.name,
+			u.login,
 			u.pass_hash,
 			-- COALESCE нужен, чтобы вернуть пустой массив '[]', если у пользователя нет ролей, вместо NULL.
 			COALESCE(
@@ -104,7 +104,7 @@ func (r *Repo) GetUserByName(ctx context.Context, name string) (user.Model, erro
 		FROM
 			users u
 		WHERE
-			u.name = $1
+			u.login = $1
 	`
 
 	row := r.db.QueryRowContext(ctx, query, name)
@@ -132,7 +132,7 @@ func (r *Repo) GetUserByID(ctx context.Context, id int64) (user.Model, error) {
 	const query = `
 		SELECT
 			u.id,
-			u.name,
+			u.login,
 			u.pass_hash,
 			-- COALESCE нужен, чтобы вернуть пустой массив '[]', если у пользователя нет ролей, вместо NULL.
 			COALESCE(
@@ -171,7 +171,7 @@ func (r *Repo) GetUsersByRole(ctx context.Context, roleID int64) ([]user.Model, 
 	const op = "storage.user.GetUserByRole"
 
 	const query = `
-		SELECT u.id, u.name FROM users u
+		SELECT u.id, u.login FROM users u
 		JOIN users_roles ur ON u.id = ur.user_id
 		WHERE ur.role_id = $1
 	`
