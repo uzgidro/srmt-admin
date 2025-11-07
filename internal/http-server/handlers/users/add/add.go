@@ -30,8 +30,9 @@ type newContactRequest struct {
 
 // Request - DTO хендлера (гибридный)
 type Request struct {
-	Login    string `json:"login" validate:"required"`
-	Password string `json:"password" validate:"required,min=8"`
+	Login    string  `json:"login" validate:"required"`
+	Password string  `json:"password" validate:"required,min=8"`
+	Roles    []int64 `json:"role_ids" validate:"required,min=1"`
 
 	// XOR: Либо `contact_id`, либо `contact`
 	ContactID *int64             `json:"contact_id,omitempty" validate:"omitempty,gt=0"`
@@ -48,6 +49,7 @@ type UserLinker interface {
 	AddUser(ctx context.Context, login string, passwordHash []byte, contactID int64) (int64, error)
 	IsContactLinked(ctx context.Context, contactID int64) (bool, error)
 	AddContact(ctx context.Context, req dto.AddContactRequest) (int64, error)
+	AssignRolesToUser(ctx context.Context, userID int64, roleIDs []int64) error
 }
 
 // New - Фабрика хендлера
@@ -186,6 +188,13 @@ func New(log *slog.Logger, userRepo UserLinker) http.HandlerFunc {
 				render.JSON(w, r, resp.InternalServerError("Failed to add user"))
 				return
 			}
+		}
+
+		if err := userRepo.AssignRolesToUser(r.Context(), newUserID, req.Roles); err != nil {
+			log.Info("failed to assign role to user", sl.Err(err))
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, resp.InternalServerError("failed to assign role to user"))
+			return
 		}
 
 		log.Info("user added", slog.Int64("id", newUserID))

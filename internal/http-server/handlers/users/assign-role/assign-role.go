@@ -15,11 +15,11 @@ import (
 )
 
 type Request struct {
-	RoleID int64 `json:"role_id" validate:"required"`
+	RoleIDs []int64 `json:"role_ids" validate:"required"`
 }
 
 type RoleAssigner interface {
-	AssignRole(ctx context.Context, userID, roleID int64) error
+	AssignRolesToUser(ctx context.Context, userID int64, roleIDs []int64) error
 }
 
 func New(log *slog.Logger, roleAssigner RoleAssigner) http.HandlerFunc {
@@ -47,10 +47,10 @@ func New(log *slog.Logger, roleAssigner RoleAssigner) http.HandlerFunc {
 			return
 		}
 
-		err = roleAssigner.AssignRole(r.Context(), userID, req.RoleID)
+		err = roleAssigner.AssignRolesToUser(r.Context(), userID, req.RoleIDs)
 		if err != nil {
 			if errors.Is(err, storage.ErrForeignKeyViolation) {
-				log.Warn("user or role not found", "user_id", userID, "role_id", req.RoleID)
+				log.Warn("user or role not found", "user_id", userID, "role_id", req.RoleIDs)
 				render.Status(r, http.StatusBadRequest)
 				render.JSON(w, r, resp.NotFound("user or role not found"))
 				return
@@ -61,7 +61,7 @@ func New(log *slog.Logger, roleAssigner RoleAssigner) http.HandlerFunc {
 			return
 		}
 
-		log.Info("role assigned successfully", "user_id", userID, "role_id", req.RoleID)
+		log.Info("role assigned successfully", "user_id", userID, "role_id", req.RoleIDs)
 
 		render.Status(r, http.StatusNoContent)
 	}
