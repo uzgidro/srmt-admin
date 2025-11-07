@@ -9,6 +9,11 @@ import (
 	"srmt-admin/internal/http-server/handlers/auth/refresh"
 	signIn "srmt-admin/internal/http-server/handlers/auth/sign-in"
 	signOut "srmt-admin/internal/http-server/handlers/auth/sign-out"
+	contactAdd "srmt-admin/internal/http-server/handlers/contacts/add"
+	contactDelete "srmt-admin/internal/http-server/handlers/contacts/delete"
+	contactEdit "srmt-admin/internal/http-server/handlers/contacts/edit"
+	contactGetAll "srmt-admin/internal/http-server/handlers/contacts/get-all"
+	contactGetById "srmt-admin/internal/http-server/handlers/contacts/get-by-id"
 	"srmt-admin/internal/http-server/handlers/data/analytics"
 	dataSet "srmt-admin/internal/http-server/handlers/data/set"
 	departmentAdd "srmt-admin/internal/http-server/handlers/department/add"
@@ -117,6 +122,13 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 		r.Post("/organizations", orgAdd.New(log, pg))
 		r.Patch("/organizations/{id}", orgPatch.New(log, pg))
 		r.Delete("/organizations/{id}", orgDelete.New(log, pg))
+
+		// Contacts
+		r.Get("/contacts", contactGetAll.New(log, pg))
+		r.Get("/contacts/{id}", contactGetById.New(log, pg))
+		r.Post("/contacts", contactAdd.New(log, pg))
+		r.Patch("/contacts/{id}", contactEdit.New(log, pg))
+		r.Delete("/contacts/{id}", contactDelete.New(log, pg))
 
 		// Admin routes
 		r.Group(func(r chi.Router) {
