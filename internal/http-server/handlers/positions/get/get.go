@@ -12,17 +12,15 @@ import (
 )
 
 type PositionGetter interface {
-	GetAllPositions(ctx context.Context) ([]position.Model, error)
+	GetAllPositions(ctx context.Context) ([]*position.Model, error)
 }
 
 func New(log *slog.Logger, getter PositionGetter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		const op = "handlers.positions.get.New"
-		log := log.With(
-			slog.String("op", op),
-			slog.String("request_id", middleware.GetReqID(r.Context())),
-		)
+		const op = "handlers.position.get_all.New"
+		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
 
+		// 1. Вызываем метод репозитория (фильтров нет)
 		positions, err := getter.GetAllPositions(r.Context())
 		if err != nil {
 			log.Error("failed to get all positions", sl.Err(err))
@@ -31,8 +29,7 @@ func New(log *slog.Logger, getter PositionGetter) http.HandlerFunc {
 			return
 		}
 
-		log.Info("successfully retrieved all positions", slog.Int("count", len(positions)))
-
+		log.Info("successfully retrieved positions", slog.Int("count", len(positions)))
 		render.JSON(w, r, positions)
 	}
 }

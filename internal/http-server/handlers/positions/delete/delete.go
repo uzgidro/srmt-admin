@@ -20,26 +20,30 @@ type PositionDeleter interface {
 
 func New(log *slog.Logger, deleter PositionDeleter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		const op = "handlers.positions.delete.New"
-		log := log.With(
-			slog.String("op", op),
-			slog.String("request_id", middleware.GetReqID(r.Context())),
-		)
+		const op = "handlers.position.delete.New"
+		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
 
-		positionID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+		idStr := chi.URLParam(r, "id")
+		id, err := strconv.ParseInt(idStr, 10, 64)
 		if err != nil {
-			log.Warn("invalid position ID format", sl.Err(err))
+			log.Warn("invalid 'id' parameter", sl.Err(err))
 			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, resp.BadRequest("Invalid position ID"))
+			render.JSON(w, r, resp.BadRequest("Invalid 'id' parameter, must be a number"))
 			return
 		}
 
-		err = deleter.DeletePosition(r.Context(), positionID)
+		err = deleter.DeletePosition(r.Context(), id)
 		if err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
-				log.Warn("position not found, nothing to delete", "id", positionID)
+				log.Warn("position not found", slog.Int64("id", id))
 				render.Status(r, http.StatusNotFound)
 				render.JSON(w, r, resp.NotFound("Position not found"))
+				return
+			}
+			if errors.Is(err, storage.ErrForeignKeyViolation) {
+				log.Warn("position has dependencies", slog.Int64("id", id))
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest("Cannot delete position: it is in use by contacts"))
 				return
 			}
 			log.Error("failed to delete position", sl.Err(err))
@@ -48,7 +52,7 @@ func New(log *slog.Logger, deleter PositionDeleter) http.HandlerFunc {
 			return
 		}
 
-		log.Info("position deleted successfully", slog.Int64("id", positionID))
+		log.Info("position deleted", slog.Int64("id", id))
 		render.Status(r, http.StatusNoContent)
 	}
 }

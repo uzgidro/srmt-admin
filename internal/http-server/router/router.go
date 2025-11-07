@@ -112,6 +112,12 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 		r.Patch("/department/{id}", departmentEdit.New(log, pg))
 		r.Delete("/department/{id}", departmentDelete.New(log, pg))
 
+		// Organizations
+		r.Get("/organizations", orgGet.New(log, pg))
+		r.Post("/organizations", orgAdd.New(log, pg))
+		r.Patch("/organizations/{id}", orgPatch.New(log, pg))
+		r.Delete("/organizations/{id}", orgDelete.New(log, pg))
+
 		// Admin routes
 		r.Group(func(r chi.Router) {
 			r.Use(mwauth.AdminOnly)
@@ -165,12 +171,6 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 
 			r.Get("/files/latest", latest.New(log, pg, minioClient))
 			r.Get("/files/{fileID}/download", download.New(log, pg, minioClient))
-
-			// Organizations
-			r.Get("/organizations", orgGet.New(log, pg))
-			r.Post("/organizations", orgAdd.New(log, pg))
-			r.Patch("/organizations/{id}", orgPatch.New(log, pg))
-			r.Delete("/organizations/{id}", orgDelete.New(log, pg))
 
 			// Discharges (Сбросы)
 			r.Get("/discharges", dischargeGet.New(log, pg))

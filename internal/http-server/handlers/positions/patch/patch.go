@@ -19,56 +19,65 @@ type Request struct {
 	Description *string `json:"description,omitempty"`
 }
 
-type PositionEditor interface {
-	EditPosition(ctx context.Context, id int64, name, description *string) error
+// PositionUpdater - интерфейс для обновления
+type PositionUpdater interface {
+	EditPosition(ctx context.Context, id int64, name *string, description *string) error
 }
 
-func New(log *slog.Logger, editor PositionEditor) http.HandlerFunc {
+func New(log *slog.Logger, updater PositionUpdater) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		const op = "handlers.positions.patch.New"
-		log := log.With(
-			slog.String("op", op),
-			slog.String("request_id", middleware.GetReqID(r.Context())),
-		)
+		const op = "handlers.position.update.New"
+		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
 
-		// Получаем ID из URL
-		positionID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+		// 1. Получаем ID из URL
+		idStr := chi.URLParam(r, "id")
+		id, err := strconv.ParseInt(idStr, 10, 64)
 		if err != nil {
-			log.Warn("invalid position ID format", sl.Err(err))
+			log.Warn("invalid 'id' parameter", sl.Err(err))
 			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, resp.BadRequest("Invalid position ID"))
+			render.JSON(w, r, resp.BadRequest("Invalid 'id' parameter, must be a number"))
 			return
 		}
 
+		// 2. Декодируем JSON
 		var req Request
 		if err := render.DecodeJSON(r.Body, &req); err != nil {
-			log.Error("failed to decode request body", sl.Err(err))
+			log.Error("failed to decode request", sl.Err(err))
 			render.Status(r, http.StatusBadRequest)
 			render.JSON(w, r, resp.BadRequest("Invalid request format"))
 			return
 		}
 
-		err = editor.EditPosition(r.Context(), positionID, req.Name, req.Description)
+		// 3. Валидация (если имя передано, оно не должно быть пустым)
+		if req.Name != nil && *req.Name == "" {
+			log.Warn("validation failed: name is empty")
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, resp.BadRequest("Name cannot be empty"))
+			return
+		}
+
+		// 4. Вызываем метод репозитория
+		err = updater.EditPosition(r.Context(), id, req.Name, req.Description)
 		if err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
-				log.Warn("position not found", "id", positionID)
+				log.Warn("position not found", slog.Int64("id", id))
 				render.Status(r, http.StatusNotFound)
 				render.JSON(w, r, resp.NotFound("Position not found"))
 				return
 			}
 			if errors.Is(err, storage.ErrDuplicate) {
-				log.Warn("position name conflict", "name", *req.Name)
-				render.Status(r, http.StatusConflict)
-				render.JSON(w, r, resp.Conflict("Position with this name already exists"))
+				log.Warn("position name duplicate")
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest("Position with this name already exists"))
 				return
 			}
-			log.Error("failed to edit position", sl.Err(err))
+			log.Error("failed to update position", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)
-			render.JSON(w, r, resp.InternalServerError("Failed to edit position"))
+			render.JSON(w, r, resp.InternalServerError("Failed to update position"))
 			return
 		}
 
-		log.Info("position updated successfully", slog.Int64("id", positionID))
-		render.Status(r, http.StatusNoContent)
+		log.Info("position updated", slog.Int64("id", id))
+		render.JSON(w, r, resp.OK())
 	}
 }

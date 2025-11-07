@@ -2,34 +2,46 @@ package repo
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
+	"github.com/lib/pq"
 	"srmt-admin/internal/lib/model/position"
 	"srmt-admin/internal/storage"
 	"strings"
 )
 
-func (r *Repo) AddPosition(ctx context.Context, name, description string) (int64, error) {
-	const op = "storage.repo.position.AddPosition"
-	const query = "INSERT INTO positions (name, description) VALUES ($1, $2) RETURNING id"
+func (r *Repo) AddPosition(ctx context.Context, name string, description *string) (int64, error) {
+	const op = "storage.repo.AddPosition"
+
+	const query = `
+		INSERT INTO positions (name, description)
+		VALUES ($1, $2)
+		RETURNING id`
 
 	var id int64
-	// Используем QueryRowContext, так как ожидаем одну строку в ответ (RETURNING id)
 	err := r.db.QueryRowContext(ctx, query, name, description).Scan(&id)
 	if err != nil {
-		// Проверяем на специфические ошибки БД, например, нарушение UNIQUE constraint
-		if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
-			return 0, translatedErr
+		var pqErr *pq.Error
+		if errors.As(err, &pqErr) {
+			if pqErr.Code.Name() == "unique_violation" { // (UNIQUE(name))
+				return 0, storage.ErrDuplicate
+			}
 		}
-		// Возвращаем общую ошибку, если трансляция не удалась
-		return 0, fmt.Errorf("%s: failed to execute query: %w", op, err)
+		return 0, fmt.Errorf("%s: failed to insert position: %w", op, err)
 	}
 
 	return id, nil
 }
 
-func (r *Repo) GetAllPositions(ctx context.Context) ([]position.Model, error) {
-	const op = "storage.repo.position.GetAllPositions"
-	const query = "SELECT id, name, description FROM positions ORDER BY name"
+// GetAllPositions реализует интерфейс handlers.position.get_all.PositionGetter
+func (r *Repo) GetAllPositions(ctx context.Context) ([]*position.Model, error) {
+	const op = "storage.repo.GetAllPositions"
+
+	const query = `
+		SELECT id, name, description, created_at, updated_at
+		FROM positions
+		ORDER BY name`
 
 	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
@@ -37,83 +49,98 @@ func (r *Repo) GetAllPositions(ctx context.Context) ([]position.Model, error) {
 	}
 	defer rows.Close()
 
-	var positions []position.Model
+	var positions []*position.Model
 	for rows.Next() {
-		var p position.Model
-		if err := rows.Scan(&p.ID, &p.Name, &p.Description); err != nil {
-			return nil, fmt.Errorf("%s: failed to scan position row: %w", op, err)
+		var pos position.Model
+		var desc sql.NullString // Для nullable description
+		if err := rows.Scan(
+			&pos.ID,
+			&pos.Name,
+			&desc, // Сначала в NullString
+			&pos.CreatedAt,
+			&pos.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("%s: failed to scan position: %w", op, err)
 		}
-		positions = append(positions, p)
+		if desc.Valid {
+			pos.Description = &desc.String // Потом в *string
+		}
+		positions = append(positions, &pos)
 	}
 
 	if err = rows.Err(); err != nil {
 		return nil, fmt.Errorf("%s: rows iteration error: %w", op, err)
 	}
 
-	// Возвращаем пустой срез, а не nil, если должностей нет. Это лучшая практика.
 	if positions == nil {
-		positions = make([]position.Model, 0)
+		positions = make([]*position.Model, 0) // Возвращаем '[]' вместо 'null'
 	}
 
 	return positions, nil
 }
 
-func (r *Repo) EditPosition(ctx context.Context, id int64, name, description *string) error {
-	const op = "storage.repo.position.EditPosition"
+// EditPosition реализует интерфейс handlers.position.update.PositionUpdater
+func (r *Repo) EditPosition(ctx context.Context, id int64, name *string, description *string) error {
+	const op = "storage.repo.EditPosition"
 
-	var query strings.Builder
-	query.WriteString("UPDATE positions SET ")
-
+	var updates []string
 	var args []interface{}
-	var setClauses []string
 	argID := 1
 
 	if name != nil {
-		setClauses = append(setClauses, fmt.Sprintf("name = $%d", argID))
+		updates = append(updates, fmt.Sprintf("name = $%d", argID))
 		args = append(args, *name)
 		argID++
 	}
 	if description != nil {
-		setClauses = append(setClauses, fmt.Sprintf("description = $%d", argID))
+		updates = append(updates, fmt.Sprintf("description = $%d", argID))
 		args = append(args, *description)
 		argID++
 	}
 
-	// Если нечего обновлять, просто выходим
-	if len(setClauses) == 0 {
-		return nil
+	if len(updates) == 0 {
+		return nil // Нечего обновлять
 	}
 
-	query.WriteString(strings.Join(setClauses, ", "))
-	query.WriteString(fmt.Sprintf(" WHERE id = $%d", argID))
+	// (У таблицы positions должен быть триггер на updated_at)
+
+	query := fmt.Sprintf("UPDATE positions SET %s WHERE id = $%d",
+		strings.Join(updates, ", "),
+		argID,
+	)
 	args = append(args, id)
 
-	res, err := r.db.ExecContext(ctx, query.String(), args...)
+	res, err := r.db.ExecContext(ctx, query, args...)
 	if err != nil {
-		if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
-			return translatedErr
+		var pqErr *pq.Error
+		if errors.As(err, &pqErr) {
+			if pqErr.Code.Name() == "unique_violation" {
+				return storage.ErrDuplicate
+			}
 		}
-		return fmt.Errorf("%s: failed to execute statement: %w", op, err)
+		return fmt.Errorf("%s: failed to update position: %w", op, err)
 	}
 
-	rowsAffected, err := res.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("%s: failed to get affected rows: %w", op, err)
-	}
+	rowsAffected, _ := res.RowsAffected()
 	if rowsAffected == 0 {
-		return storage.ErrNotFound // Используем вашу стандартную ошибку "не найдено"
+		return storage.ErrNotFound
 	}
 
 	return nil
 }
 
+// DeletePosition реализует интерфейс handlers.position.delete.PositionDeleter
 func (r *Repo) DeletePosition(ctx context.Context, id int64) error {
-	const op = "storage.repo.position.DeletePosition"
-	const query = "DELETE FROM positions WHERE id = $1"
+	const op = "storage.repo.DeletePosition"
 
-	res, err := r.db.ExecContext(ctx, query, id)
+	res, err := r.db.ExecContext(ctx, "DELETE FROM positions WHERE id = $1", id)
 	if err != nil {
-		return fmt.Errorf("%s: failed to execute statement: %w", op, err)
+		var pqErr *pq.Error
+		if errors.As(err, &pqErr) && pqErr.Code.Name() == "foreign_key_violation" {
+			// (ON DELETE RESTRICT - не даст удалить, если используется в contacts)
+			return storage.ErrForeignKeyViolation
+		}
+		return fmt.Errorf("%s: failed to delete position: %w", op, err)
 	}
 
 	rowsAffected, err := res.RowsAffected()
