@@ -1,4 +1,4 @@
-CREATE TABLE reservoir_device_summary (
+CREATE TABLE IF NOT EXISTS reservoir_device_summary (
                                         id BIGSERIAL PRIMARY KEY,
 
                                         organization_id BIGINT NOT NULL REFERENCES Organizations(id) ON DELETE RESTRICT,
@@ -35,4 +35,4 @@ CREATE TRIGGER set_timestamp
 EXECUTE FUNCTION trigger_set_timestamp();
 
 -- --- 3. Индексы ---
-CREATE INDEX idx_reservoir_device_summary_org_id ON reservoir_device_summary(organization_id);
+CREATE INDEX IF NOT EXISTS idx_reservoir_device_summary_org_id ON reservoir_device_summary(organization_id);
