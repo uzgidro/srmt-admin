@@ -28,11 +28,11 @@ type Response struct {
 }
 
 type UserGetter interface {
-	GetUserByName(ctx context.Context, name string) (user.Model, error)
+	GetUserByLogin(ctx context.Context, login string) (*user.Model, string, error)
 }
 
 type TokenCreator interface {
-	Create(u user.Model) (token.Pair, error)
+	Create(u *user.Model) (token.Pair, error)
 	GetRefreshTTL() time.Duration
 }
 
@@ -72,7 +72,7 @@ func New(log *slog.Logger, userGetter UserGetter, tokenCreator TokenCreator) htt
 		}
 
 		// get user
-		u, err := userGetter.GetUserByName(r.Context(), req.Name)
+		u, pass, err := userGetter.GetUserByLogin(r.Context(), req.Name)
 		if err != nil {
 			if errors.Is(err, storage.ErrUserNotFound) {
 				log.Warn("user not found", slog.String("name", req.Name))
@@ -86,7 +86,7 @@ func New(log *slog.Logger, userGetter UserGetter, tokenCreator TokenCreator) htt
 		}
 
 		// check password
-		if err := bcrypt.CompareHashAndPassword([]byte(u.PassHash), []byte(req.Password)); err != nil {
+		if err := bcrypt.CompareHashAndPassword([]byte(pass), []byte(req.Password)); err != nil {
 			log.Warn("invalid password")
 			render.Status(r, http.StatusBadRequest)
 			render.JSON(w, r, resp.BadRequest("invalid credentials"))

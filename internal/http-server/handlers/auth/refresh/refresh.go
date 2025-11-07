@@ -19,12 +19,12 @@ type Response struct {
 }
 
 type UserGetter interface {
-	GetUserByID(ctx context.Context, id int64) (user.Model, error)
+	GetUserByID(ctx context.Context, id int64) (*user.Model, error)
 }
 
 type TokenRefresher interface {
 	Verify(token string) (*token.Claims, error)
-	Create(u user.Model) (token.Pair, error)
+	Create(u *user.Model) (token.Pair, error)
 	GetRefreshTTL() time.Duration
 }
 

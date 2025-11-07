@@ -53,7 +53,7 @@ func New(
 }
 
 // Create создает новую пару access и refresh токенов для пользователя.
-func (s *Token) Create(u user.Model) (Pair, error) {
+func (s *Token) Create(u *user.Model) (Pair, error) {
 	accessToken, err := s.createAccessToken(u)
 	if err != nil {
 		return Pair{}, errors.New("failed to create access token")
@@ -80,14 +80,14 @@ func (s *Token) GetRefreshTTL() time.Duration {
 }
 
 // createToken — это внутренний хелпер для создания токена.
-func (s *Token) createAccessToken(u user.Model) (string, error) {
+func (s *Token) createAccessToken(u *user.Model) (string, error) {
 	claims := Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(s.accessTTL)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
 		UserID: u.ID,
-		Name:   u.Name,
+		Name:   u.FIO,
 		Roles:  u.Roles,
 	}
 
@@ -96,7 +96,7 @@ func (s *Token) createAccessToken(u user.Model) (string, error) {
 	return token.SignedString(s.secret)
 }
 
-func (s *Token) createRefreshToken(u user.Model) (string, error) {
+func (s *Token) createRefreshToken(u *user.Model) (string, error) {
 	claims := Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(s.refreshTTL)),

@@ -56,8 +56,10 @@ import (
 	"srmt-admin/internal/http-server/handlers/telegram/gidro/test"
 	usersAdd "srmt-admin/internal/http-server/handlers/users/add"
 	assignRole "srmt-admin/internal/http-server/handlers/users/assign-role"
+	usersDelete "srmt-admin/internal/http-server/handlers/users/delete"
 	usersEdit "srmt-admin/internal/http-server/handlers/users/edit"
 	usersGet "srmt-admin/internal/http-server/handlers/users/get"
+	usersGetById "srmt-admin/internal/http-server/handlers/users/get-by-id"
 	revokeRole "srmt-admin/internal/http-server/handlers/users/revoke-role"
 	weatherProxy "srmt-admin/internal/http-server/handlers/weather/proxy"
 	mwapikey "srmt-admin/internal/http-server/middleware/api-key"
@@ -150,6 +152,8 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 			r.Get("/users", usersGet.New(log, pg))
 			r.Post("/users", usersAdd.New(log, pg))
 			r.Patch("/users/{userID}", usersEdit.New(log, pg))
+			r.Get("/users/{userID}", usersGetById.New(log, pg))
+			r.Delete("/users/{userID}", usersDelete.New(log, pg))
 			r.Post("/users/{userID}/roles", assignRole.New(log, pg))
 			r.Delete("/users/{userID}/roles/{roleID}", revokeRole.New(log, pg))
 		})

@@ -11,105 +11,99 @@ import (
 	"log/slog"
 	"net/http"
 	resp "srmt-admin/internal/lib/api/response"
+	"srmt-admin/internal/lib/dto"
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/storage"
 	"strconv"
 )
 
 type Request struct {
-	Name     *string `json:"name,omitempty"`
-	Password *string `json:"password,omitempty" validate:"omitempty,dive,min=8"`
+	Login    *string `json:"login,omitempty" validate:"omitempty,min=1"`
+	Password *string `json:"password,omitempty" validate:"omitempty,min=8"`
+	IsActive *bool   `json:"is_active,omitempty"`
 }
 
-type Response struct {
-	resp.Response
+// UserUpdater - интерфейс репозитория (использует DTO из storage)
+type UserUpdater interface {
+	EditUser(ctx context.Context, userID int64, passwordHash []byte, req dto.EditUserRequest) error
 }
 
-type UserEditor interface {
-	EditUser(ctx context.Context, id int64, name, passHash string) error
-}
-
-func New(log *slog.Logger, editor UserEditor) http.HandlerFunc {
+func New(log *slog.Logger, updater UserUpdater) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		const op = "handlers.user.edit.New"
+		const op = "handlers.user.update.New"
+		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
 
-		log = log.With(
-			slog.String("op", op),
-			slog.String("request_id", middleware.GetReqID(r.Context())),
-		)
-
-		userID, err := strconv.ParseInt(chi.URLParam(r, "userID"), 10, 64)
+		// 1. Получаем ID из URL
+		idStr := chi.URLParam(r, "id")
+		id, err := strconv.ParseInt(idStr, 10, 64)
 		if err != nil {
-			log.Warn("invalid user ID", "error", err)
+			log.Warn("invalid 'id' parameter", sl.Err(err))
 			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, resp.BadRequest("invalid user id"))
+			render.JSON(w, r, resp.BadRequest("Invalid 'id' parameter"))
 			return
 		}
 
+		// 2. Декодируем JSON
 		var req Request
-
-		// Decode JSON
 		if err := render.DecodeJSON(r.Body, &req); err != nil {
-			log.Error("failed to parse request", sl.Err(err))
-
+			log.Error("failed to decode request", sl.Err(err))
 			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, resp.BadRequest("failed to parse request"))
+			render.JSON(w, r, resp.BadRequest("Invalid request format"))
 			return
 		}
 
-		log.Info("request parsed", slog.Any("req", req))
-
-		// Validate fields
+		// 3. Валидация DTO
 		if err := validator.New().Struct(req); err != nil {
-			var validationErrors validator.ValidationErrors
-			errors.As(err, &validationErrors)
-
-			log.Error("failed to validate request", sl.Err(err))
-
+			var vErrs validator.ValidationErrors
+			errors.As(err, &vErrs)
+			log.Error("validation failed", sl.Err(err))
 			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, resp.BadRequest("failed to validate request"))
-
+			render.JSON(w, r, resp.ValidationErrors(vErrs))
 			return
 		}
 
-		var newName, newPassHash string
-		if req.Name != nil {
-			newName = *req.Name
-		}
+		// 4. (Опциональное) Хеширование пароля
+		var passwordHash []byte
 		if req.Password != nil {
-			hashedPassword, passErr := bcrypt.GenerateFromPassword([]byte(*req.Password), bcrypt.DefaultCost)
-			if passErr != nil {
-				log.Error("failed to hash password", sl.Err(passErr))
+			hash, err := bcrypt.GenerateFromPassword([]byte(*req.Password), bcrypt.DefaultCost)
+			if err != nil {
+				log.Error("failed to hash password", sl.Err(err))
 				render.Status(r, http.StatusInternalServerError)
-				render.JSON(w, r, resp.InternalServerError("internal server error"))
+				render.JSON(w, r, resp.InternalServerError("Failed to process request"))
 				return
 			}
-			newPassHash = string(hashedPassword)
+			passwordHash = hash
 		}
 
-		err = editor.EditUser(r.Context(), userID, newName, newPassHash)
+		// 5. Маппинг в DTO хранилища
+		storageReq := dto.EditUserRequest{
+			Login:    req.Login,
+			IsActive: req.IsActive,
+		}
+
+		// 6. Вызываем репозиторий
+		err = updater.EditUser(r.Context(), id, passwordHash, storageReq)
 		if err != nil {
-			if errors.Is(err, storage.ErrUserNotFound) {
-				log.Warn("user not found to edit", "user_id", userID)
+			// 7. Обработка ошибок
+			if errors.Is(err, storage.ErrNotFound) {
+				log.Warn("user not found", slog.Int64("id", id))
 				render.Status(r, http.StatusNotFound)
-				render.JSON(w, r, resp.NotFound("user not found"))
+				render.JSON(w, r, resp.NotFound("User not found"))
 				return
 			}
 			if errors.Is(err, storage.ErrDuplicate) {
-				log.Warn("username already exists", "name", newName)
+				log.Warn("duplicate login on update")
 				render.Status(r, http.StatusConflict)
-				render.JSON(w, r, resp.BadRequest("username already exists"))
+				render.JSON(w, r, resp.BadRequest("Login already exists"))
 				return
 			}
-
-			log.Error("failed to edit user", sl.Err(err))
+			log.Error("failed to update user", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)
-			render.JSON(w, r, resp.InternalServerError("failed to edit user"))
+			render.JSON(w, r, resp.InternalServerError("Failed to update user"))
 			return
 		}
 
-		log.Info("user successfully edited", slog.Int64("id", userID))
-
-		render.Status(r, http.StatusOK)
+		log.Info("user updated", slog.Int64("id", id))
+		render.JSON(w, r, resp.OK())
 	}
 }
