@@ -11,6 +11,11 @@ import (
 	signOut "srmt-admin/internal/http-server/handlers/auth/sign-out"
 	"srmt-admin/internal/http-server/handlers/data/analytics"
 	dataSet "srmt-admin/internal/http-server/handlers/data/set"
+	departmentAdd "srmt-admin/internal/http-server/handlers/department/add"
+	departmentDelete "srmt-admin/internal/http-server/handlers/department/delete"
+	departmentEdit "srmt-admin/internal/http-server/handlers/department/edit"
+	departmentGetAll "srmt-admin/internal/http-server/handlers/department/get-all"
+	departmentGetById "srmt-admin/internal/http-server/handlers/department/get-by-id"
 	dischargeAdd "srmt-admin/internal/http-server/handlers/discharge/add"
 	dischargeDelete "srmt-admin/internal/http-server/handlers/discharge/delete"
 	dischargePatch "srmt-admin/internal/http-server/handlers/discharge/edit"
@@ -100,6 +105,12 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 		r.Get("/organization-type", orgTypeGet.New(log, pg))
 		r.Post("/organization-type", orgTypeAdd.New(log, pg))
 		r.Delete("/organization-type/{id}", orgTypeDelete.New(log, pg))
+
+		r.Get("/department", departmentGetAll.New(log, pg))
+		r.Get("/department/{id}", departmentGetById.New(log, pg))
+		r.Post("/department", departmentAdd.New(log, pg))
+		r.Patch("/department/{id}", departmentEdit.New(log, pg))
+		r.Delete("/department/{id}", departmentDelete.New(log, pg))
 
 		// Admin routes
 		r.Group(func(r chi.Router) {
