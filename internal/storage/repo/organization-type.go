@@ -3,6 +3,7 @@ package repo
 import (
 	"context"
 	"fmt"
+	"github.com/lib/pq"
 	"srmt-admin/internal/lib/model/organization-type"
 	"srmt-admin/internal/storage"
 	"strings"
@@ -54,6 +55,37 @@ func (r *Repo) GetAllOrganizationTypes(ctx context.Context) ([]organization_type
 	}
 
 	return types, nil
+}
+
+func (r *Repo) GetOrganizationTypesMap(ctx context.Context) (map[int64][]string, error) {
+	const op = "storage.repo.GetOrganizationTypesMap"
+	const query = `
+		SELECT
+			otl.organization_id,
+			array_agg(ot.name) as types
+		FROM
+			organization_type_links otl
+		JOIN
+			organization_types ot ON otl.type_id = ot.id
+		GROUP BY
+			otl.organization_id;
+	`
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("%s: failed to query org types: %w", op, err)
+	}
+	defer rows.Close()
+
+	typesMap := make(map[int64][]string)
+	for rows.Next() {
+		var orgID int64
+		var types []string
+		if err := rows.Scan(&orgID, pq.Array(&types)); err != nil {
+			return nil, fmt.Errorf("%s: failed to scan org type row: %w", op, err)
+		}
+		typesMap[orgID] = types
+	}
+	return typesMap, rows.Err()
 }
 
 // EditOrganizationType обновляет данные типа организации по его ID.

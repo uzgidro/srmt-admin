@@ -54,6 +54,7 @@ import (
 	modsnowImg "srmt-admin/internal/http-server/handlers/sc/modsnow/img"
 	"srmt-admin/internal/http-server/handlers/sc/modsnow/table"
 	"srmt-admin/internal/http-server/handlers/sc/stock"
+	"srmt-admin/internal/http-server/handlers/shutdowns"
 	"srmt-admin/internal/http-server/handlers/telegram/gidro/test"
 	usersAdd "srmt-admin/internal/http-server/handlers/users/add"
 	assignRole "srmt-admin/internal/http-server/handlers/users/assign-role"
@@ -199,6 +200,11 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 			r.Post("/incidents", incidents_handler.Add(log, pg))
 			r.Patch("/incidents/{id}", incidents_handler.Edit(log, pg))
 			r.Delete("/incidents/{id}", incidents_handler.Delete(log, pg))
+
+			r.Get("/shutdowns", shutdowns.Get(log, pg))
+			r.Post("/shutdowns", shutdowns.Add(log, pg))
+			r.Patch("/shutdowns/{id}", shutdowns.Edit(log, pg))
+			r.Delete("/shutdowns/{id}", shutdowns.Delete(log, pg))
 		})
 
 	})
