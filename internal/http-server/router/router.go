@@ -31,6 +31,7 @@ import (
 	"srmt-admin/internal/http-server/handlers/file/download"
 	"srmt-admin/internal/http-server/handlers/file/latest"
 	"srmt-admin/internal/http-server/handlers/file/upload"
+	incidents_handler "srmt-admin/internal/http-server/handlers/incidents-handler"
 	setIndicator "srmt-admin/internal/http-server/handlers/indicators/set"
 	orgTypeAdd "srmt-admin/internal/http-server/handlers/organization-types/add"
 	orgTypeDelete "srmt-admin/internal/http-server/handlers/organization-types/delete"
@@ -193,6 +194,11 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 			r.Post("/discharges", dischargeAdd.New(log, pg))
 			r.Patch("/discharges/{id}", dischargePatch.New(log, pg))
 			r.Delete("/discharges/{id}", dischargeDelete.New(log, pg))
+
+			r.Get("/incidents", incidents_handler.Get(log, pg))
+			r.Post("/incidents", incidents_handler.Add(log, pg))
+			r.Patch("/incidents/{id}", incidents_handler.Edit(log, pg))
+			r.Delete("/incidents/{id}", incidents_handler.Delete(log, pg))
 		})
 
 	})
