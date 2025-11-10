@@ -41,20 +41,29 @@ func (r *Repo) AddDischarge(ctx context.Context, orgID, createdByID int64, start
 func (r *Repo) GetAllDischarges(ctx context.Context, isOngoing *bool, startDate, endDate *time.Time) ([]discharge.Model, error) {
 	const op = "storage.repo.discharge.GetAllDischarges"
 
-	// Базовый запрос с JOIN'ами
+	// ИСПРАВЛЕНИЕ: Запрос обновлен для получения ФИО из таблицы contacts
 	baseQuery := `
 		SELECT
-			d.id, d.start_time, d.end_time, d.flow_rate_m3_s, d.reason, d.approved, -- <<< ДОБАВЛЕНО d.approved
+			d.id, d.start_time, d.end_time, d.flow_rate_m3_s, d.reason, d.approved,
 			d.is_ongoing, d.total_volume_mln_m3,
 			o.id as org_id, o.name as org_name, o.parent_organization_id as org_parent_id,
 			COALESCE(ot.types_json, '[]'::json) as org_types,
-			creator.id as creator_id, creator.fio as creator_fio,
-			approver.id as approver_id, approver.fio as approver_fio -- <<< ИЗМЕНЕНЫ АЛИАСЫ
+			creator.id as creator_id,
+			creator_contact.fio as creator_fio,
+			approver.id as approver_id,
+			approver_contact.fio as approver_fio
 		FROM
 			v_idle_water_discharges_with_volume d
-		JOIN organizations o ON d.organization_id = o.id
-		JOIN users creator ON d.created_by = creator.id
-		LEFT JOIN users approver ON d.approved_by = approver.id -- <<< ИЗМЕНЕН АЛИАС
+		JOIN
+			organizations o ON d.organization_id = o.id
+		JOIN
+			users creator ON d.created_by = creator.id
+		JOIN
+			contacts creator_contact ON creator.contact_id = creator_contact.id
+		LEFT JOIN
+			users approver ON d.approved_by = approver.id
+		LEFT JOIN
+			contacts approver_contact ON approver.contact_id = approver_contact.id
 		LEFT JOIN (
 			SELECT
 				otl.organization_id,
@@ -69,14 +78,13 @@ func (r *Repo) GetAllDischarges(ctx context.Context, isOngoing *bool, startDate,
 	var args []interface{}
 	argID := 1
 
-	// Добавляем условия фильтрации
+	// Добавляем условия фильтрации (без изменений)
 	if isOngoing != nil {
 		conditions = append(conditions, fmt.Sprintf("d.is_ongoing = $%d", argID))
 		args = append(args, *isOngoing)
 		argID++
 	}
 
-	// Фильтр по временному диапазону. Ищем пересечения.
 	if startDate != nil && endDate != nil {
 		conditions = append(conditions, fmt.Sprintf("(d.start_time <= $%d AND COALESCE(d.end_time, NOW()) >= $%d)", argID, argID+1))
 		args = append(args, *endDate, *startDate)
@@ -91,7 +99,7 @@ func (r *Repo) GetAllDischarges(ctx context.Context, isOngoing *bool, startDate,
 		argID++
 	}
 
-	// Собираем финальный запрос
+	// Собираем финальный запрос (без изменений)
 	var finalQuery strings.Builder
 	finalQuery.WriteString(baseQuery)
 	if len(conditions) > 0 {
@@ -111,18 +119,20 @@ func (r *Repo) GetAllDischarges(ctx context.Context, isOngoing *bool, startDate,
 	for rows.Next() {
 		var d discharge.Model
 		var org organization.Model
-		var creator user.ShortInfo
-		var approver user.ShortInfo
 		var orgTypesJSON []byte
-		var approverID sql.NullInt64 // Используем Null-типы для LEFT JOIN полей
+
+		// ИСПРАВЛЕНИЕ: Переменные для сканирования данных пользователя
+		var creatorID int64
+		var creatorFIO string
+		var approverID sql.NullInt64
 		var approverFIO sql.NullString
 
 		err := rows.Scan(
 			&d.ID, &d.StartedAt, &d.EndedAt, &d.FlowRate, &d.Reason, &d.Approved,
 			&d.IsOngoing, &d.TotalVolume,
 			&org.ID, &org.Name, &org.ParentOrganizationID, &orgTypesJSON,
-			&creator.ID, &creator.FIO,
-			&approverID, &approverFIO, // <<< ИЗМЕНЕНЫ ПЕРЕМЕННЫЕ
+			&creatorID, &creatorFIO, // <<< ИЗМЕНЕНЫ ПЕРЕМЕННЫЕ
+			&approverID, &approverFIO,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("%s: failed to scan discharge row: %w", op, err)
@@ -133,12 +143,23 @@ func (r *Repo) GetAllDischarges(ctx context.Context, isOngoing *bool, startDate,
 		}
 
 		d.Organization = &org
-		d.CreatedByUser = &creator // Предполагается, что в модели поле называется CreatedBy
+
+		// ИСПРАВЛЕНИЕ: Собираем модель пользователя
+		fioCreator := creatorFIO
+		d.CreatedByUser = &user.ShortInfo{
+			ID:  creatorID,
+			FIO: &fioCreator,
+		}
 
 		if approverID.Valid {
-			approver.ID = approverID.Int64
-			approver.FIO = &approverFIO.String
-			d.ApprovedByUser = &approver // Предполагается, что в модели поле называется ApprovedBy
+			approver := &user.ShortInfo{
+				ID: approverID.Int64,
+			}
+			if approverFIO.Valid {
+				fioApprover := approverFIO.String
+				approver.FIO = &fioApprover
+			}
+			d.ApprovedByUser = approver
 		}
 
 		discharges = append(discharges, d)
@@ -149,7 +170,7 @@ func (r *Repo) GetAllDischarges(ctx context.Context, isOngoing *bool, startDate,
 	}
 
 	if discharges == nil {
-		discharges = make([]discharge.Model, 0)
+		return []discharge.Model{}, nil // Возвращаем пустой слайс вместо nil
 	}
 
 	return discharges, nil
@@ -158,8 +179,7 @@ func (r *Repo) GetAllDischarges(ctx context.Context, isOngoing *bool, startDate,
 func (r *Repo) GetDischargesByCascades(ctx context.Context, isOngoing *bool, startDate, endDate *time.Time) ([]discharge.Cascade, error) {
 	const op = "storage.repo.discharge.GetDischargesByCascades"
 
-	// 1. SQL-запрос остается таким же, он эффективно получает все нужные данные в плоском виде.
-	// Важнейшая часть - ORDER BY, который группирует строки по каскадам и ГЭС.
+	// ИСПРАВЛЕНИЕ: Запрос обновлен для использования users.contact_id -> contacts.id
 	const query = `
 		SELECT
 			cascade_org.id as cascade_id,
@@ -168,8 +188,10 @@ func (r *Repo) GetDischargesByCascades(ctx context.Context, isOngoing *bool, sta
 			hpp_org.name as hpp_name,
 			d.id, d.start_time, d.end_time, d.flow_rate_m3_s, d.reason, d.approved,
 			d.is_ongoing, d.total_volume_mln_m3,
-			creator.id as creator_id, creator.fio as creator_fio,
-			approver.id as approver_id, approver.fio as approver_fio
+			creator.id as creator_id,
+			creator_contact.fio as creator_fio,
+			approver.id as approver_id,
+			approver_contact.fio as approver_fio
 		FROM
 			v_idle_water_discharges_with_volume d
 		JOIN
@@ -178,15 +200,19 @@ func (r *Repo) GetDischargesByCascades(ctx context.Context, isOngoing *bool, sta
 			organizations cascade_org ON hpp_org.parent_organization_id = cascade_org.id
 		JOIN
 			users creator ON d.created_by = creator.id
+		JOIN
+			contacts creator_contact ON creator.contact_id = creator_contact.id
 		LEFT JOIN
 			users approver ON d.approved_by = approver.id
+		LEFT JOIN
+			contacts approver_contact ON approver.contact_id = approver_contact.id
 	`
 
 	var conditions []string
 	var args []interface{}
 	argID := 1
 
-	// 2. Динамическое добавление фильтров (код без изменений)
+	// Динамическое добавление фильтров (код без изменений)
 	if isOngoing != nil {
 		conditions = append(conditions, fmt.Sprintf("d.is_ongoing = $%d", argID))
 		args = append(args, *isOngoing)
@@ -219,7 +245,7 @@ func (r *Repo) GetDischargesByCascades(ctx context.Context, isOngoing *bool, sta
 	}
 	defer rows.Close()
 
-	// 3. Упрощенная и корректная сборка иерархии
+	// Сборка иерархии (код без изменений)
 	var result []discharge.Cascade
 	var currentCascade *discharge.Cascade
 	var currentHPP *discharge.HPP
@@ -230,8 +256,8 @@ func (r *Repo) GetDischargesByCascades(ctx context.Context, isOngoing *bool, sta
 		var hppID int64
 		var hppName string
 		var d discharge.Model
-		var creator user.ShortInfo
-		//var approver user.ShortInfo
+		var creatorID int64
+		var creatorFIO string
 		var approverID sql.NullInt64
 		var approverFIO sql.NullString
 
@@ -239,7 +265,7 @@ func (r *Repo) GetDischargesByCascades(ctx context.Context, isOngoing *bool, sta
 			&cascadeID, &cascadeName, &hppID, &hppName,
 			&d.ID, &d.StartedAt, &d.EndedAt, &d.FlowRate, &d.Reason, &d.Approved,
 			&d.IsOngoing, &d.TotalVolume,
-			&creator.ID, &creator.FIO,
+			&creatorID, &creatorFIO,
 			&approverID, &approverFIO,
 		)
 		if err != nil {
@@ -251,49 +277,48 @@ func (r *Repo) GetDischargesByCascades(ctx context.Context, isOngoing *bool, sta
 			Name: hppName,
 		}
 
+		// Присваиваем FIO создателю
+		fioCreator := creatorFIO
 		d.CreatedByUser = &user.ShortInfo{
-			ID:  creator.ID,
-			FIO: creator.FIO,
+			ID:  creatorID,
+			FIO: &fioCreator,
 		}
 
+		// Присваиваем FIO утверждающему, если он есть
 		if approverID.Valid {
 			approver := &user.ShortInfo{
 				ID: approverID.Int64,
 			}
 			if approverFIO.Valid {
-				approver.FIO = &approverFIO.String
+				fioApprover := approverFIO.String
+				approver.FIO = &fioApprover
 			}
 			d.ApprovedByUser = approver
 		}
 
-		// Если это новый каскад, создаем его и добавляем в результат
+		// Логика группировки по каскадам и ГЭС (без изменений)
 		if currentCascade == nil || currentCascade.ID != cascadeID {
 			result = append(result, discharge.Cascade{
 				ID:   cascadeID,
 				Name: cascadeName,
 				HPPs: []discharge.HPP{},
-				// TotalVolume будет 0.0 (zero value), что нам и нужно
 			})
 			currentCascade = &result[len(result)-1]
-			currentHPP = nil // Сбрасываем текущую ГЭС при смене каскада
+			currentHPP = nil
 		}
 
-		// Если это новая ГЭС (в рамках текущего каскада), создаем ее
 		if currentHPP == nil || currentHPP.ID != hppID {
 			currentCascade.HPPs = append(currentCascade.HPPs, discharge.HPP{
 				ID:         hppID,
 				Name:       hppName,
 				Discharges: []discharge.Model{},
-				// TotalVolume будет 0.0 (zero value)
 			})
 			currentHPP = &currentCascade.HPPs[len(currentCascade.HPPs)-1]
 		}
 
 		currentHPP.TotalVolume += d.TotalVolume
 		currentCascade.TotalVolume += d.TotalVolume
-
 		d.TotalVolume = roundToTwo(d.TotalVolume)
-
 		currentHPP.Discharges = append(currentHPP.Discharges, d)
 	}
 
@@ -301,6 +326,7 @@ func (r *Repo) GetDischargesByCascades(ctx context.Context, isOngoing *bool, sta
 		return nil, fmt.Errorf("%s: rows iteration error: %w", op, err)
 	}
 
+	// Округление и возврат результата (код без изменений)
 	for i := range result {
 		for j := range result[i].HPPs {
 			result[i].HPPs[j].TotalVolume = roundToTwo(result[i].HPPs[j].TotalVolume)
