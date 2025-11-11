@@ -2,14 +2,15 @@ package shutdowns
 
 import (
 	"context"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/render"
 	"log/slog"
 	"net/http"
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
-	"srmt-admin/internal/lib/model/shutdown" // (Импорт ResponseModel и GroupedResponse)
+	"srmt-admin/internal/lib/model/shutdown"
 	"time"
+
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/render"
 )
 
 type shutdownGetter interface {
@@ -24,7 +25,6 @@ func Get(log *slog.Logger, getter shutdownGetter) http.HandlerFunc {
 		const op = "handlers.shutdown.Get"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
 
-		// 1. Парсим 'date' (как в Incidents)
 		var day time.Time
 		dateStr := r.URL.Query().Get("date")
 
@@ -41,7 +41,6 @@ func Get(log *slog.Logger, getter shutdownGetter) http.HandlerFunc {
 			}
 		}
 
-		// 2. Вызываем репозиторий (получаем плоский список)
 		shutdowns, err := getter.GetShutdowns(r.Context(), day)
 		if err != nil {
 			log.Error("failed to get all shutdowns", sl.Err(err))
@@ -50,7 +49,6 @@ func Get(log *slog.Logger, getter shutdownGetter) http.HandlerFunc {
 			return
 		}
 
-		// 3. (НОВАЯ ЛОГИКА) Получаем типы организаций
 		orgTypesMap, err := getter.GetOrganizationTypesMap(r.Context())
 		if err != nil {
 			log.Error("failed to get organization types", sl.Err(err))
@@ -59,7 +57,6 @@ func Get(log *slog.Logger, getter shutdownGetter) http.HandlerFunc {
 			return
 		}
 
-		// 4. (НОВАЯ ЛОГИКА) Группируем по типу
 		response := shutdown.GroupedResponse{
 			Ges:   make([]*shutdown.ResponseModel, 0),
 			Mini:  make([]*shutdown.ResponseModel, 0),
@@ -74,26 +71,21 @@ func Get(log *slog.Logger, getter shutdownGetter) http.HandlerFunc {
 				continue
 			}
 
-			// (Логика может быть сложной, если у ГЭС >1 типа,
-			// пока просто ищем первое совпадение)
-			found := false
+			wasGrouped := false
 			for _, t := range types {
-				switch t { // (Используй тут свои реальные типы)
-				case "ГЭС":
+				switch t {
+				case "ges":
 					response.Ges = append(response.Ges, s)
-					found = true
-				case "МиниГЭС":
+					wasGrouped = true
+				case "mini":
 					response.Mini = append(response.Mini, s)
-					found = true
-				case "МикроГЭС":
+					wasGrouped = true
+				case "micro":
 					response.Micro = append(response.Micro, s)
-					found = true
-				}
-				if found {
-					break
+					wasGrouped = true
 				}
 			}
-			if !found {
+			if !wasGrouped {
 				response.Other = append(response.Other, s)
 			}
 		}

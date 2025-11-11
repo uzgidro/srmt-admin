@@ -380,13 +380,12 @@ const (
 	selectShutdownFields = `
 		SELECT
 			s.id, s.start_time, s.end_time, s.reason, s.generation_loss_mwh, s.created_at,
-			s.organization_id, -- (Нужен для группировки)
+			s.organization_id,
 			COALESCE(o.name, '') as org_name,
 			COALESCE(uc.fio, '') as created_by_fio,
 			s.created_by_user_id,
 			
-			-- (Объем из V_IdleWaterDischarges_With_Volume В ТЫСЯЧАХ м3)
-			(v_idw.total_volume_m3 / 1000.0) as discharge_volume_thousand_m3
+			(v_idw.total_volume_mln_m3 * 1000.0) as discharge_volume_thousand_m3
 	`
 	fromShutdownJoins = `
 		FROM
@@ -398,7 +397,6 @@ const (
 		LEFT JOIN
 			contacts uc ON u.contact_id = uc.id
 		LEFT JOIN
-			-- (Джойним VIEW холостого сброса для получения ОБЪЕМА)
-			V_IdleWaterDischarges_With_Volume v_idw ON s.idle_discharge_id = v_idw.id
+			v_idle_water_discharges_with_volume v_idw ON s.idle_discharge_id = v_idw.id
 	`
 )
