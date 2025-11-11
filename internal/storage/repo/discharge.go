@@ -94,7 +94,7 @@ func (r *Repo) GetAllDischarges(ctx context.Context, isOngoing *bool, startDate,
 		args = append(args, *startDate)
 		argID++
 	} else if endDate != nil {
-		conditions = append(conditions, fmt.Sprintf("d.start_time <= $%d", argID))
+		conditions = append(conditions, fmt.Sprintf("d.end_time::date = $%d::date", argID))
 		args = append(args, *endDate)
 		argID++
 	}

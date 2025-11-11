@@ -1,7 +1,6 @@
 package router
 
 import (
-	"github.com/go-chi/chi/v5"
 	"log/slog"
 	"net/http"
 	"srmt-admin/internal/config"
@@ -25,6 +24,7 @@ import (
 	dischargeDelete "srmt-admin/internal/http-server/handlers/discharge/delete"
 	dischargePatch "srmt-admin/internal/http-server/handlers/discharge/edit"
 	dischargeGet "srmt-admin/internal/http-server/handlers/discharge/get"
+	dischargeGetFlat "srmt-admin/internal/http-server/handlers/discharge/get-flat"
 	catAdd "srmt-admin/internal/http-server/handlers/file/category/add"
 	catGet "srmt-admin/internal/http-server/handlers/file/category/list"
 	fileDelete "srmt-admin/internal/http-server/handlers/file/delete"
@@ -70,6 +70,8 @@ import (
 	"srmt-admin/internal/storage/mongo"
 	"srmt-admin/internal/storage/repo"
 	"srmt-admin/internal/token"
+
+	"github.com/go-chi/chi/v5"
 )
 
 func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo.Repo, mng *mongo.Repo, minioClient *minio.Repo, cfg config.Config) {
@@ -192,6 +194,7 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 
 			// Discharges (Сбросы)
 			r.Get("/discharges", dischargeGet.New(log, pg))
+			r.Get("/discharges/flat", dischargeGetFlat.New(log, pg))
 			r.Post("/discharges", dischargeAdd.New(log, pg))
 			r.Patch("/discharges/{id}", dischargePatch.New(log, pg))
 			r.Delete("/discharges/{id}", dischargeDelete.New(log, pg))
