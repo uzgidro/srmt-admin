@@ -44,6 +44,7 @@ import (
 	positionsDelete "srmt-admin/internal/http-server/handlers/positions/delete"
 	positionsGet "srmt-admin/internal/http-server/handlers/positions/get"
 	positionsPatch "srmt-admin/internal/http-server/handlers/positions/patch"
+	reservoirdevicesummary "srmt-admin/internal/http-server/handlers/reservoir-device-summary"
 	resAdd "srmt-admin/internal/http-server/handlers/reservoirs/add"
 	roleAdd "srmt-admin/internal/http-server/handlers/role/add"
 	roleDelete "srmt-admin/internal/http-server/handlers/role/delete"
@@ -208,6 +209,9 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 			r.Post("/shutdowns", shutdowns.Add(log, pg))
 			r.Patch("/shutdowns/{id}", shutdowns.Edit(log, pg))
 			r.Delete("/shutdowns/{id}", shutdowns.Delete(log, pg))
+
+			r.Get("/reservoir-device", reservoirdevicesummary.Get(log, pg))
+			r.Patch("/reservoir-device", reservoirdevicesummary.Patch(log, pg))
 		})
 
 	})
