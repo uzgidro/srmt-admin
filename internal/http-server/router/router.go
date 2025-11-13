@@ -64,6 +64,7 @@ import (
 	usersGet "srmt-admin/internal/http-server/handlers/users/get"
 	usersGetById "srmt-admin/internal/http-server/handlers/users/get-by-id"
 	revokeRole "srmt-admin/internal/http-server/handlers/users/revoke-role"
+	"srmt-admin/internal/http-server/handlers/visit"
 	weatherProxy "srmt-admin/internal/http-server/handlers/weather/proxy"
 	mwapikey "srmt-admin/internal/http-server/middleware/api-key"
 	mwauth "srmt-admin/internal/http-server/middleware/auth"
@@ -212,6 +213,11 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 
 			r.Get("/reservoir-device", reservoirdevicesummary.Get(log, pg))
 			r.Patch("/reservoir-device", reservoirdevicesummary.Patch(log, pg))
+
+			r.Get("/visits", visit.Get(log, pg))
+			r.Post("/visits", visit.Add(log, pg))
+			r.Patch("/visits/{id}", visit.Edit(log, pg))
+			r.Delete("/visits/{id}", visit.Delete(log, pg))
 		})
 
 	})
