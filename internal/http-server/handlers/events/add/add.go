@@ -4,9 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/render"
-	"github.com/google/uuid"
 	"io"
 	"log/slog"
 	"net/http"
@@ -17,9 +14,14 @@ import (
 	"srmt-admin/internal/lib/model/category"
 	"srmt-admin/internal/lib/model/contact"
 	"srmt-admin/internal/lib/model/file"
+	"srmt-admin/internal/lib/service/auth"
 	"srmt-admin/internal/storage"
 	"strconv"
 	"time"
+
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/render"
+	"github.com/google/uuid"
 )
 
 // FileUploader defines interface for file storage operations
@@ -34,7 +36,7 @@ type EventAdder interface {
 	AddContact(ctx context.Context, req dto.AddContactRequest) (int64, error)
 	GetContactByID(ctx context.Context, id int64) (*contact.Model, error)
 	AddFile(ctx context.Context, fileData file.Model) (int64, error)
-	GetCategoryByID(ctx context.Context, id int64) (category.Model, error)
+	GetEventsCategory(ctx context.Context) (category.Model, error)
 }
 
 type Response struct {
@@ -119,7 +121,13 @@ func New(log *slog.Logger, uploader FileUploader, adder EventAdder) http.Handler
 		}
 
 		// 4. Get user ID from context (assuming auth middleware sets this)
-		userID := int64(1) // TODO: Get from auth context
+		userID, err := auth.GetUserID(r.Context())
+		if err != nil {
+			log.Error("failed to get user id from context", sl.Err(err))
+			render.Status(r, http.StatusUnauthorized)
+			render.JSON(w, r, resp.Unauthorized("Not authenticated"))
+			return
+		}
 		// userID := r.Context().Value("user_id").(int64)
 
 		// 5. Handle responsible contact - either use existing ID or create new
@@ -194,11 +202,7 @@ func New(log *slog.Logger, uploader FileUploader, adder EventAdder) http.Handler
 
 		files := r.MultipartForm.File["files"]
 		if len(files) > 0 {
-			// Get category for events (assuming category ID 1 or we need to create one)
-			// For now, we'll use a hardcoded category or you should pass it
-			categoryID := int64(1) // TODO: Configure proper category for event files
-
-			cat, err := adder.GetCategoryByID(r.Context(), categoryID)
+			cat, err := adder.GetEventsCategory(r.Context())
 			if err != nil {
 				log.Error("failed to get file category", sl.Err(err))
 				render.Status(r, http.StatusInternalServerError)
@@ -242,7 +246,7 @@ func New(log *slog.Logger, uploader FileUploader, adder EventAdder) http.Handler
 				fileMeta := file.Model{
 					FileName:   fileHeader.Filename,
 					ObjectKey:  objectKey,
-					CategoryID: categoryID,
+					CategoryID: cat.ID,
 					MimeType:   fileHeader.Header.Get("Content-Type"),
 					SizeBytes:  fileHeader.Size,
 					CreatedAt:  time.Now(),

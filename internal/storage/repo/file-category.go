@@ -98,3 +98,63 @@ func (r *Repo) GetAllCategories(ctx context.Context) ([]category.Model, error) {
 
 	return categories, nil
 }
+
+func (r *Repo) GetEventsCategory(ctx context.Context) (category.Model, error) {
+	const op = "repo.file-category.GetEventsCategory"
+	const categoryName = "events"
+	const categoryDisplayName = "События"
+
+	// Attempt to find the category first
+	const findQuery = `
+		SELECT id, name, display_name, description, parent_id
+		FROM categories
+		WHERE name = $1
+	`
+	var cat category.Model
+	err := r.db.QueryRowContext(ctx, findQuery, categoryName).Scan(
+		&cat.ID,
+		&cat.Name,
+		&cat.DisplayName,
+		&cat.Description,
+		&cat.ParentID,
+	)
+
+	if err == nil {
+		// Found it, return
+		return cat, nil
+	}
+
+	if !errors.Is(err, sql.ErrNoRows) {
+		// A different error occurred during find
+		if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
+			return category.Model{}, translatedErr
+		}
+		return category.Model{}, fmt.Errorf("%s: failed to find category: %w", op, err)
+	}
+
+	// Not found (sql.ErrNoRows), so create it
+	const createQuery = `
+		INSERT INTO categories (name, display_name)
+		VALUES ($1, $2)
+		RETURNING id, name, display_name, description, parent_id
+	`
+	var newCat category.Model
+	err = r.db.QueryRowContext(ctx, createQuery, categoryName, categoryDisplayName).Scan(
+		&newCat.ID,
+		&newCat.Name,
+		&newCat.DisplayName,
+		&newCat.Description,
+		&newCat.ParentID,
+	)
+
+	if err != nil {
+		// Error occurred during creation
+		if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
+			return category.Model{}, translatedErr
+		}
+		return category.Model{}, fmt.Errorf("%s: failed to create category: %w", op, err)
+	}
+
+	// Return the newly created category
+	return newCat, nil
+}

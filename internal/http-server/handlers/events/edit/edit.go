@@ -3,18 +3,20 @@ package edit
 import (
 	"context"
 	"errors"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/render"
 	"log/slog"
 	"net/http"
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/dto"
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/lib/model/event"
+	"srmt-admin/internal/lib/service/auth"
 	"srmt-admin/internal/storage"
 	"strconv"
 	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/render"
 )
 
 // Request - JSON DTO for editing an event
@@ -78,8 +80,13 @@ func New(log *slog.Logger, editor EventEditor) http.HandlerFunc {
 		}
 
 		// 4. Get user ID from context
-		userID := int64(1) // TODO: Get from auth context
-		// userID := r.Context().Value("user_id").(int64)
+		userID, err := auth.GetUserID(r.Context())
+		if err != nil {
+			log.Error("failed to get user id from context", sl.Err(err))
+			render.Status(r, http.StatusUnauthorized)
+			render.JSON(w, r, resp.Unauthorized("Not authenticated"))
+			return
+		}
 
 		// 5. Build storage request
 		storageReq := dto.EditEventRequest{
