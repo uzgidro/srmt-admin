@@ -53,8 +53,8 @@ func New(log *slog.Logger, uploader FileUploader, adder EventAdder) http.Handler
 			slog.String("request_id", middleware.GetReqID(r.Context())),
 		)
 
-		// 1. Parse multipart form (max 100MB for multiple files)
-		const maxUploadSize = 100 * 1024 * 1024
+		// 1. Parse multipart form (max 1GB for multiple files)
+		const maxUploadSize = 1024 * 1024 * 1024
 		r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
 		if err := r.ParseMultipartForm(maxUploadSize); err != nil {
 			log.Error("failed to parse multipart form", sl.Err(err))
