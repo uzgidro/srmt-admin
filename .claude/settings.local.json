@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(mkdir:*)",
-      "Bash(go build:*)"
+      "Bash(go build:*)",
+      "Bash(go list:*)",
+      "Bash(go version:*)",
+      "Bash(go get:*)"
     ],
     "deny": [],
     "ask": []
