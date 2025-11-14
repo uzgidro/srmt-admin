@@ -30,6 +30,7 @@ import (
 	eventEdit "srmt-admin/internal/http-server/handlers/events/edit"
 	eventGetAll "srmt-admin/internal/http-server/handlers/events/get-all"
 	eventGetById "srmt-admin/internal/http-server/handlers/events/get-by-id"
+	eventGetShort "srmt-admin/internal/http-server/handlers/events/get-short"
 	eventGetStatuses "srmt-admin/internal/http-server/handlers/events/get-statuses"
 	eventGetTypes "srmt-admin/internal/http-server/handlers/events/get-types"
 	catAdd "srmt-admin/internal/http-server/handlers/file/category/add"
@@ -232,6 +233,7 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 
 			// Events
 			r.Get("/events", eventGetAll.New(log, pg))
+			r.Get("/events/short", eventGetShort.New(log, pg))
 			r.Get("/events/statuses", eventGetStatuses.New(log, pg))
 			r.Get("/events/types", eventGetTypes.New(log, pg))
 			r.Get("/events/{id}", eventGetById.New(log, pg))

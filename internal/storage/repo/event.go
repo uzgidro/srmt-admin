@@ -615,3 +615,110 @@ func (r *Repo) GetEventTypes(ctx context.Context) ([]event_type.Model, error) {
 
 	return types, nil
 }
+
+// GetAllEventsShort retrieves events in compact format with only id, name, type, and status
+func (r *Repo) GetAllEventsShort(ctx context.Context, filters dto.GetAllEventsFilters) ([]dto.EventShort, error) {
+	const op = "storage.repo.GetAllEventsShort"
+
+	var query strings.Builder
+	query.WriteString(`
+		SELECT
+			e.id, e.name, e.event_date,
+			es.id as status_id, es.name as status_name,
+			et.id as type_id, et.name as type_name
+		FROM events e
+		INNER JOIN event_status es ON e.event_status_id = es.id
+		INNER JOIN event_type et ON e.event_type_id = et.id
+	`)
+
+	var whereClauses []string
+	var args []interface{}
+	argID := 1
+
+	// Filter by event status IDs
+	if len(filters.EventStatusIDs) > 0 {
+		var placeholders []string
+		for _, statusID := range filters.EventStatusIDs {
+			placeholders = append(placeholders, fmt.Sprintf("$%d", argID))
+			args = append(args, statusID)
+			argID++
+		}
+		whereClauses = append(whereClauses, fmt.Sprintf("e.event_status_id IN (%s)", strings.Join(placeholders, ", ")))
+	}
+
+	// Filter by event type IDs
+	if len(filters.EventTypeIDs) > 0 {
+		var placeholders []string
+		for _, typeID := range filters.EventTypeIDs {
+			placeholders = append(placeholders, fmt.Sprintf("$%d", argID))
+			args = append(args, typeID)
+			argID++
+		}
+		whereClauses = append(whereClauses, fmt.Sprintf("e.event_type_id IN (%s)", strings.Join(placeholders, ", ")))
+	}
+
+	// Filter by date range
+	if filters.StartDate != nil {
+		whereClauses = append(whereClauses, fmt.Sprintf("e.event_date >= $%d", argID))
+		args = append(args, *filters.StartDate)
+		argID++
+	}
+	if filters.EndDate != nil {
+		endDate := filters.EndDate.AddDate(0, 0, 1)
+		whereClauses = append(whereClauses, fmt.Sprintf("e.event_date < $%d", argID))
+		args = append(args, endDate)
+		argID++
+	}
+
+	// Filter by organization
+	if filters.OrganizationID != nil {
+		whereClauses = append(whereClauses, fmt.Sprintf("e.organization_id = $%d", argID))
+		args = append(args, *filters.OrganizationID)
+		argID++
+	}
+
+	if len(whereClauses) > 0 {
+		query.WriteString(" WHERE " + strings.Join(whereClauses, " AND "))
+	}
+
+	query.WriteString(" ORDER BY e.event_date DESC")
+
+	rows, err := r.db.QueryContext(ctx, query.String(), args...)
+	if err != nil {
+		return nil, fmt.Errorf("%s: failed to query events: %w", op, err)
+	}
+	defer rows.Close()
+
+	var events []dto.EventShort
+	for rows.Next() {
+		var e dto.EventShort
+		var statusID, typeID int
+		var statusName, typeName string
+
+		err := rows.Scan(
+			&e.ID, &e.Name, &e.EventDate,
+			&statusID, &statusName,
+			&typeID, &typeName,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("%s: failed to scan event row: %w", op, err)
+		}
+
+		e.Status.ID = statusID
+		e.Status.Name = statusName
+		e.Type.ID = typeID
+		e.Type.Name = typeName
+
+		events = append(events, e)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: rows iteration error: %w", op, err)
+	}
+
+	if events == nil {
+		events = make([]dto.EventShort, 0)
+	}
+
+	return events, nil
+}
