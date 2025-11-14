@@ -225,6 +225,10 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 			r.Post("/visits", visit.Add(log, pg))
 			r.Patch("/visits/{id}", visit.Edit(log, pg))
 			r.Delete("/visits/{id}", visit.Delete(log, pg))
+		})
+
+		r.Group(func(r chi.Router) {
+			r.Use(mwauth.RequireAnyRole("assistant", "rais"))
 
 			// Events
 			r.Get("/events", eventGetAll.New(log, pg))
