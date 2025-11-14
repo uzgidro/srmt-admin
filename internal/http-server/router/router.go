@@ -25,6 +25,13 @@ import (
 	dischargePatch "srmt-admin/internal/http-server/handlers/discharge/edit"
 	dischargeGet "srmt-admin/internal/http-server/handlers/discharge/get"
 	dischargeGetFlat "srmt-admin/internal/http-server/handlers/discharge/get-flat"
+	eventAdd "srmt-admin/internal/http-server/handlers/events/add"
+	eventDelete "srmt-admin/internal/http-server/handlers/events/delete"
+	eventEdit "srmt-admin/internal/http-server/handlers/events/edit"
+	eventGetAll "srmt-admin/internal/http-server/handlers/events/get-all"
+	eventGetById "srmt-admin/internal/http-server/handlers/events/get-by-id"
+	eventGetStatuses "srmt-admin/internal/http-server/handlers/events/get-statuses"
+	eventGetTypes "srmt-admin/internal/http-server/handlers/events/get-types"
 	catAdd "srmt-admin/internal/http-server/handlers/file/category/add"
 	catGet "srmt-admin/internal/http-server/handlers/file/category/list"
 	fileDelete "srmt-admin/internal/http-server/handlers/file/delete"
@@ -218,6 +225,15 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 			r.Post("/visits", visit.Add(log, pg))
 			r.Patch("/visits/{id}", visit.Edit(log, pg))
 			r.Delete("/visits/{id}", visit.Delete(log, pg))
+
+			// Events
+			r.Get("/events", eventGetAll.New(log, pg))
+			r.Get("/events/statuses", eventGetStatuses.New(log, pg))
+			r.Get("/events/types", eventGetTypes.New(log, pg))
+			r.Get("/events/{id}", eventGetById.New(log, pg))
+			r.Post("/events", eventAdd.New(log, minioClient, pg))
+			r.Patch("/events/{id}", eventEdit.New(log, pg))
+			r.Delete("/events/{id}", eventDelete.New(log, pg))
 		})
 
 	})
