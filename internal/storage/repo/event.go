@@ -121,9 +121,9 @@ const (
 
 			o.id as org_id, o.name as org_name,
 
-			cu.id as created_user_id, cu.username as created_username,
+			cu.id as created_user_id, cu_contact.fio as created_username,
 
-			uu.id as updated_user_id, uu.username as updated_username
+			uu.id as updated_user_id, uu_contact.fio as updated_username
 	`
 	fromEventJoins = `
 		FROM events e
@@ -132,7 +132,9 @@ const (
 		INNER JOIN contacts rc ON e.responsible_contact_id = rc.id
 		LEFT JOIN organizations o ON e.organization_id = o.id
 		LEFT JOIN users cu ON e.created_by_user_id = cu.id
+		LEFT JOIN contacts cu_contact ON cu.contact_id = cu_contact.id
 		LEFT JOIN users uu ON e.updated_by_user_id = uu.id
+		LEFT JOIN contacts uu_contact ON uu.contact_id = uu_contact.id
 	`
 )
 

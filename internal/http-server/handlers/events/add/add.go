@@ -128,7 +128,6 @@ func New(log *slog.Logger, uploader FileUploader, adder EventAdder) http.Handler
 			render.JSON(w, r, resp.Unauthorized("Not authenticated"))
 			return
 		}
-		// userID := r.Context().Value("user_id").(int64)
 
 		// 5. Handle responsible contact - either use existing ID or create new
 		var responsibleContactID int64
