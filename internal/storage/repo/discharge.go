@@ -86,15 +86,15 @@ func (r *Repo) GetAllDischarges(ctx context.Context, isOngoing *bool, startDate,
 	}
 
 	if startDate != nil && endDate != nil {
-		conditions = append(conditions, fmt.Sprintf("(d.start_time <= $%d AND COALESCE(d.end_time, NOW()) >= $%d)", argID, argID+1))
-		args = append(args, *endDate, *startDate)
+		conditions = append(conditions, fmt.Sprintf("(d.start_time::date >= $%d AND d.end_time::date <= $%d)", argID, argID+1))
+		args = append(args, *startDate, *endDate)
 		argID += 2
 	} else if startDate != nil {
-		conditions = append(conditions, fmt.Sprintf("COALESCE(d.end_time, NOW()) >= $%d", argID))
+		conditions = append(conditions, fmt.Sprintf("d.start_time::date >= $%d", argID))
 		args = append(args, *startDate)
 		argID++
 	} else if endDate != nil {
-		conditions = append(conditions, fmt.Sprintf("d.end_time::date = $%d::date", argID))
+		conditions = append(conditions, fmt.Sprintf("d.end_time::date <= $%d", argID))
 		args = append(args, *endDate)
 		argID++
 	}
@@ -131,7 +131,7 @@ func (r *Repo) GetAllDischarges(ctx context.Context, isOngoing *bool, startDate,
 			&d.ID, &d.StartedAt, &d.EndedAt, &d.FlowRate, &d.Reason, &d.Approved,
 			&d.IsOngoing, &d.TotalVolume,
 			&org.ID, &org.Name, &org.ParentOrganizationID, &orgTypesJSON,
-			&creatorID, &creatorFIO, // <<< ИЗМЕНЕНЫ ПЕРЕМЕННЫЕ
+			&creatorID, &creatorFIO,
 			&approverID, &approverFIO,
 		)
 		if err != nil {
@@ -219,15 +219,15 @@ func (r *Repo) GetDischargesByCascades(ctx context.Context, isOngoing *bool, sta
 		argID++
 	}
 	if startDate != nil && endDate != nil {
-		conditions = append(conditions, fmt.Sprintf("(d.start_time <= $%d AND COALESCE(d.end_time, NOW()) >= $%d)", argID, argID+1))
-		args = append(args, *endDate, *startDate)
+		conditions = append(conditions, fmt.Sprintf("(d.start_time::date >= $%d AND d.end_time::date <= $%d)", argID, argID+1))
+		args = append(args, *startDate, *endDate)
 		argID += 2
 	} else if startDate != nil {
-		conditions = append(conditions, fmt.Sprintf("COALESCE(d.end_time, NOW()) >= $%d", argID))
+		conditions = append(conditions, fmt.Sprintf("d.start_time::date >= $%d", argID))
 		args = append(args, *startDate)
 		argID++
 	} else if endDate != nil {
-		conditions = append(conditions, fmt.Sprintf("d.start_time <= $%d", argID))
+		conditions = append(conditions, fmt.Sprintf("d.end_time::date <= $%d", argID))
 		args = append(args, *endDate)
 		argID++
 	}
