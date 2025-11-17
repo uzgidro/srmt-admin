@@ -48,6 +48,7 @@ import (
 	orgDelete "srmt-admin/internal/http-server/handlers/organizations/delete"
 	orgPatch "srmt-admin/internal/http-server/handlers/organizations/edit"
 	orgGet "srmt-admin/internal/http-server/handlers/organizations/get"
+	orgGetFlat "srmt-admin/internal/http-server/handlers/organizations/get-flat"
 	positionsAdd "srmt-admin/internal/http-server/handlers/positions/add"
 	positionsDelete "srmt-admin/internal/http-server/handlers/positions/delete"
 	positionsGet "srmt-admin/internal/http-server/handlers/positions/get"
@@ -135,6 +136,7 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 
 		// Organizations
 		r.Get("/organizations", orgGet.New(log, pg))
+		r.Get("/organizations/flat", orgGetFlat.New(log, pg))
 		r.Post("/organizations", orgAdd.New(log, pg))
 		r.Patch("/organizations/{id}", orgPatch.New(log, pg))
 		r.Delete("/organizations/{id}", orgDelete.New(log, pg))

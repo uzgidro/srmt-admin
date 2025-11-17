@@ -257,3 +257,79 @@ func (r *Repo) DeleteOrganization(ctx context.Context, id int64) error {
 
 	return nil
 }
+
+// GetFlatOrganizations returns a flat list of all organizations without hierarchical nesting
+func (r *Repo) GetFlatOrganizations(ctx context.Context, orgType *string) ([]*organization.Model, error) {
+	const op = "storage.repo.GetFlatOrganizations"
+
+	baseQuery := `
+		SELECT
+			o.id,
+			o.name,
+			o.parent_organization_id,
+			po.name as parent_organization_name,
+			COALESCE(t.types_json, '[]'::json) as types
+		FROM
+			organizations o
+		LEFT JOIN
+			organizations po ON o.parent_organization_id = po.id
+		LEFT JOIN (
+			SELECT
+				otl.organization_id,
+				json_agg(ot.name ORDER BY ot.name) as types_json
+			FROM
+				organization_type_links otl
+			JOIN
+				organization_types ot ON otl.type_id = ot.id
+			GROUP BY
+				otl.organization_id
+		) t ON o.id = t.organization_id
+	`
+
+	var query string
+	var args []interface{}
+
+	if orgType != nil {
+		// Filter by organization type
+		query = baseQuery + `
+		WHERE EXISTS (
+			SELECT 1
+			FROM organization_type_links otl
+			JOIN organization_types ot ON otl.type_id = ot.id
+			WHERE otl.organization_id = o.id AND ot.name = $1
+		)
+		ORDER BY o.name;`
+		args = append(args, *orgType)
+	} else {
+		query = baseQuery + " ORDER BY o.name;"
+	}
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("%s: failed to query organizations: %w", op, err)
+	}
+	defer rows.Close()
+
+	var result []*organization.Model
+	for rows.Next() {
+		var org organization.Model
+		var typesJSON []byte
+		if err := rows.Scan(&org.ID, &org.Name, &org.ParentOrganizationID, &org.ParentOrganizationName, &typesJSON); err != nil {
+			return nil, fmt.Errorf("%s: failed to scan organization: %w", op, err)
+		}
+		if err := json.Unmarshal(typesJSON, &org.Types); err != nil {
+			return nil, fmt.Errorf("%s: failed to unmarshal types: %w", op, err)
+		}
+		result = append(result, &org)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: rows iteration error: %w", op, err)
+	}
+
+	if result == nil {
+		result = make([]*organization.Model, 0)
+	}
+
+	return result, nil
+}
