@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-func (r *Repo) AddIncident(ctx context.Context, orgID int64, incidentTime time.Time, description string, createdByID int64) (int64, error) {
+func (r *Repo) AddIncident(ctx context.Context, orgID *int64, incidentTime time.Time, description string, createdByID int64) (int64, error) {
 	const op = "storage.repo.AddIncident"
 
 	const query = `
@@ -166,15 +166,17 @@ func scanIncidentRow(scanner interface {
 	Scan(dest ...interface{}) error
 }) (*incident.ResponseModel, error) {
 	var m incident.ResponseModel
-	var desc sql.NullString // Для nullable description
+	var desc sql.NullString    // Для nullable description
+	var orgID sql.NullInt64    // Для nullable organization_id
+	var orgName sql.NullString // Для nullable organization name
 
 	err := scanner.Scan(
 		&m.ID,
 		&m.IncidentTime,
 		&desc,
 		&m.CreatedAt,
-		&m.OrganizationID,
-		&m.OrganizationName,
+		&orgID,
+		&orgName,
 		&m.CreatedByUserID,
 		&m.CreatedByUserFIO,
 	)
@@ -184,6 +186,12 @@ func scanIncidentRow(scanner interface {
 
 	if desc.Valid {
 		m.Description = desc.String
+	}
+	if orgID.Valid {
+		m.OrganizationID = &orgID.Int64
+	}
+	if orgName.Valid {
+		m.OrganizationName = &orgName.String
 	}
 
 	return &m, nil

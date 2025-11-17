@@ -3,6 +3,7 @@ package incidents_handler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
 	"github.com/go-playground/validator/v10"
@@ -17,7 +18,7 @@ import (
 
 // Request (JSON DTO)
 type addRequest struct {
-	OrganizationID int64     `json:"organization_id" validate:"required"`
+	OrganizationID *int64    `json:"organization_id,omitempty"`
 	IncidentTime   time.Time `json:"incident_time" validate:"required"`
 	Description    string    `json:"description" validate:"required"`
 }
@@ -28,7 +29,7 @@ type response struct {
 }
 
 type incidentAdder interface {
-	AddIncident(ctx context.Context, orgID int64, incidentTime time.Time, description string, createdByID int64) (int64, error)
+	AddIncident(ctx context.Context, orgID *int64, incidentTime time.Time, description string, createdByID int64) (int64, error)
 }
 
 func Add(log *slog.Logger, adder incidentAdder) http.HandlerFunc {
@@ -70,7 +71,11 @@ func Add(log *slog.Logger, adder incidentAdder) http.HandlerFunc {
 		)
 		if err != nil {
 			if errors.Is(err, storage.ErrForeignKeyViolation) {
-				log.Warn("organization not found", "org_id", req.OrganizationID)
+				orgIDVal := "nil"
+				if req.OrganizationID != nil {
+					orgIDVal = fmt.Sprintf("%d", *req.OrganizationID)
+				}
+				log.Warn("organization not found", "org_id", orgIDVal)
 				render.Status(r, http.StatusBadRequest)
 				render.JSON(w, r, resp.BadRequest("Organization not found"))
 				return
