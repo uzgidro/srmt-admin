@@ -318,7 +318,7 @@ func (r *Repo) GetDischargesByCascades(ctx context.Context, isOngoing *bool, sta
 
 		currentHPP.TotalVolume += d.TotalVolume
 		currentCascade.TotalVolume += d.TotalVolume
-		d.TotalVolume = roundToTwo(d.TotalVolume)
+		d.TotalVolume = roundToThree(d.TotalVolume)
 		currentHPP.Discharges = append(currentHPP.Discharges, d)
 	}
 
@@ -329,9 +329,9 @@ func (r *Repo) GetDischargesByCascades(ctx context.Context, isOngoing *bool, sta
 	// Округление и возврат результата (код без изменений)
 	for i := range result {
 		for j := range result[i].HPPs {
-			result[i].HPPs[j].TotalVolume = roundToTwo(result[i].HPPs[j].TotalVolume)
+			result[i].HPPs[j].TotalVolume = roundToThree(result[i].HPPs[j].TotalVolume)
 		}
-		result[i].TotalVolume = roundToTwo(result[i].TotalVolume)
+		result[i].TotalVolume = roundToThree(result[i].TotalVolume)
 	}
 
 	if result == nil {
@@ -441,6 +441,6 @@ func (r *Repo) DeleteDischarge(ctx context.Context, id int64) error {
 	return nil
 }
 
-func roundToTwo(val float64) float64 {
-	return math.Round(val*100) / 100
+func roundToThree(val float64) float64 {
+	return math.Round(val*1000) / 1000
 }
