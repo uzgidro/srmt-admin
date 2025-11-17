@@ -343,7 +343,7 @@ func (r *Repo) GetDischargesByCascades(ctx context.Context, isOngoing *bool, sta
 
 // EditDischarge обновляет запись о сбросе.
 // Обновляются только не-nil поля.
-func (r *Repo) EditDischarge(ctx context.Context, id, approvedByID int64, endTime *time.Time, flowRate *float64, reason *string, approved *bool) error {
+func (r *Repo) EditDischarge(ctx context.Context, id, approvedByID int64, startTime, endTime *time.Time, flowRate *float64, reason *string, approved *bool, organizationID *int64) error {
 	const op = "storage.repo.discharge.EditDischarge"
 
 	var query strings.Builder
@@ -353,6 +353,11 @@ func (r *Repo) EditDischarge(ctx context.Context, id, approvedByID int64, endTim
 	var setClauses []string
 	argID := 1
 
+	if startTime != nil {
+		setClauses = append(setClauses, fmt.Sprintf("start_time = $%d", argID))
+		args = append(args, *startTime)
+		argID++
+	}
 	if endTime != nil {
 		setClauses = append(setClauses, fmt.Sprintf("end_time = $%d", argID))
 		args = append(args, *endTime)
@@ -366,6 +371,11 @@ func (r *Repo) EditDischarge(ctx context.Context, id, approvedByID int64, endTim
 	if reason != nil {
 		setClauses = append(setClauses, fmt.Sprintf("reason = $%d", argID))
 		args = append(args, *reason)
+		argID++
+	}
+	if organizationID != nil {
+		setClauses = append(setClauses, fmt.Sprintf("organization_id = $%d", argID))
+		args = append(args, *organizationID)
 		argID++
 	}
 	// Если меняется статус 'approved', также записываем, кто это сделал

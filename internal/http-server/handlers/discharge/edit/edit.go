@@ -17,14 +17,16 @@ import (
 )
 
 type Request struct {
-	EndedAt  *time.Time `json:"ended_at,omitempty"`
-	FlowRate *float64   `json:"flow_rate,omitempty"`
-	Reason   *string    `json:"reason,omitempty"`
-	Approved *bool      `json:"approved,omitempty"`
+	StartedAt      *time.Time `json:"started_at,omitempty"`
+	EndedAt        *time.Time `json:"ended_at,omitempty"`
+	FlowRate       *float64   `json:"flow_rate,omitempty"`
+	Reason         *string    `json:"reason,omitempty"`
+	Approved       *bool      `json:"approved,omitempty"`
+	OrganizationID *int64     `json:"organization_id,omitempty"`
 }
 
 type DischargeEditor interface {
-	EditDischarge(ctx context.Context, id, approvedByID int64, endTime *time.Time, flowRate *float64, reason *string, approved *bool) error
+	EditDischarge(ctx context.Context, id, approvedByID int64, startTime, endTime *time.Time, flowRate *float64, reason *string, approved *bool, organizationID *int64) error
 }
 
 func New(log *slog.Logger, editor DischargeEditor) http.HandlerFunc {
@@ -56,7 +58,7 @@ func New(log *slog.Logger, editor DischargeEditor) http.HandlerFunc {
 			return
 		}
 
-		err = editor.EditDischarge(r.Context(), dischargeID, userID, req.EndedAt, req.FlowRate, req.Reason, req.Approved)
+		err = editor.EditDischarge(r.Context(), dischargeID, userID, req.StartedAt, req.EndedAt, req.FlowRate, req.Reason, req.Approved, req.OrganizationID)
 		if err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
 				log.Warn("discharge not found", "id", dischargeID)
