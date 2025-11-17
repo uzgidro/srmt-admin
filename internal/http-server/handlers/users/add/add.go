@@ -3,10 +3,6 @@ package add
 import (
 	"context"
 	"errors"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/render"
-	"github.com/go-playground/validator/v10"
-	"golang.org/x/crypto/bcrypt"
 	"log/slog"
 	"net/http"
 	resp "srmt-admin/internal/lib/api/response"
@@ -14,6 +10,11 @@ import (
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/storage"
 	"time"
+
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/render"
+	"github.com/go-playground/validator/v10"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type newContactRequest struct {
@@ -36,7 +37,7 @@ type Request struct {
 
 	// XOR: Либо `contact_id`, либо `contact`
 	ContactID *int64             `json:"contact_id,omitempty" validate:"omitempty,gt=0"`
-	Contact   *newContactRequest `json:"contact,omitempty" validate:"omitempty,dive"`
+	Contact   *newContactRequest `json:"contact,omitempty" validate:"omitempty"`
 }
 
 type Response struct {
