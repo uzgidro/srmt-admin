@@ -20,7 +20,7 @@ type shutdownGetter interface {
 
 const layout = "2006-01-02" // YYYY-MM-DD
 
-func Get(log *slog.Logger, getter shutdownGetter) http.HandlerFunc {
+func Get(log *slog.Logger, getter shutdownGetter, loc *time.Location) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.shutdown.Get"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
@@ -29,10 +29,11 @@ func Get(log *slog.Logger, getter shutdownGetter) http.HandlerFunc {
 		dateStr := r.URL.Query().Get("date")
 
 		if dateStr == "" {
-			day = time.Now()
+			day = time.Now().In(loc)
 		} else {
 			var err error
-			day, err = time.Parse(layout, dateStr)
+			// Parse the date in the configured timezone
+			day, err = time.ParseInLocation(layout, dateStr, loc)
 			if err != nil {
 				log.Warn("invalid 'date' parameter", sl.Err(err))
 				render.Status(r, http.StatusBadRequest)

@@ -86,6 +86,8 @@ import (
 )
 
 func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo.Repo, mng *mongo.Repo, minioClient *minio.Repo, cfg config.Config) {
+	// Get the configured timezone location
+	loc := cfg.GetLocation()
 	router.Post("/auth/sign-in", signIn.New(log, pg, token))
 	router.Post("/auth/refresh", refresh.New(log, pg, token))
 	router.Post("/auth/sign-out", signOut.New(log))
@@ -205,18 +207,18 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 			r.Get("/files/{fileID}/download", download.New(log, pg, minioClient))
 
 			// Discharges (Сбросы)
-			r.Get("/discharges", dischargeGet.New(log, pg))
-			r.Get("/discharges/flat", dischargeGetFlat.New(log, pg))
+			r.Get("/discharges", dischargeGet.New(log, pg, loc))
+			r.Get("/discharges/flat", dischargeGetFlat.New(log, pg, loc))
 			r.Post("/discharges", dischargeAdd.New(log, pg))
 			r.Patch("/discharges/{id}", dischargePatch.New(log, pg))
 			r.Delete("/discharges/{id}", dischargeDelete.New(log, pg))
 
-			r.Get("/incidents", incidents_handler.Get(log, pg))
+			r.Get("/incidents", incidents_handler.Get(log, pg, loc))
 			r.Post("/incidents", incidents_handler.Add(log, pg))
 			r.Patch("/incidents/{id}", incidents_handler.Edit(log, pg))
 			r.Delete("/incidents/{id}", incidents_handler.Delete(log, pg))
 
-			r.Get("/shutdowns", shutdowns.Get(log, pg))
+			r.Get("/shutdowns", shutdowns.Get(log, pg, loc))
 			r.Post("/shutdowns", shutdowns.Add(log, pg))
 			r.Patch("/shutdowns/{id}", shutdowns.Edit(log, pg))
 			r.Delete("/shutdowns/{id}", shutdowns.Delete(log, pg))
@@ -224,7 +226,7 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 			r.Get("/reservoir-device", reservoirdevicesummary.Get(log, pg))
 			r.Patch("/reservoir-device", reservoirdevicesummary.Patch(log, pg))
 
-			r.Get("/visits", visit.Get(log, pg))
+			r.Get("/visits", visit.Get(log, pg, loc))
 			r.Post("/visits", visit.Add(log, pg))
 			r.Patch("/visits/{id}", visit.Edit(log, pg))
 			r.Delete("/visits/{id}", visit.Delete(log, pg))

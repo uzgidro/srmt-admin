@@ -34,11 +34,16 @@ func (r *Repo) AddIncident(ctx context.Context, orgID *int64, incidentTime time.
 func (r *Repo) GetIncidents(ctx context.Context, day time.Time) ([]*incident.ResponseModel, error) {
 	const op = "storage.repo.GetIncidents"
 
+	// Create date range for the full day in the provided timezone
+	// This handles timezone conversion properly
+	startOfDay := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, day.Location())
+	endOfDay := startOfDay.Add(24 * time.Hour)
+
 	query := selectIncidentFields + fromIncidentJoins +
-		`WHERE i.incident_time::date = $1::date
+		`WHERE i.incident_time >= $1 AND i.incident_time < $2
 		 ORDER BY i.incident_time DESC`
 
-	rows, err := r.db.QueryContext(ctx, query, day)
+	rows, err := r.db.QueryContext(ctx, query, startOfDay, endOfDay)
 	if err != nil {
 		return nil, fmt.Errorf("%s: failed to query incidents: %w", op, err)
 	}

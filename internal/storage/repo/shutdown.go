@@ -83,11 +83,16 @@ func (r *Repo) AddShutdown(ctx context.Context, req dto.AddShutdownRequest) (int
 func (r *Repo) GetShutdowns(ctx context.Context, day time.Time) ([]*shutdown.ResponseModel, error) {
 	const op = "storage.repo.GetShutdowns"
 
+	// Create date range for the full day in the provided timezone
+	// This handles timezone conversion properly
+	startOfDay := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, day.Location())
+	endOfDay := startOfDay.Add(24 * time.Hour)
+
 	query := selectShutdownFields + fromShutdownJoins +
-		`WHERE s.start_time::date = $1::date
+		`WHERE s.start_time >= $1 AND s.start_time < $2
 		 ORDER BY s.start_time DESC`
 
-	rows, err := r.db.QueryContext(ctx, query, day)
+	rows, err := r.db.QueryContext(ctx, query, startOfDay, endOfDay)
 	if err != nil {
 		return nil, fmt.Errorf("%s: failed to query shutdowns: %w", op, err)
 	}

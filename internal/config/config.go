@@ -14,6 +14,7 @@ type Config struct {
 	MigrationsPath string `yaml:"migrations_path" env-required:"true"`
 	ApiKey         string `yaml:"callback_api_key" env-required:"true"`
 	Bucket         string `yaml:"bucket" env-required:"true"`
+	Timezone       string `yaml:"timezone" env-default:"Asia/Tashkent"` // UTC+5
 	Mongo          `yaml:"mongo"`
 	JwtConfig      `yaml:"jwt"`
 	HttpServer     `yaml:"http_server"`
@@ -79,4 +80,14 @@ func MustLoad() *Config {
 	}
 
 	return &config
+}
+
+// GetLocation returns the timezone location configured in the app
+func (c *Config) GetLocation() *time.Location {
+	loc, err := time.LoadLocation(c.Timezone)
+	if err != nil {
+		log.Printf("Warning: failed to load timezone %s, using UTC: %v", c.Timezone, err)
+		return time.UTC
+	}
+	return loc
 }

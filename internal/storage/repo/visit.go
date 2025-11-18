@@ -40,11 +40,16 @@ func (r *Repo) AddVisit(ctx context.Context, req dto.AddVisitRequest) (int64, er
 func (r *Repo) GetVisits(ctx context.Context, day time.Time) ([]*visit.ResponseModel, error) {
 	const op = "storage.repo.GetVisits"
 
+	// Create date range for the full day in the provided timezone
+	// This handles timezone conversion properly
+	startOfDay := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, day.Location())
+	endOfDay := startOfDay.Add(24 * time.Hour)
+
 	query := selectVisitFields + fromVisitJoins +
-		`WHERE v.visit_date::date = $1::date
+		`WHERE v.visit_date >= $1 AND v.visit_date < $2
 		 ORDER BY v.visit_date DESC, v.created_at DESC`
 
-	rows, err := r.db.QueryContext(ctx, query, day)
+	rows, err := r.db.QueryContext(ctx, query, startOfDay, endOfDay)
 	if err != nil {
 		return nil, fmt.Errorf("%s: failed to query visits: %w", op, err)
 	}

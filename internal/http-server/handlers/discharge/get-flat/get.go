@@ -18,7 +18,7 @@ type DischargeGetter interface {
 	GetAllDischarges(ctx context.Context, isOngoing *bool, startDate, endDate *time.Time) ([]discharge.Model, error)
 }
 
-func New(log *slog.Logger, getter DischargeGetter) http.HandlerFunc {
+func New(log *slog.Logger, getter DischargeGetter, loc *time.Location) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.discharge.get.New"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
@@ -40,28 +40,28 @@ func New(log *slog.Logger, getter DischargeGetter) http.HandlerFunc {
 		const layout = "2006-01-02" // Формат даты YYYY-MM-DD
 
 		if startDateStr := r.URL.Query().Get("start_date"); startDateStr != "" {
-			t, err := time.Parse(layout, startDateStr)
+			t, err := time.ParseInLocation(layout, startDateStr, loc)
 			if err != nil {
 				log.Warn("invalid 'start_date' parameter", sl.Err(err))
 				render.Status(r, http.StatusBadRequest)
 				render.JSON(w, r, resp.BadRequest("Invalid 'start_date' format, use YYYY-MM-DD"))
 				return
 			}
-			// День начинается в 04:00 UTC
-			t = t.Add(4 * time.Hour).UTC()
+			// День начинается в 09:00 местного времени
+			t = time.Date(t.Year(), t.Month(), t.Day(), 9, 0, 0, 0, loc)
 			startDate = &t
 		}
 
 		if endDateStr := r.URL.Query().Get("end_date"); endDateStr != "" {
-			t, err := time.Parse(layout, endDateStr)
+			t, err := time.ParseInLocation(layout, endDateStr, loc)
 			if err != nil {
 				log.Warn("invalid 'end_date' parameter", sl.Err(err))
 				render.Status(r, http.StatusBadRequest)
 				render.JSON(w, r, resp.BadRequest("Invalid 'end_date' format, use YYYY-MM-DD"))
 				return
 			}
-			// День заканчивается в 04:00 UTC следующего дня
-			t = t.Add(28 * time.Hour).UTC()
+			// День заканчивается в 09:00 местного времени следующего дня
+			t = time.Date(t.Year(), t.Month(), t.Day(), 9, 0, 0, 0, loc).Add(24 * time.Hour)
 			endDate = &t
 		}
 

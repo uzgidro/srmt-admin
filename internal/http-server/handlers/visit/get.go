@@ -19,7 +19,7 @@ type visitGetter interface {
 
 const dateLayout = "2006-01-02"
 
-func Get(log *slog.Logger, getter visitGetter) http.HandlerFunc {
+func Get(log *slog.Logger, getter visitGetter, loc *time.Location) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.visit.get.New"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
@@ -28,11 +28,12 @@ func Get(log *slog.Logger, getter visitGetter) http.HandlerFunc {
 		dateStr := r.URL.Query().Get("date")
 
 		if dateStr == "" {
-			day = time.Now().UTC()
+			day = time.Now().In(loc)
 			log.Info("no 'date' parameter provided, using today", "date", day.Format(dateLayout))
 		} else {
 			var err error
-			day, err = time.Parse(dateLayout, dateStr)
+			// Parse the date in the configured timezone
+			day, err = time.ParseInLocation(dateLayout, dateStr, loc)
 			if err != nil {
 				log.Warn("invalid 'date' parameter", sl.Err(err))
 				render.Status(r, http.StatusBadRequest)
