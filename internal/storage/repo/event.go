@@ -212,8 +212,8 @@ func scanEventRow(scanner interface {
 	}
 
 	e.ResponsibleContact = &contact.Model{
-		ID:  contactID,
-		FIO: contactFIO,
+		ID:   contactID,
+		Name: contactFIO,
 	}
 	if contactPhone.Valid {
 		e.ResponsibleContact.Phone = &contactPhone.String

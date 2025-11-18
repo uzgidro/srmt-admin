@@ -32,7 +32,7 @@ func (r *Repo) AddContact(ctx context.Context, req dto.AddContactRequest) (int64
 
 	var id int64
 	err := r.db.QueryRowContext(ctx, query,
-		req.FIO, req.Email, req.Phone, req.IPPhone, req.ExternalOrgName,
+		req.Name, req.Email, req.Phone, req.IPPhone, req.ExternalOrgName,
 		req.OrganizationID, req.DepartmentID, req.PositionID, req.DOB,
 	).Scan(&id)
 
@@ -86,7 +86,7 @@ func scanContactRow(scanner interface {
 	)
 
 	err := scanner.Scan(
-		&c.ID, &c.FIO, &email, &phone, &ipPhone, &dob, &extOrg,
+		&c.ID, &c.Name, &email, &phone, &ipPhone, &dob, &extOrg,
 		&c.CreatedAt, &c.UpdatedAt,
 		&orgID, &orgName,
 		&deptID, &deptName,
@@ -212,9 +212,9 @@ func (r *Repo) EditContact(ctx context.Context, contactID int64, req dto.EditCon
 	var args []interface{}
 	argID := 1
 
-	if req.FIO != nil {
+	if req.Name != nil {
 		updates = append(updates, fmt.Sprintf("fio = $%d", argID))
-		args = append(args, *req.FIO)
+		args = append(args, *req.Name)
 		argID++
 	}
 	if req.Email != nil {

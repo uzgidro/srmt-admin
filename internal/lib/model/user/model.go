@@ -14,7 +14,7 @@ type Model struct {
 	ContactID int64  `json:"contact_id"`
 
 	// --- Данные из Contacts ---
-	FIO             string     `json:"fio"`
+	Name            string     `json:"name"`
 	Email           *string    `json:"email,omitempty"`
 	Phone           *string    `json:"phone,omitempty"`
 	IPPhone         *string    `json:"ip_phone,omitempty"`

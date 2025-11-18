@@ -9,7 +9,7 @@ type GetAllContactsFilters struct {
 
 // AddContactRequest - DTO для создания контакта
 type AddContactRequest struct {
-	FIO             string
+	Name            string
 	Email           *string
 	Phone           *string
 	IPPhone         *string
@@ -22,7 +22,7 @@ type AddContactRequest struct {
 
 // EditContactRequest - DTO для обновления контакта
 type EditContactRequest struct {
-	FIO             *string
+	Name            *string
 	Email           *string
 	Phone           *string
 	IPPhone         *string

@@ -59,7 +59,7 @@ func EnsureAdminExists(ctx context.Context, log *slog.Logger, creator AdminCreat
 			// --- (ИСПРАВЛЕНИЕ) ---
 			// Создаем контакт ТОЛЬКО ЕСЛИ юзер не найден
 			log.Info("creating default admin contact")
-			contactID, contactErr := creator.AddContact(ctx, dto.AddContactRequest{FIO: "Администратор"})
+			contactID, contactErr := creator.AddContact(ctx, dto.AddContactRequest{Name: "Администратор"})
 			if contactErr != nil {
 				// (Если `AddContact` упал, например, по unique_violation,
 				//  тоже стоит проверить, возможно, контакт уже есть, а юзера нет?

@@ -17,7 +17,7 @@ import (
 
 // Request - JSON DTO хендлера
 type Request struct {
-	FIO             string     `json:"fio" validate:"required"`
+	Name            string     `json:"name" validate:"required"`
 	Email           *string    `json:"email,omitempty" validate:"omitempty,email"`
 	Phone           *string    `json:"phone,omitempty"`
 	IPPhone         *string    `json:"ip_phone,omitempty"`
@@ -62,7 +62,7 @@ func New(log *slog.Logger, adder ContactAdder) http.HandlerFunc {
 
 		// Маппинг в DTO хранилища
 		storageReq := dto.AddContactRequest{
-			FIO:             req.FIO,
+			Name:            req.Name,
 			Email:           req.Email,
 			Phone:           req.Phone,
 			IPPhone:         req.IPPhone,
@@ -76,7 +76,7 @@ func New(log *slog.Logger, adder ContactAdder) http.HandlerFunc {
 		id, err := adder.AddContact(r.Context(), storageReq)
 		if err != nil {
 			if errors.Is(err, storage.ErrDuplicate) {
-				log.Warn("duplicate contact data", "fio", req.FIO)
+				log.Warn("duplicate contact data", "name", req.Name)
 				render.Status(r, http.StatusConflict)
 				render.JSON(w, r, resp.BadRequest("Contact with this email or phone already exists"))
 				return

@@ -315,7 +315,7 @@ func scanUserRow(scanner interface {
 
 	err := scanner.Scan(
 		&u.ID, &u.IsActive, &u.Login, passHashDest, &u.CreatedAt, &u.UpdatedAt, &u.ContactID,
-		&u.FIO, &email, &phone, &ipPhone, &dob, &extOrg,
+		&u.Name, &email, &phone, &ipPhone, &dob, &extOrg,
 		&orgID, &orgName,
 		&deptID, &deptName,
 		&posID, &posName,

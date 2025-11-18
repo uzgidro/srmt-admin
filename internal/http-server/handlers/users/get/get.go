@@ -17,12 +17,6 @@ type UserGetter interface {
 	GetAllUsers(ctx context.Context, filters dto.GetAllUsersFilters) ([]*user.Model, error)
 }
 
-type ResponseUser struct {
-	ID    int64    `json:"id"`
-	Name  string   `json:"name"`
-	Roles []string `json:"roles"`
-}
-
 func New(log *slog.Logger, userGetter UserGetter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.users.get.New"
@@ -78,17 +72,7 @@ func New(log *slog.Logger, userGetter UserGetter) http.HandlerFunc {
 			return
 		}
 
-		// 3. Преобразуем полные модели (*user.Model) в DTO для ответа (ResponseUser)
-		responseUsers := make([]ResponseUser, len(users))
-		for i, u := range users {
-			responseUsers[i] = ResponseUser{
-				ID:    u.ID,
-				Name:  u.FIO, // (Маппим FIO в Name, как ты и делал)
-				Roles: u.Roles,
-			}
-		}
-
-		log.Info("successfully retrieved all users", slog.Int("count", len(responseUsers)))
-		render.JSON(w, r, responseUsers)
+		log.Info("successfully retrieved all users", slog.Int("count", len(users)))
+		render.JSON(w, r, users)
 	}
 }

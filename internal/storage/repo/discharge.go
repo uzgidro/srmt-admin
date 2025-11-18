@@ -147,8 +147,8 @@ func (r *Repo) GetAllDischarges(ctx context.Context, isOngoing *bool, startDate,
 		// ИСПРАВЛЕНИЕ: Собираем модель пользователя
 		fioCreator := creatorFIO
 		d.CreatedByUser = &user.ShortInfo{
-			ID:  creatorID,
-			FIO: &fioCreator,
+			ID:   creatorID,
+			Name: &fioCreator,
 		}
 
 		if approverID.Valid {
@@ -157,7 +157,7 @@ func (r *Repo) GetAllDischarges(ctx context.Context, isOngoing *bool, startDate,
 			}
 			if approverFIO.Valid {
 				fioApprover := approverFIO.String
-				approver.FIO = &fioApprover
+				approver.Name = &fioApprover
 			}
 			d.ApprovedByUser = approver
 		}
@@ -277,21 +277,21 @@ func (r *Repo) GetDischargesByCascades(ctx context.Context, isOngoing *bool, sta
 			Name: hppName,
 		}
 
-		// Присваиваем FIO создателю
+		// Присваиваем Name создателю
 		fioCreator := creatorFIO
 		d.CreatedByUser = &user.ShortInfo{
-			ID:  creatorID,
-			FIO: &fioCreator,
+			ID:   creatorID,
+			Name: &fioCreator,
 		}
 
-		// Присваиваем FIO утверждающему, если он есть
+		// Присваиваем Name утверждающему, если он есть
 		if approverID.Valid {
 			approver := &user.ShortInfo{
 				ID: approverID.Int64,
 			}
 			if approverFIO.Valid {
 				fioApprover := approverFIO.String
-				approver.FIO = &fioApprover
+				approver.Name = &fioApprover
 			}
 			d.ApprovedByUser = approver
 		}

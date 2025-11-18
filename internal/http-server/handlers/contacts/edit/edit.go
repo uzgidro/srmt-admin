@@ -19,7 +19,7 @@ import (
 
 // Request (DTO хендлера)
 type Request struct {
-	FIO             *string    `json:"fio,omitempty" validate:"omitempty,min=1"`
+	Name            *string    `json:"name,omitempty" validate:"omitempty,min=1"`
 	Email           *string    `json:"email,omitempty" validate:"omitempty,email"`
 	Phone           *string    `json:"phone,omitempty"`
 	IPPhone         *string    `json:"ip_phone,omitempty"`
@@ -68,7 +68,7 @@ func New(log *slog.Logger, updater ContactUpdater) http.HandlerFunc {
 
 		// Маппинг в DTO хранилища
 		storageReq := dto.EditContactRequest{
-			FIO:             req.FIO,
+			Name:            req.Name,
 			Email:           req.Email,
 			Phone:           req.Phone,
 			IPPhone:         req.IPPhone,

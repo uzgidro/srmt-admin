@@ -18,7 +18,7 @@ import (
 )
 
 type newContactRequest struct {
-	FIO             string     `json:"fio" validate:"required"`
+	Name            string     `json:"name" validate:"required"`
 	Email           *string    `json:"email,omitempty" validate:"omitempty,email"`
 	Phone           *string    `json:"phone,omitempty"`
 	IPPhone         *string    `json:"ip_phone,omitempty"`
@@ -142,7 +142,7 @@ func New(log *slog.Logger, userRepo UserLinker) http.HandlerFunc {
 		} else if req.Contact != nil {
 			// 1. Создаем контакт
 			storageReq := dto.AddContactRequest{
-				FIO:             req.Contact.FIO,
+				Name:            req.Contact.Name,
 				Email:           req.Contact.Email,
 				Phone:           req.Contact.Phone,
 				IPPhone:         req.Contact.IPPhone,
@@ -156,7 +156,7 @@ func New(log *slog.Logger, userRepo UserLinker) http.HandlerFunc {
 			if err != nil {
 				// (Обрабатываем ошибки от AddContact)
 				if errors.Is(err, storage.ErrDuplicate) {
-					log.Warn("duplicate contact data", "fio", req.Contact.FIO)
+					log.Warn("duplicate contact data", "name", req.Contact.Name)
 					render.Status(r, http.StatusConflict)
 					render.JSON(w, r, resp.BadRequest("Contact with this email or phone already exists"))
 					return

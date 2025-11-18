@@ -87,7 +87,7 @@ func (s *Token) createAccessToken(u *user.Model) (string, error) {
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
 		UserID: u.ID,
-		Name:   u.FIO,
+		Name:   u.Name,
 		Roles:  u.Roles,
 	}
 

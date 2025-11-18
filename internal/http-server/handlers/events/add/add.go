@@ -158,7 +158,7 @@ func New(log *slog.Logger, uploader FileUploader, adder EventAdder) http.Handler
 
 			responsibleContactID = contactID
 		} else {
-			// Create new contact from FIO and phone
+			// Create new contact from name and phone
 			fio := r.FormValue("responsible_fio")
 			phone := r.FormValue("responsible_phone")
 
@@ -170,7 +170,7 @@ func New(log *slog.Logger, uploader FileUploader, adder EventAdder) http.Handler
 
 			// Create contact
 			contactReq := dto.AddContactRequest{
-				FIO:   fio,
+				Name:  fio,
 				Phone: &phone,
 			}
 
