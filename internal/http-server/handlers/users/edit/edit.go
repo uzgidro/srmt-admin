@@ -3,11 +3,6 @@ package edit
 import (
 	"context"
 	"errors"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/render"
-	"github.com/go-playground/validator/v10"
-	"golang.org/x/crypto/bcrypt"
 	"log/slog"
 	"net/http"
 	resp "srmt-admin/internal/lib/api/response"
@@ -15,17 +10,25 @@ import (
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/storage"
 	"strconv"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/render"
+	"github.com/go-playground/validator/v10"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type Request struct {
 	Login    *string `json:"login,omitempty" validate:"omitempty,min=1"`
 	Password *string `json:"password,omitempty" validate:"omitempty,min=8"`
 	IsActive *bool   `json:"is_active,omitempty"`
+	RoleIDs  []int64 `json:"role_ids,omitempty"`
 }
 
 // UserUpdater - интерфейс репозитория (использует DTO из storage)
 type UserUpdater interface {
 	EditUser(ctx context.Context, userID int64, passwordHash []byte, req dto.EditUserRequest) error
+	ReplaceUserRoles(ctx context.Context, userID int64, roleIDs []int64) error
 }
 
 func New(log *slog.Logger, updater UserUpdater) http.HandlerFunc {
@@ -34,12 +37,12 @@ func New(log *slog.Logger, updater UserUpdater) http.HandlerFunc {
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
 
 		// 1. Получаем ID из URL
-		idStr := chi.URLParam(r, "id")
+		idStr := chi.URLParam(r, "userID")
 		id, err := strconv.ParseInt(idStr, 10, 64)
 		if err != nil {
-			log.Warn("invalid 'id' parameter", sl.Err(err))
+			log.Warn("invalid 'userID' parameter", sl.Err(err))
 			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, resp.BadRequest("Invalid 'id' parameter"))
+			render.JSON(w, r, resp.BadRequest("Invalid 'userID' parameter"))
 			return
 		}
 
@@ -101,6 +104,24 @@ func New(log *slog.Logger, updater UserUpdater) http.HandlerFunc {
 			render.Status(r, http.StatusInternalServerError)
 			render.JSON(w, r, resp.InternalServerError("Failed to update user"))
 			return
+		}
+
+		// 7. Replace user roles if role_ids is provided
+		if req.RoleIDs != nil {
+			err = updater.ReplaceUserRoles(r.Context(), id, req.RoleIDs)
+			if err != nil {
+				if errors.Is(err, storage.ErrForeignKeyViolation) {
+					log.Warn("invalid role_id in list", sl.Err(err))
+					render.Status(r, http.StatusBadRequest)
+					render.JSON(w, r, resp.BadRequest("One or more role IDs are invalid"))
+					return
+				}
+				log.Error("failed to replace user roles", sl.Err(err))
+				render.Status(r, http.StatusInternalServerError)
+				render.JSON(w, r, resp.InternalServerError("Failed to update user roles"))
+				return
+			}
+			log.Info("user roles replaced", slog.Int64("user_id", id), slog.Int("role_count", len(req.RoleIDs)))
 		}
 
 		log.Info("user updated", slog.Int64("id", id))

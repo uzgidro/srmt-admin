@@ -261,6 +261,51 @@ func (r *Repo) RevokeRole(ctx context.Context, userID, roleID int64) error {
 	return nil
 }
 
+// ReplaceUserRoles completely replaces all roles for a user with the provided list
+func (r *Repo) ReplaceUserRoles(ctx context.Context, userID int64, roleIDs []int64) error {
+	const op = "storage.role.ReplaceUserRoles"
+
+	// Start transaction
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("%s: failed to begin transaction: %w", op, err)
+	}
+	defer tx.Rollback()
+
+	// 1. Delete all existing roles for this user
+	_, err = tx.ExecContext(ctx, "DELETE FROM users_roles WHERE user_id = $1", userID)
+	if err != nil {
+		return fmt.Errorf("%s: failed to delete existing roles: %w", op, err)
+	}
+
+	// 2. Insert new roles (if any)
+	if len(roleIDs) > 0 {
+		query := "INSERT INTO users_roles (user_id, role_id) VALUES "
+		var valueStrings []string
+		var valueArgs []interface{}
+		paramIndex := 1
+
+		for _, roleID := range roleIDs {
+			valueStrings = append(valueStrings, fmt.Sprintf("($%d, $%d)", paramIndex, paramIndex+1))
+			valueArgs = append(valueArgs, userID)
+			valueArgs = append(valueArgs, roleID)
+			paramIndex += 2
+		}
+
+		fullQuery := query + strings.Join(valueStrings, ",")
+		_, err = tx.ExecContext(ctx, fullQuery, valueArgs...)
+		if err != nil {
+			if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
+				return translatedErr
+			}
+			return fmt.Errorf("%s: failed to insert new roles: %w", op, err)
+		}
+	}
+
+	// Commit transaction
+	return tx.Commit()
+}
+
 func (r *Repo) GetUserRoles(ctx context.Context, userID int64) ([]role.Model, error) {
 	const op = "storage.role.GetUserRoles"
 
