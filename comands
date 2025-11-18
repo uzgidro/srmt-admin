@@ -1,7 +1,7 @@
 migrate create -ext sql -dir migrations\postgres -seq NAME
 
-docker build -t suxa/srmt-prime:1.5.6 .
-docker push suxa/srmt-prime:1.5.6
+docker build -t suxa/srmt-prime:1.5.7 .
+docker push suxa/srmt-prime:1.5.7
 
 
 

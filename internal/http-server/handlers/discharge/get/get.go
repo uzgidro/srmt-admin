@@ -46,6 +46,8 @@ func New(log *slog.Logger, getter DischargeGetter) http.HandlerFunc {
 				render.JSON(w, r, resp.BadRequest("Invalid 'start_date' format, use YYYY-MM-DD"))
 				return
 			}
+			// День начинается в 04:00 UTC
+			t = t.Add(4 * time.Hour).UTC()
 			startDate = &t
 		}
 
@@ -57,8 +59,8 @@ func New(log *slog.Logger, getter DischargeGetter) http.HandlerFunc {
 				render.JSON(w, r, resp.BadRequest("Invalid 'end_date' format, use YYYY-MM-DD"))
 				return
 			}
-			// Чтобы включить весь день, устанавливаем время на конец дня
-			t = t.Add(23*time.Hour + 59*time.Minute + 59*time.Second)
+			// День заканчивается в 04:00 UTC следующего дня
+			t = t.Add(28 * time.Hour).UTC()
 			endDate = &t
 		}
 

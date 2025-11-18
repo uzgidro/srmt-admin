@@ -86,15 +86,15 @@ func (r *Repo) GetAllDischarges(ctx context.Context, isOngoing *bool, startDate,
 	}
 
 	if startDate != nil && endDate != nil {
-		conditions = append(conditions, fmt.Sprintf("(d.start_time::date >= $%d AND d.end_time::date <= $%d)", argID, argID+1))
+		conditions = append(conditions, fmt.Sprintf("(d.start_time >= $%d AND d.start_time < $%d)", argID, argID+1))
 		args = append(args, *startDate, *endDate)
 		argID += 2
 	} else if startDate != nil {
-		conditions = append(conditions, fmt.Sprintf("d.start_time::date >= $%d", argID))
+		conditions = append(conditions, fmt.Sprintf("d.start_time >= $%d", argID))
 		args = append(args, *startDate)
 		argID++
 	} else if endDate != nil {
-		conditions = append(conditions, fmt.Sprintf("d.end_time::date <= $%d", argID))
+		conditions = append(conditions, fmt.Sprintf("d.start_time < $%d", argID))
 		args = append(args, *endDate)
 		argID++
 	}
@@ -219,15 +219,15 @@ func (r *Repo) GetDischargesByCascades(ctx context.Context, isOngoing *bool, sta
 		argID++
 	}
 	if startDate != nil && endDate != nil {
-		conditions = append(conditions, fmt.Sprintf("(d.start_time::date >= $%d AND d.end_time::date <= $%d)", argID, argID+1))
+		conditions = append(conditions, fmt.Sprintf("(d.start_time >= $%d AND d.start_time < $%d)", argID, argID+1))
 		args = append(args, *startDate, *endDate)
 		argID += 2
 	} else if startDate != nil {
-		conditions = append(conditions, fmt.Sprintf("d.start_time::date >= $%d", argID))
+		conditions = append(conditions, fmt.Sprintf("d.start_time >= $%d", argID))
 		args = append(args, *startDate)
 		argID++
 	} else if endDate != nil {
-		conditions = append(conditions, fmt.Sprintf("d.end_time::date <= $%d", argID))
+		conditions = append(conditions, fmt.Sprintf("d.start_time < $%d", argID))
 		args = append(args, *endDate)
 		argID++
 	}
