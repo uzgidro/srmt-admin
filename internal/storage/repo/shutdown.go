@@ -90,7 +90,7 @@ func (r *Repo) GetShutdowns(ctx context.Context, day time.Time) ([]*shutdown.Res
 
 	query := selectShutdownFields + fromShutdownJoins +
 		`WHERE s.start_time >= $1 AND s.start_time < $2
-		 ORDER BY s.start_time DESC`
+		 ORDER BY s.start_time ASC`
 
 	rows, err := r.db.QueryContext(ctx, query, startOfDay, endOfDay)
 	if err != nil {

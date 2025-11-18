@@ -41,7 +41,7 @@ func (r *Repo) GetIncidents(ctx context.Context, day time.Time) ([]*incident.Res
 
 	query := selectIncidentFields + fromIncidentJoins +
 		`WHERE i.incident_time >= $1 AND i.incident_time < $2
-		 ORDER BY i.incident_time DESC`
+		 ORDER BY i.incident_time ASC`
 
 	rows, err := r.db.QueryContext(ctx, query, startOfDay, endOfDay)
 	if err != nil {

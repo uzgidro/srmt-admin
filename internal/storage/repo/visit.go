@@ -47,7 +47,7 @@ func (r *Repo) GetVisits(ctx context.Context, day time.Time) ([]*visit.ResponseM
 
 	query := selectVisitFields + fromVisitJoins +
 		`WHERE v.visit_date >= $1 AND v.visit_date < $2
-		 ORDER BY v.visit_date DESC, v.created_at DESC`
+		 ORDER BY v.visit_date ASC`
 
 	rows, err := r.db.QueryContext(ctx, query, startOfDay, endOfDay)
 	if err != nil {

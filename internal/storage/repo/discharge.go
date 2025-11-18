@@ -106,7 +106,7 @@ func (r *Repo) GetAllDischarges(ctx context.Context, isOngoing *bool, startDate,
 		finalQuery.WriteString(" WHERE ")
 		finalQuery.WriteString(strings.Join(conditions, " AND "))
 	}
-	finalQuery.WriteString(" ORDER BY d.start_time DESC;")
+	finalQuery.WriteString(" ORDER BY d.start_time ASC;")
 
 	// Выполняем запрос
 	rows, err := r.db.QueryContext(ctx, finalQuery.String(), args...)
@@ -237,7 +237,7 @@ func (r *Repo) GetDischargesByCascades(ctx context.Context, isOngoing *bool, sta
 	if len(conditions) > 0 {
 		finalQuery.WriteString(" WHERE " + strings.Join(conditions, " AND "))
 	}
-	finalQuery.WriteString(" ORDER BY cascade_name, hpp_name, d.start_time DESC;")
+	finalQuery.WriteString(" ORDER BY cascade_name, hpp_name, d.start_time ASC;")
 
 	rows, err := r.db.QueryContext(ctx, finalQuery.String(), args...)
 	if err != nil {
