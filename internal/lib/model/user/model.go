@@ -1,6 +1,7 @@
 package user
 
 import (
+	"srmt-admin/internal/lib/model/contact"
 	"srmt-admin/internal/lib/model/department"
 	"srmt-admin/internal/lib/model/organization"
 	"srmt-admin/internal/lib/model/position"
@@ -22,6 +23,7 @@ type Model struct {
 	ExternalOrgName *string    `json:"external_organization_name,omitempty"`
 
 	// --- Вложенные "обогащенные" модели ---
+	Contact      *contact.Model      `json:"contact,omitempty"`
 	Organization *organization.Model `json:"organization,omitempty"`
 	Department   *department.Model   `json:"department,omitempty"`
 	Position     *position.Model     `json:"position,omitempty"`

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"srmt-admin/internal/lib/dto"
+	"srmt-admin/internal/lib/model/contact"
 	"srmt-admin/internal/lib/model/department"
 	"srmt-admin/internal/lib/model/organization"
 	"srmt-admin/internal/lib/model/position"
@@ -351,6 +352,20 @@ func scanUserRow(scanner interface {
 	}
 	if posID.Valid && posName.Valid {
 		u.Position = &position.Model{ID: posID.Int64, Name: posName.String}
+	}
+
+	// Вложенная контактная информация
+	u.Contact = &contact.Model{
+		ID:              u.ContactID,
+		Name:            u.Name,
+		Email:           u.Email,
+		Phone:           u.Phone,
+		IPPhone:         u.IPPhone,
+		DOB:             u.DOB,
+		ExternalOrgName: u.ExternalOrgName,
+		Organization:    u.Organization,
+		Department:      u.Department,
+		Position:        u.Position,
 	}
 
 	// Роли

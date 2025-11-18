@@ -13,7 +13,7 @@ type Model struct {
 	Email           *string    `json:"email,omitempty"`
 	Phone           *string    `json:"phone,omitempty"`
 	IPPhone         *string    `json:"ip_phone,omitempty"`
-	DOB             *time.Time `json:"dob,omitempty"` // (Из миграции)
+	DOB             *time.Time `json:"dob,omitempty"`
 	ExternalOrgName *string    `json:"external_organization_name,omitempty"`
 
 	// Вложенные "обогащенные" модели
@@ -22,6 +22,6 @@ type Model struct {
 	Position     *position.Model     `json:"position,omitempty"`
 
 	// Аудит
-	CreatedAt time.Time  `json:"created_at"`
-	UpdatedAt *time.Time `json:"updated_at"`
+	CreatedAt time.Time  `json:"-"`
+	UpdatedAt *time.Time `json:"-"`
 }
