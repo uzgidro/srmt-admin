@@ -23,6 +23,9 @@ RUN CGO_ENABLED=0 go build -ldflags="-w -s" -o /app/srmt-admin ./cmd/main.go
 # Используем минимальный базовый образ, который не содержит ничего лишнего
 FROM alpine:latest
 
+# Устанавливаем timezone data для поддержки временных зон
+RUN apk add --no-cache tzdata
+
 # Устанавливаем рабочую директорию
 WORKDIR /app
 

@@ -33,6 +33,7 @@ func main() {
 
 	log := setupLogger(cfg.Env)
 	log.Info("logger start")
+	log.Info("timezone configured", "timezone", cfg.Timezone, "location", cfg.GetLocation().String())
 
 	pgDriver, err := postgres.New(cfg.StoragePath, cfg.MigrationsPath)
 	if err != nil {
