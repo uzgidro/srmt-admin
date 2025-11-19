@@ -2,9 +2,10 @@ package response
 
 import (
 	"fmt"
-	"github.com/go-playground/validator/v10"
 	"net/http"
 	"strings"
+
+	"github.com/go-playground/validator/v10"
 )
 
 type Response struct {
@@ -25,6 +26,13 @@ func Created() Response {
 func BadRequest(msg string) Response {
 	return Response{
 		Status: http.StatusBadRequest,
+		Error:  msg,
+	}
+}
+
+func Forbidden(msg string) Response {
+	return Response{
+		Status: http.StatusForbidden,
 		Error:  msg,
 	}
 }

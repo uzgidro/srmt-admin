@@ -3,10 +3,6 @@ package sign_in
 import (
 	"context"
 	"errors"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/render"
-	"github.com/go-playground/validator/v10"
-	"golang.org/x/crypto/bcrypt"
 	"log/slog"
 	"net/http"
 	resp "srmt-admin/internal/lib/api/response"
@@ -15,6 +11,11 @@ import (
 	"srmt-admin/internal/storage"
 	"srmt-admin/internal/token"
 	"time"
+
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/render"
+	"github.com/go-playground/validator/v10"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type Request struct {
@@ -90,6 +91,14 @@ func New(log *slog.Logger, userGetter UserGetter, tokenCreator TokenCreator) htt
 			log.Warn("invalid password")
 			render.Status(r, http.StatusBadRequest)
 			render.JSON(w, r, resp.BadRequest("invalid credentials"))
+			return
+		}
+
+		// check if user is active
+		if !u.IsActive {
+			log.Warn("user is not active", slog.String("name", req.Name))
+			render.Status(r, http.StatusForbidden)
+			render.JSON(w, r, resp.Forbidden("user account is not active"))
 			return
 		}
 
