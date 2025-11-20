@@ -79,6 +79,7 @@ import (
 	weatherProxy "srmt-admin/internal/http-server/handlers/weather/proxy"
 	mwapikey "srmt-admin/internal/http-server/middleware/api-key"
 	mwauth "srmt-admin/internal/http-server/middleware/auth"
+	"srmt-admin/internal/lib/service/ascue"
 	"srmt-admin/internal/storage/minio"
 	"srmt-admin/internal/storage/mongo"
 	"srmt-admin/internal/storage/repo"
@@ -90,6 +91,19 @@ import (
 func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo.Repo, mng *mongo.Repo, minioClient *minio.Repo, cfg config.Config) {
 	// Get the configured timezone location
 	loc := cfg.GetLocation()
+
+	// Initialize ASCUE fetcher for enriching cascade data with real-time metrics
+	ascueCfg, err := config.LoadASCUEConfig("config/ascue.yaml")
+	if err != nil {
+		log.Warn("failed to load ASCUE config, cascades will not include ASCUE metrics", "error", err)
+		ascueCfg = nil
+	}
+
+	var ascueFetcher *ascue.Fetcher
+	if ascueCfg != nil {
+		ascueFetcher = ascue.NewFetcher(ascueCfg, log)
+	}
+
 	router.Post("/auth/sign-in", signIn.New(log, pg, token))
 	router.Post("/auth/refresh", refresh.New(log, pg, token))
 	router.Post("/auth/sign-out", signOut.New(log))
@@ -140,7 +154,7 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 
 		// Organizations
 		r.Get("/organizations", orgGet.New(log, pg))
-		r.Get("/organizations/cascades", orgGetCascades.New(log, pg))
+		r.Get("/organizations/cascades", orgGetCascades.New(log, pg, ascueFetcher))
 		r.Get("/organizations/flat", orgGetFlat.New(log, pg))
 		r.Post("/organizations", orgAdd.New(log, pg))
 		r.Patch("/organizations/{id}", orgPatch.New(log, pg))

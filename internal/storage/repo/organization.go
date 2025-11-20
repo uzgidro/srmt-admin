@@ -340,7 +340,8 @@ func (r *Repo) GetFlatOrganizations(ctx context.Context, orgType *string) ([]*or
 }
 
 // GetCascadesWithDetails returns cascades with their HPPs, including contacts with specific positions and current discharges
-func (r *Repo) GetCascadesWithDetails(ctx context.Context) ([]*dto.CascadeWithDetails, error) {
+// If ascueFetcher is provided, it enriches the data with ASCUE metrics
+func (r *Repo) GetCascadesWithDetails(ctx context.Context, ascueFetcher dto.ASCUEFetcher) ([]*dto.CascadeWithDetails, error) {
 	const op = "storage.repo.GetCascadesWithDetails"
 
 	// Get all organizations with cascade type
@@ -575,6 +576,22 @@ func (r *Repo) GetCascadesWithDetails(ctx context.Context) ([]*dto.CascadeWithDe
 	// Calculate discharges for all orgs
 	for _, org := range allOrgs {
 		calculateDischarge(org)
+	}
+
+	// Enrich with ASCUE metrics if fetcher is provided
+	if ascueFetcher != nil {
+		ascueMetrics, err := ascueFetcher.FetchAll(ctx)
+		if err != nil {
+			// Error fetching ASCUE metrics - graceful degradation
+			// Just continue without ASCUE metrics (silently)
+		} else {
+			// Apply ASCUE metrics to organizations
+			for _, org := range allOrgs {
+				if metrics, ok := ascueMetrics[org.ID]; ok {
+					org.ASCUEMetrics = metrics
+				}
+			}
+		}
 	}
 
 	// Return only cascades (organizations with type 'kaskad' that don't have a kaskad parent)
