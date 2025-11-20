@@ -24,6 +24,7 @@ import (
 	dischargeDelete "srmt-admin/internal/http-server/handlers/discharge/delete"
 	dischargePatch "srmt-admin/internal/http-server/handlers/discharge/edit"
 	dischargeGet "srmt-admin/internal/http-server/handlers/discharge/get"
+	dischargeGetCurrent "srmt-admin/internal/http-server/handlers/discharge/get-current"
 	dischargeGetFlat "srmt-admin/internal/http-server/handlers/discharge/get-flat"
 	eventAdd "srmt-admin/internal/http-server/handlers/events/add"
 	eventDelete "srmt-admin/internal/http-server/handlers/events/delete"
@@ -208,6 +209,7 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 
 			// Discharges (Сбросы)
 			r.Get("/discharges", dischargeGet.New(log, pg, loc))
+			r.Get("/discharges/current", dischargeGetCurrent.New(log, pg))
 			r.Get("/discharges/flat", dischargeGetFlat.New(log, pg, loc))
 			r.Post("/discharges", dischargeAdd.New(log, pg))
 			r.Patch("/discharges/{id}", dischargePatch.New(log, pg))

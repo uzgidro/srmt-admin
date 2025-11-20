@@ -441,6 +441,111 @@ func (r *Repo) DeleteDischarge(ctx context.Context, id int64) error {
 	return nil
 }
 
+// GetCurrentDischarges получает список текущих активных сбросов (start_time <= NOW() AND (end_time > NOW() OR end_time IS NULL))
+func (r *Repo) GetCurrentDischarges(ctx context.Context) ([]discharge.Model, error) {
+	const op = "storage.repo.discharge.GetCurrentDischarges"
+
+	const query = `
+		SELECT
+			d.id, d.start_time, d.end_time, d.flow_rate_m3_s, d.reason, d.approved,
+			d.is_ongoing, d.total_volume_mln_m3,
+			o.id as org_id, o.name as org_name, o.parent_organization_id as org_parent_id,
+			COALESCE(ot.types_json, '[]'::json) as org_types,
+			creator.id as creator_id,
+			creator_contact.fio as creator_fio,
+			approver.id as approver_id,
+			approver_contact.fio as approver_fio
+		FROM
+			v_idle_water_discharges_with_volume d
+		JOIN
+			organizations o ON d.organization_id = o.id
+		JOIN
+			users creator ON d.created_by = creator.id
+		JOIN
+			contacts creator_contact ON creator.contact_id = creator_contact.id
+		LEFT JOIN
+			users approver ON d.approved_by = approver.id
+		LEFT JOIN
+			contacts approver_contact ON approver.contact_id = approver_contact.id
+		LEFT JOIN (
+			SELECT
+				otl.organization_id,
+				json_agg(ot.name ORDER BY ot.name) as types_json
+			FROM organization_type_links otl
+			JOIN organization_types ot ON otl.type_id = ot.id
+			GROUP BY otl.organization_id
+		) ot ON o.id = ot.organization_id
+		WHERE
+			d.start_time <= NOW()
+			AND (d.end_time > NOW() OR d.end_time IS NULL)
+		ORDER BY d.start_time ASC;
+	`
+
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("%s: failed to query current discharges: %w", op, err)
+	}
+	defer rows.Close()
+
+	var discharges []discharge.Model
+	for rows.Next() {
+		var d discharge.Model
+		var org organization.Model
+		var orgTypesJSON []byte
+
+		var creatorID int64
+		var creatorFIO string
+		var approverID sql.NullInt64
+		var approverFIO sql.NullString
+
+		err := rows.Scan(
+			&d.ID, &d.StartedAt, &d.EndedAt, &d.FlowRate, &d.Reason, &d.Approved,
+			&d.IsOngoing, &d.TotalVolume,
+			&org.ID, &org.Name, &org.ParentOrganizationID, &orgTypesJSON,
+			&creatorID, &creatorFIO,
+			&approverID, &approverFIO,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("%s: failed to scan discharge row: %w", op, err)
+		}
+
+		if err := json.Unmarshal(orgTypesJSON, &org.Types); err != nil {
+			return nil, fmt.Errorf("%s: failed to unmarshal org types: %w", op, err)
+		}
+
+		d.Organization = &org
+
+		fioCreator := creatorFIO
+		d.CreatedByUser = &user.ShortInfo{
+			ID:   creatorID,
+			Name: &fioCreator,
+		}
+
+		if approverID.Valid {
+			approver := &user.ShortInfo{
+				ID: approverID.Int64,
+			}
+			if approverFIO.Valid {
+				fioApprover := approverFIO.String
+				approver.Name = &fioApprover
+			}
+			d.ApprovedByUser = approver
+		}
+
+		discharges = append(discharges, d)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: rows iteration error: %w", op, err)
+	}
+
+	if discharges == nil {
+		return []discharge.Model{}, nil
+	}
+
+	return discharges, nil
+}
+
 func roundToThree(val float64) float64 {
 	return math.Round(val*1000) / 1000
 }
