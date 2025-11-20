@@ -446,40 +446,40 @@ func (r *Repo) GetCurrentDischarges(ctx context.Context) ([]discharge.Model, err
 	const op = "storage.repo.discharge.GetCurrentDischarges"
 
 	const query = `
-		SELECT
-			d.id, d.start_time, d.end_time, d.flow_rate_m3_s, d.reason, d.approved,
-			d.is_ongoing, d.total_volume_mln_m3,
-			o.id as org_id, o.name as org_name, o.parent_organization_id as org_parent_id,
-			COALESCE(ot.types_json, '[]'::json) as org_types,
-			creator.id as creator_id,
-			creator_contact.fio as creator_fio,
-			approver.id as approver_id,
-			approver_contact.fio as approver_fio
-		FROM
-			v_idle_water_discharges_with_volume d
-		JOIN
-			organizations o ON d.organization_id = o.id
-		JOIN
-			users creator ON d.created_by = creator.id
-		JOIN
-			contacts creator_contact ON creator.contact_id = creator_contact.id
-		LEFT JOIN
-			users approver ON d.approved_by = approver.id
-		LEFT JOIN
-			contacts approver_contact ON approver.contact_id = approver_contact.id
-		LEFT JOIN (
 			SELECT
-				otl.organization_id,
-				json_agg(ot.name ORDER BY ot.name) as types_json
-			FROM organization_type_links otl
-			JOIN organization_types ot ON otl.type_id = ot.id
-			GROUP BY otl.organization_id
-		) ot ON o.id = ot.organization_id
-		WHERE
-			d.start_time <= NOW()
-			AND (d.end_time > NOW() OR d.end_time IS NULL)
-		ORDER BY d.start_time ASC;
-	`
+				d.id, d.start_time, d.end_time, d.flow_rate_m3_s, d.reason, d.approved,
+				d.is_ongoing, d.total_volume_mln_m3,
+				o.id as org_id, o.name as org_name, o.parent_organization_id as org_parent_id,
+				COALESCE(ot.types_json, '[]'::json) as org_types,
+				creator.id as creator_id,
+				creator_contact.fio as creator_fio,
+				approver.id as approver_id,
+				approver_contact.fio as approver_fio
+			FROM
+				v_idle_water_discharges_with_volume d
+			JOIN
+				organizations o ON d.organization_id = o.id
+			JOIN
+				users creator ON d.created_by = creator.id
+			JOIN
+				contacts creator_contact ON creator.contact_id = creator_contact.id
+			LEFT JOIN
+				users approver ON d.approved_by = approver.id
+			LEFT JOIN
+				contacts approver_contact ON approver.contact_id = approver_contact.id
+			LEFT JOIN (
+				SELECT
+					otl.organization_id,
+					json_agg(ot.name ORDER BY ot.name) as types_json
+				FROM organization_type_links otl
+				JOIN organization_types ot ON otl.type_id = ot.id
+				GROUP BY otl.organization_id
+			) ot ON o.id = ot.organization_id
+			WHERE
+				d.start_time <= NOW()
+				AND (d.end_time > NOW() OR d.end_time IS NULL)
+			ORDER BY d.start_time;
+		`
 
 	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {

@@ -411,7 +411,7 @@ func (r *Repo) GetCascadesWithDetails(ctx context.Context) ([]*dto.CascadeWithDe
 			c.organization_id,
 			o.id as org_id, o.name as org_name,
 			d.id as dept_id, d.name as dept_name,
-			p.id as pos_id, p.name as pos_name
+			p.id as pos_id, p.name as pos_name, p.description as pos_description
 		FROM
 			contacts c
 		LEFT JOIN
@@ -446,6 +446,7 @@ func (r *Repo) GetCascadesWithDetails(ctx context.Context) ([]*dto.CascadeWithDe
 				dob                           sql.NullTime
 				orgDBID, deptID, posID        sql.NullInt64
 				orgName, deptName, posName    sql.NullString
+				posDescription                sql.NullString
 			)
 
 			err := contactRows.Scan(
@@ -454,7 +455,7 @@ func (r *Repo) GetCascadesWithDetails(ctx context.Context) ([]*dto.CascadeWithDe
 				&orgID,
 				&orgDBID, &orgName,
 				&deptID, &deptName,
-				&posID, &posName,
+				&posID, &posName, &posDescription,
 			)
 			if err != nil {
 				return nil, fmt.Errorf("%s: failed to scan contact: %w", op, err)
@@ -483,7 +484,11 @@ func (r *Repo) GetCascadesWithDetails(ctx context.Context) ([]*dto.CascadeWithDe
 				c.Department = &department.Model{ID: deptID.Int64, Name: deptName.String}
 			}
 			if posID.Valid && posName.Valid {
-				c.Position = &position.Model{ID: posID.Int64, Name: posName.String}
+				var desc *string
+				if posDescription.Valid {
+					desc = &posDescription.String
+				}
+				c.Position = &position.Model{ID: posID.Int64, Name: posName.String, Description: desc}
 			}
 
 			if org, ok := orgMap[orgID]; ok {

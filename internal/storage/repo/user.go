@@ -265,15 +265,15 @@ const (
 	selectUserFields = `
 		SELECT
 			u.id, u.is_active, u.login, u.pass_hash, u.created_at, u.updated_at, u.contact_id,
-			
+
 			c.fio, c.email, c.phone, c.ip_phone, c.dob, c.external_organization_name,
-			
+
 			o.id as org_id, o.name as org_name,
-			
+
 			d.id as dept_id, d.name as dept_name,
-			
-			p.id as pos_id, p.name as pos_name,
-			
+
+			p.id as pos_id, p.name as pos_name, p.description as pos_description,
+
 			COALESCE(r.roles_json, '[]'::json) as roles_json
 	`
 	fromUserJoins = `
@@ -312,6 +312,7 @@ func scanUserRow(scanner interface {
 		dob                           sql.NullTime
 		orgID, deptID, posID          sql.NullInt64
 		orgName, deptName, posName    sql.NullString
+		posDescription                sql.NullString
 	)
 
 	err := scanner.Scan(
@@ -319,7 +320,7 @@ func scanUserRow(scanner interface {
 		&u.Name, &email, &phone, &ipPhone, &dob, &extOrg,
 		&orgID, &orgName,
 		&deptID, &deptName,
-		&posID, &posName,
+		&posID, &posName, &posDescription,
 		&rolesJSON,
 	)
 	if err != nil {
@@ -351,7 +352,11 @@ func scanUserRow(scanner interface {
 		u.Department = &department.Model{ID: deptID.Int64, Name: deptName.String}
 	}
 	if posID.Valid && posName.Valid {
-		u.Position = &position.Model{ID: posID.Int64, Name: posName.String}
+		var desc *string
+		if posDescription.Valid {
+			desc = &posDescription.String
+		}
+		u.Position = &position.Model{ID: posID.Int64, Name: posName.String, Description: desc}
 	}
 
 	// Вложенная контактная информация

@@ -52,14 +52,14 @@ const (
 	// (Джойним всё)
 	selectContactFields = `
 		SELECT
-			c.id, c.fio, c.email, c.phone, c.ip_phone, c.dob, 
+			c.id, c.fio, c.email, c.phone, c.ip_phone, c.dob,
 			c.external_organization_name, c.created_at, c.updated_at,
-			
+
 			o.id as org_id, o.name as org_name,
-			
+
 			d.id as dept_id, d.name as dept_name,
-			
-			p.id as pos_id, p.name as pos_name
+
+			p.id as pos_id, p.name as pos_name, p.description as pos_description
 	`
 	fromContactJoins = `
 		FROM
@@ -83,6 +83,7 @@ func scanContactRow(scanner interface {
 		dob                           sql.NullTime
 		orgID, deptID, posID          sql.NullInt64
 		orgName, deptName, posName    sql.NullString
+		posDescription                sql.NullString
 	)
 
 	err := scanner.Scan(
@@ -90,7 +91,7 @@ func scanContactRow(scanner interface {
 		&c.CreatedAt, &c.UpdatedAt,
 		&orgID, &orgName,
 		&deptID, &deptName,
-		&posID, &posName,
+		&posID, &posName, &posDescription,
 	)
 	if err != nil {
 		return nil, err
@@ -121,7 +122,11 @@ func scanContactRow(scanner interface {
 		c.Department = &department.Model{ID: deptID.Int64, Name: deptName.String}
 	}
 	if posID.Valid && posName.Valid {
-		c.Position = &position.Model{ID: posID.Int64, Name: posName.String}
+		var desc *string
+		if posDescription.Valid {
+			desc = &posDescription.String
+		}
+		c.Position = &position.Model{ID: posID.Int64, Name: posName.String, Description: desc}
 	}
 
 	return &c, nil
