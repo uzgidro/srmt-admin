@@ -10,6 +10,7 @@ import (
 	"srmt-admin/internal/config"
 	"srmt-admin/internal/lib/dto"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -32,8 +33,8 @@ func (f *FlexibleFloat) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("value is neither float nor string: %w", err)
 	}
 
-	// Convert string to float
-	floatVal, err := strconv.ParseFloat(strVal, 64)
+	// Convert string to float (trim whitespace first)
+	floatVal, err := strconv.ParseFloat(strings.TrimSpace(strVal), 64)
 	if err != nil {
 		return fmt.Errorf("failed to parse string value to float: %w", err)
 	}
