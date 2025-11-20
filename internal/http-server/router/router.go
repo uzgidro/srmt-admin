@@ -49,6 +49,7 @@ import (
 	orgDelete "srmt-admin/internal/http-server/handlers/organizations/delete"
 	orgPatch "srmt-admin/internal/http-server/handlers/organizations/edit"
 	orgGet "srmt-admin/internal/http-server/handlers/organizations/get"
+	orgGetCascades "srmt-admin/internal/http-server/handlers/organizations/get-cascades"
 	orgGetFlat "srmt-admin/internal/http-server/handlers/organizations/get-flat"
 	positionsAdd "srmt-admin/internal/http-server/handlers/positions/add"
 	positionsDelete "srmt-admin/internal/http-server/handlers/positions/delete"
@@ -139,6 +140,7 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 
 		// Organizations
 		r.Get("/organizations", orgGet.New(log, pg))
+		r.Get("/organizations/cascades", orgGetCascades.New(log, pg))
 		r.Get("/organizations/flat", orgGetFlat.New(log, pg))
 		r.Post("/organizations", orgAdd.New(log, pg))
 		r.Patch("/organizations/{id}", orgPatch.New(log, pg))

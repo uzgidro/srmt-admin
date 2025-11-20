@@ -2,11 +2,16 @@ package repo
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/lib/pq"
+	"srmt-admin/internal/lib/dto"
+	"srmt-admin/internal/lib/model/contact"
+	"srmt-admin/internal/lib/model/department"
 	"srmt-admin/internal/lib/model/organization"
+	"srmt-admin/internal/lib/model/position"
 	"srmt-admin/internal/storage"
 	"strings"
 )
@@ -329,6 +334,278 @@ func (r *Repo) GetFlatOrganizations(ctx context.Context, orgType *string) ([]*or
 
 	if result == nil {
 		result = make([]*organization.Model, 0)
+	}
+
+	return result, nil
+}
+
+// GetCascadesWithDetails returns cascades with their HPPs, including contacts with specific positions and current discharges
+func (r *Repo) GetCascadesWithDetails(ctx context.Context) ([]*dto.CascadeWithDetails, error) {
+	const op = "storage.repo.GetCascadesWithDetails"
+
+	// Get all organizations with cascade type
+	const orgQuery = `
+		SELECT
+			o.id,
+			o.name,
+			o.parent_organization_id,
+			po.name as parent_organization_name,
+			COALESCE(t.types_json, '[]'::json) as types
+		FROM
+			organizations o
+		LEFT JOIN
+			organizations po ON o.parent_organization_id = po.id
+		LEFT JOIN (
+			SELECT
+				otl.organization_id,
+				json_agg(ot.name ORDER BY ot.name) as types_json
+			FROM
+				organization_type_links otl
+			JOIN
+				organization_types ot ON otl.type_id = ot.id
+			GROUP BY
+				otl.organization_id
+		) t ON o.id = t.organization_id
+		WHERE EXISTS (
+			SELECT 1
+			FROM organization_type_links otl
+			JOIN organization_types ot ON otl.type_id = ot.id
+			WHERE otl.organization_id = o.id
+			AND ot.name IN ('cascade', 'ges', 'mini', 'micro')
+		)
+		ORDER BY o.name;
+	`
+
+	rows, err := r.db.QueryContext(ctx, orgQuery)
+	if err != nil {
+		return nil, fmt.Errorf("%s: failed to query organizations: %w", op, err)
+	}
+	defer rows.Close()
+
+	var allOrgs []*dto.CascadeWithDetails
+	orgMap := make(map[int64]*dto.CascadeWithDetails)
+
+	for rows.Next() {
+		var org dto.CascadeWithDetails
+		var typesJSON []byte
+		if err := rows.Scan(&org.ID, &org.Name, &org.ParentOrganizationID, &org.ParentOrganizationName, &typesJSON); err != nil {
+			return nil, fmt.Errorf("%s: failed to scan organization: %w", op, err)
+		}
+		if err := json.Unmarshal(typesJSON, &org.Types); err != nil {
+			return nil, fmt.Errorf("%s: failed to unmarshal types: %w", op, err)
+		}
+		org.Contacts = make([]*contact.Model, 0)
+		allOrgs = append(allOrgs, &org)
+		orgMap[org.ID] = &org
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: rows iteration error: %w", op, err)
+	}
+
+	// Get contacts with specific positions for all organizations
+	const contactQuery = `
+		SELECT
+			c.id, c.fio, c.email, c.phone, c.ip_phone, c.dob,
+			c.external_organization_name, c.created_at, c.updated_at,
+			c.organization_id,
+			o.id as org_id, o.name as org_name,
+			d.id as dept_id, d.name as dept_name,
+			p.id as pos_id, p.name as pos_name
+		FROM
+			contacts c
+		LEFT JOIN
+			organizations o ON c.organization_id = o.id
+		LEFT JOIN
+			departments d ON c.department_id = d.id
+		LEFT JOIN
+			positions p ON c.position_id = p.id
+		WHERE
+			c.organization_id = ANY($1)
+			AND p.name IN ('direktor', 'bosh muhandis', 'ges boshlig''i')
+		ORDER BY c.organization_id, p.name;
+	`
+
+	orgIDs := make([]int64, 0, len(allOrgs))
+	for _, org := range allOrgs {
+		orgIDs = append(orgIDs, org.ID)
+	}
+
+	if len(orgIDs) > 0 {
+		contactRows, err := r.db.QueryContext(ctx, contactQuery, pq.Array(orgIDs))
+		if err != nil {
+			return nil, fmt.Errorf("%s: failed to query contacts: %w", op, err)
+		}
+		defer contactRows.Close()
+
+		for contactRows.Next() {
+			var c contact.Model
+			var orgID int64
+			var (
+				email, phone, ipPhone, extOrg sql.NullString
+				dob                           sql.NullTime
+				orgDBID, deptID, posID        sql.NullInt64
+				orgName, deptName, posName    sql.NullString
+			)
+
+			err := contactRows.Scan(
+				&c.ID, &c.Name, &email, &phone, &ipPhone, &dob, &extOrg,
+				&c.CreatedAt, &c.UpdatedAt,
+				&orgID,
+				&orgDBID, &orgName,
+				&deptID, &deptName,
+				&posID, &posName,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("%s: failed to scan contact: %w", op, err)
+			}
+
+			// Set nullable fields
+			if email.Valid {
+				c.Email = &email.String
+			}
+			if phone.Valid {
+				c.Phone = &phone.String
+			}
+			if ipPhone.Valid {
+				c.IPPhone = &ipPhone.String
+			}
+			if extOrg.Valid {
+				c.ExternalOrgName = &extOrg.String
+			}
+			if dob.Valid {
+				c.DOB = &dob.Time
+			}
+			if orgDBID.Valid && orgName.Valid {
+				c.Organization = &organization.Model{ID: orgDBID.Int64, Name: orgName.String}
+			}
+			if deptID.Valid && deptName.Valid {
+				c.Department = &department.Model{ID: deptID.Int64, Name: deptName.String}
+			}
+			if posID.Valid && posName.Valid {
+				c.Position = &position.Model{ID: posID.Int64, Name: posName.String}
+			}
+
+			if org, ok := orgMap[orgID]; ok {
+				org.Contacts = append(org.Contacts, &c)
+			}
+		}
+
+		if err = contactRows.Err(); err != nil {
+			return nil, fmt.Errorf("%s: contact rows iteration error: %w", op, err)
+		}
+	}
+
+	// Get current discharges for all organizations
+	const dischargeQuery = `
+		SELECT
+			d.organization_id,
+			SUM(d.flow_rate_m3_s) as total_flow_rate
+		FROM
+			idle_water_discharges d
+		WHERE
+			d.organization_id = ANY($1)
+			AND d.start_time <= NOW()
+			AND (d.end_time > NOW() OR d.end_time IS NULL)
+		GROUP BY d.organization_id;
+	`
+
+	if len(orgIDs) > 0 {
+		dischargeRows, err := r.db.QueryContext(ctx, dischargeQuery, pq.Array(orgIDs))
+		if err != nil {
+			return nil, fmt.Errorf("%s: failed to query discharges: %w", op, err)
+		}
+		defer dischargeRows.Close()
+
+		for dischargeRows.Next() {
+			var orgID int64
+			var totalFlow float64
+			if err := dischargeRows.Scan(&orgID, &totalFlow); err != nil {
+				return nil, fmt.Errorf("%s: failed to scan discharge: %w", op, err)
+			}
+
+			if org, ok := orgMap[orgID]; ok {
+				org.CurrentDischarge = &totalFlow
+			}
+		}
+
+		if err = dischargeRows.Err(); err != nil {
+			return nil, fmt.Errorf("%s: discharge rows iteration error: %w", op, err)
+		}
+	}
+
+	// Build hierarchy: add child organizations to their parents (HPPs to cascades, cascades to parent org)
+	for _, org := range allOrgs {
+		if org.ParentOrganizationID != nil {
+			if parent, ok := orgMap[*org.ParentOrganizationID]; ok {
+				parent.Items = append(parent.Items, org)
+			}
+		}
+	}
+
+	// Calculate total discharge for organizations with children (cascades)
+	// We need to do this recursively from bottom to top
+	var calculateDischarge func(org *dto.CascadeWithDetails)
+	calculateDischarge = func(org *dto.CascadeWithDetails) {
+		if len(org.Items) > 0 {
+			var totalDischarge float64
+			for _, child := range org.Items {
+				// First calculate discharge for the child
+				calculateDischarge(child)
+				// Then add it to parent's total
+				if child.CurrentDischarge != nil {
+					totalDischarge += *child.CurrentDischarge
+				}
+			}
+			// If this org has its own discharge or children with discharge, set the total
+			if org.CurrentDischarge != nil {
+				totalDischarge += *org.CurrentDischarge
+			}
+			if totalDischarge > 0 {
+				org.CurrentDischarge = &totalDischarge
+			}
+		}
+	}
+
+	// Calculate discharges for all orgs
+	for _, org := range allOrgs {
+		calculateDischarge(org)
+	}
+
+	// Return only cascades (organizations with type 'kaskad' that don't have a kaskad parent)
+	var result []*dto.CascadeWithDetails
+	for _, org := range allOrgs {
+		// Check if this org has type 'kaskad'
+		hasKaskadType := false
+		for _, t := range org.Types {
+			if t == "cascade" {
+				hasKaskadType = true
+				break
+			}
+		}
+
+		// Include if it's a kaskad and either has no parent OR parent is not a kaskad
+		if hasKaskadType {
+			includeOrg := true
+			if org.ParentOrganizationID != nil {
+				if parent, ok := orgMap[*org.ParentOrganizationID]; ok {
+					// Check if parent is also a kaskad
+					for _, t := range parent.Types {
+						if t == "cascade" {
+							includeOrg = false
+							break
+						}
+					}
+				}
+			}
+			if includeOrg {
+				result = append(result, org)
+			}
+		}
+	}
+
+	if result == nil {
+		result = make([]*dto.CascadeWithDetails, 0)
 	}
 
 	return result, nil
