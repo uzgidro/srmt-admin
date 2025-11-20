@@ -9,14 +9,43 @@ import (
 	"net/http"
 	"srmt-admin/internal/config"
 	"srmt-admin/internal/lib/dto"
+	"strconv"
 	"sync"
 	"time"
 )
 
+// FlexibleFloat handles JSON unmarshaling of both string and float values
+type FlexibleFloat float64
+
+// UnmarshalJSON implements custom unmarshaling to handle both string and float values
+func (f *FlexibleFloat) UnmarshalJSON(data []byte) error {
+	// Try to unmarshal as float first
+	var floatVal float64
+	if err := json.Unmarshal(data, &floatVal); err == nil {
+		*f = FlexibleFloat(floatVal)
+		return nil
+	}
+
+	// If that fails, try to unmarshal as string and convert
+	var strVal string
+	if err := json.Unmarshal(data, &strVal); err != nil {
+		return fmt.Errorf("value is neither float nor string: %w", err)
+	}
+
+	// Convert string to float
+	floatVal, err := strconv.ParseFloat(strVal, 64)
+	if err != nil {
+		return fmt.Errorf("failed to parse string value to float: %w", err)
+	}
+
+	*f = FlexibleFloat(floatVal)
+	return nil
+}
+
 // APIResponseItem represents a single item in the ASCUE API response array
 type APIResponseItem struct {
-	ID    int     `json:"id"`
-	Value float64 `json:"value"`
+	ID    int           `json:"id"`
+	Value FlexibleFloat `json:"value"`
 }
 
 // Fetcher fetches ASCUE data from external HTTP endpoints
@@ -111,7 +140,7 @@ func (f *Fetcher) parseMetrics(data []APIResponseItem, metrics config.MetricMapp
 	// Create a map for quick lookup by ID
 	dataMap := make(map[int]float64)
 	for _, item := range data {
-		dataMap[item.ID] = item.Value
+		dataMap[item.ID] = float64(item.Value)
 	}
 
 	// Extract metric values
