@@ -20,7 +20,7 @@ type Event struct {
 }
 
 type Response struct {
-	Events []Event `json:"events"`
+	EventsByDate map[string][]Event `json:"events_by_date"`
 }
 
 type Request struct {

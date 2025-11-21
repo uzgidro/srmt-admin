@@ -9,8 +9,8 @@ import (
 )
 
 // GetPastEvents retrieves events from incidents, shutdowns, and idle_water_discharges
-// for the specified number of days and returns them as a unified list sorted by date (newest first)
-func (r *Repo) GetPastEvents(ctx context.Context, days int, timezone *time.Location) ([]past_events.Event, error) {
+// for the specified number of days and returns them grouped by date with events sorted newest first
+func (r *Repo) GetPastEvents(ctx context.Context, days int, timezone *time.Location) (map[string][]past_events.Event, error) {
 	const op = "storage.repo.GetPastEvents"
 
 	// Calculate date range
@@ -203,19 +203,31 @@ func (r *Repo) GetPastEvents(ctx context.Context, days int, timezone *time.Locat
 	}
 	rows.Close()
 
-	// Sort events by date (newest first)
-	// Using a simple bubble sort for simplicity, could use sort.Slice for better performance
-	for i := 0; i < len(events)-1; i++ {
-		for j := 0; j < len(events)-i-1; j++ {
-			if events[j].Date.Before(events[j+1].Date) {
-				events[j], events[j+1] = events[j+1], events[j]
+	// Group events by date (YYYY-MM-DD format)
+	eventsByDate := make(map[string][]past_events.Event)
+
+	for _, event := range events {
+		// Format date as YYYY-MM-DD in the configured timezone
+		dateKey := event.Date.In(timezone).Format("2006-01-02")
+		eventsByDate[dateKey] = append(eventsByDate[dateKey], event)
+	}
+
+	// Sort events within each date group (newest first)
+	for dateKey := range eventsByDate {
+		eventsForDate := eventsByDate[dateKey]
+		for i := 0; i < len(eventsForDate)-1; i++ {
+			for j := 0; j < len(eventsForDate)-i-1; j++ {
+				if eventsForDate[j].Date.Before(eventsForDate[j+1].Date) {
+					eventsForDate[j], eventsForDate[j+1] = eventsForDate[j+1], eventsForDate[j]
+				}
 			}
 		}
+		eventsByDate[dateKey] = eventsForDate
 	}
 
-	if events == nil {
-		events = make([]past_events.Event, 0)
+	if eventsByDate == nil {
+		eventsByDate = make(map[string][]past_events.Event)
 	}
 
-	return events, nil
+	return eventsByDate, nil
 }

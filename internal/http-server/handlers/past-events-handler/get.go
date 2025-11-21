@@ -14,7 +14,7 @@ import (
 )
 
 type pastEventsGetter interface {
-	GetPastEvents(ctx context.Context, days int, timezone *time.Location) ([]past_events.Event, error)
+	GetPastEvents(ctx context.Context, days int, timezone *time.Location) (map[string][]past_events.Event, error)
 }
 
 const defaultDays = 7
@@ -42,7 +42,7 @@ func Get(log *slog.Logger, getter pastEventsGetter, loc *time.Location) http.Han
 			log.Info("no 'days' parameter provided, using default", "days", defaultDays)
 		}
 
-		events, err := getter.GetPastEvents(r.Context(), days, loc)
+		eventsByDate, err := getter.GetPastEvents(r.Context(), days, loc)
 		if err != nil {
 			log.Error("failed to get past events", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)
@@ -50,8 +50,17 @@ func Get(log *slog.Logger, getter pastEventsGetter, loc *time.Location) http.Han
 			return
 		}
 
-		log.Info("successfully retrieved past events", slog.Int("count", len(events)), slog.Int("days", days))
+		// Count total events across all dates
+		totalEvents := 0
+		for _, events := range eventsByDate {
+			totalEvents += len(events)
+		}
 
-		render.JSON(w, r, past_events.Response{Events: events})
+		log.Info("successfully retrieved past events",
+			slog.Int("dates", len(eventsByDate)),
+			slog.Int("total_events", totalEvents),
+			slog.Int("days", days))
+
+		render.JSON(w, r, past_events.Response{EventsByDate: eventsByDate})
 	}
 }
