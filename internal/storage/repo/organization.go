@@ -632,3 +632,138 @@ func (r *Repo) GetCascadesWithDetails(ctx context.Context, ascueFetcher dto.ASCU
 
 	return result, nil
 }
+
+// GetOrganizationsWithReservoir gets specific organizations with reservoir metrics
+func (r *Repo) GetOrganizationsWithReservoir(ctx context.Context, orgIDs []int64, reservoirFetcher dto.ReservoirFetcher) ([]*dto.OrganizationWithReservoir, error) {
+	const op = "storage.repo.GetOrganizationsWithReservoir"
+
+	if len(orgIDs) == 0 {
+		return []*dto.OrganizationWithReservoir{}, nil
+	}
+
+	// Get specific organizations by ID
+	const orgQuery = `
+		SELECT id, name
+		FROM organizations
+		WHERE id = ANY($1)
+		ORDER BY name
+	`
+
+	rows, err := r.db.QueryContext(ctx, orgQuery, pq.Array(orgIDs))
+	if err != nil {
+		return nil, fmt.Errorf("%s: failed to query organizations: %w", op, err)
+	}
+	defer rows.Close()
+
+	var result []*dto.OrganizationWithReservoir
+	orgMap := make(map[int64]*dto.OrganizationWithReservoir)
+
+	for rows.Next() {
+		var org dto.OrganizationWithReservoir
+		if err := rows.Scan(&org.OrganizationID, &org.OrganizationName); err != nil {
+			return nil, fmt.Errorf("%s: failed to scan organization: %w", op, err)
+		}
+		org.Contacts = make([]*contact.Model, 0)
+		result = append(result, &org)
+		orgMap[org.OrganizationID] = &org
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: rows iteration error: %w", op, err)
+	}
+
+	// Get contacts for the organizations
+	const contactQuery = `
+		SELECT
+			c.id, c.fio, c.email, c.phone, c.ip_phone, c.dob,
+			c.external_organization_name, c.created_at, c.updated_at,
+			c.organization_id,
+			o.id as org_id, o.name as org_name,
+			d.id as dept_id, d.name as dept_name,
+			p.id as pos_id, p.name as pos_name, p.description as pos_description
+		FROM
+			contacts c
+		LEFT JOIN
+			organizations o ON c.organization_id = o.id
+		LEFT JOIN
+			departments d ON c.department_id = d.id
+		LEFT JOIN
+			positions p ON c.position_id = p.id
+		WHERE
+			c.organization_id = ANY($1)
+		ORDER BY c.organization_id
+	`
+
+	contactRows, err := r.db.QueryContext(ctx, contactQuery, pq.Array(orgIDs))
+	if err != nil {
+		return nil, fmt.Errorf("%s: failed to query contacts: %w", op, err)
+	}
+	defer contactRows.Close()
+
+	for contactRows.Next() {
+		var c contact.Model
+		var orgID int64
+		var (
+			email, phone, ipPhone, extOrg sql.NullString
+			dob                           sql.NullTime
+			orgDBID, deptID, posID        sql.NullInt64
+			orgName, deptName, posName    sql.NullString
+			posDescription                sql.NullString
+		)
+
+		err := contactRows.Scan(
+			&c.ID, &c.Name, &email, &phone, &ipPhone, &dob, &extOrg,
+			&c.CreatedAt, &c.UpdatedAt,
+			&orgID,
+			&orgDBID, &orgName,
+			&deptID, &deptName,
+			&posID, &posName, &posDescription,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("%s: failed to scan contact: %w", op, err)
+		}
+
+		// Set nullable fields
+		if email.Valid {
+			c.Email = &email.String
+		}
+		if phone.Valid {
+			c.Phone = &phone.String
+		}
+		if ipPhone.Valid {
+			c.IPPhone = &ipPhone.String
+		}
+		if extOrg.Valid {
+			c.ExternalOrgName = &extOrg.String
+		}
+		if dob.Valid {
+			c.DOB = &dob.Time
+		}
+
+		if orgData, ok := orgMap[orgID]; ok {
+			orgData.Contacts = append(orgData.Contacts, &c)
+		}
+	}
+
+	if err = contactRows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: contact rows iteration error: %w", op, err)
+	}
+
+	// Enrich with reservoir metrics if fetcher is provided
+	if reservoirFetcher != nil {
+		reservoirMetrics, err := reservoirFetcher.FetchAll(ctx)
+		if err != nil {
+			// Error fetching reservoir metrics - graceful degradation
+			// Just continue without reservoir metrics (silently)
+		} else {
+			// Apply reservoir metrics to organizations
+			for _, org := range result {
+				if metrics, ok := reservoirMetrics[org.OrganizationID]; ok {
+					org.ReservoirMetrics = metrics
+				}
+			}
+		}
+	}
+
+	return result, nil
+}

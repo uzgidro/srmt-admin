@@ -13,6 +13,7 @@ import (
 	contactEdit "srmt-admin/internal/http-server/handlers/contacts/edit"
 	contactGetAll "srmt-admin/internal/http-server/handlers/contacts/get-all"
 	contactGetById "srmt-admin/internal/http-server/handlers/contacts/get-by-id"
+	dashboardGetReservoir "srmt-admin/internal/http-server/handlers/dashboard/get-reservoir"
 	"srmt-admin/internal/http-server/handlers/data/analytics"
 	dataSet "srmt-admin/internal/http-server/handlers/data/set"
 	departmentAdd "srmt-admin/internal/http-server/handlers/department/add"
@@ -81,6 +82,7 @@ import (
 	mwapikey "srmt-admin/internal/http-server/middleware/api-key"
 	mwauth "srmt-admin/internal/http-server/middleware/auth"
 	"srmt-admin/internal/lib/service/ascue"
+	"srmt-admin/internal/lib/service/reservoir"
 	"srmt-admin/internal/storage/minio"
 	"srmt-admin/internal/storage/mongo"
 	"srmt-admin/internal/storage/repo"
@@ -103,6 +105,23 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 	var ascueFetcher *ascue.Fetcher
 	if ascueCfg != nil {
 		ascueFetcher = ascue.NewFetcher(ascueCfg, log)
+	}
+
+	// Initialize Reservoir fetcher for enriching organization data with reservoir metrics
+	reservoirCfg, err := config.LoadReservoirConfig("config/reservoir.yaml")
+	if err != nil {
+		log.Warn("failed to load reservoir config, organizations will not include reservoir metrics", "error", err)
+		reservoirCfg = nil
+	}
+
+	var reservoirFetcher *reservoir.Fetcher
+	var reservoirOrgIDs []int64
+	if reservoirCfg != nil {
+		reservoirFetcher = reservoir.NewFetcher(reservoirCfg, log)
+		// Extract organization IDs from config
+		for _, source := range reservoirCfg.Sources {
+			reservoirOrgIDs = append(reservoirOrgIDs, source.OrganizationID)
+		}
 	}
 
 	router.Post("/auth/sign-in", signIn.New(log, pg, token))
@@ -167,6 +186,9 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 		r.Post("/contacts", contactAdd.New(log, pg))
 		r.Patch("/contacts/{id}", contactEdit.New(log, pg))
 		r.Delete("/contacts/{id}", contactDelete.New(log, pg))
+
+		// Dashboard
+		r.Get("/dashboard/reservoir", dashboardGetReservoir.New(log, pg, reservoirOrgIDs, reservoirFetcher))
 
 		// Admin routes
 		r.Group(func(r chi.Router) {
