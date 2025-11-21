@@ -59,6 +59,10 @@ func (r *Repo) GetPastEvents(ctx context.Context, days int, timezone *time.Locat
 		if orgID.Valid {
 			orgIDPtr = &orgID.Int64
 			orgNamePtr = &orgName
+		} else {
+			// When organization_id is null, set organization_name to "все предприятия"
+			allEnterprises := "Все предприятия"
+			orgNamePtr = &allEnterprises
 		}
 
 		events = append(events, past_events.Event{
