@@ -14,7 +14,7 @@ import (
 )
 
 type pastEventsGetter interface {
-	GetPastEvents(ctx context.Context, days int, timezone *time.Location) (map[string][]past_events.Event, error)
+	GetPastEvents(ctx context.Context, days int, timezone *time.Location) ([]past_events.DateGroup, error)
 }
 
 const defaultDays = 7
@@ -52,8 +52,8 @@ func Get(log *slog.Logger, getter pastEventsGetter, loc *time.Location) http.Han
 
 		// Count total events across all dates
 		totalEvents := 0
-		for _, events := range eventsByDate {
-			totalEvents += len(events)
+		for _, dateGroup := range eventsByDate {
+			totalEvents += len(dateGroup.Events)
 		}
 
 		log.Info("successfully retrieved past events",

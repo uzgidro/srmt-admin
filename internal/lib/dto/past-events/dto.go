@@ -19,8 +19,13 @@ type Event struct {
 	Description      string    `json:"description"`
 }
 
+type DateGroup struct {
+	Date   string  `json:"date"`
+	Events []Event `json:"events"`
+}
+
 type Response struct {
-	EventsByDate map[string][]Event `json:"events_by_date"`
+	EventsByDate []DateGroup `json:"events_by_date"`
 }
 
 type Request struct {

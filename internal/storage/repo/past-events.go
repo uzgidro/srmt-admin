@@ -9,8 +9,8 @@ import (
 )
 
 // GetPastEvents retrieves events from incidents, shutdowns, and idle_water_discharges
-// for the specified number of days and returns them grouped by date with events sorted newest first
-func (r *Repo) GetPastEvents(ctx context.Context, days int, timezone *time.Location) (map[string][]past_events.Event, error) {
+// for the specified number of days and returns them grouped by date (dates: newest first, events within date: oldest first)
+func (r *Repo) GetPastEvents(ctx context.Context, days int, timezone *time.Location) ([]past_events.DateGroup, error) {
 	const op = "storage.repo.GetPastEvents"
 
 	// Calculate date range
@@ -216,7 +216,7 @@ func (r *Repo) GetPastEvents(ctx context.Context, days int, timezone *time.Locat
 		eventsByDate[dateKey] = append(eventsByDate[dateKey], event)
 	}
 
-	// Sort events within each date group (newest first)
+	// Sort events within each date group (oldest first)
 	for dateKey := range eventsByDate {
 		eventsForDate := eventsByDate[dateKey]
 		for i := 0; i < len(eventsForDate)-1; i++ {
@@ -229,9 +229,29 @@ func (r *Repo) GetPastEvents(ctx context.Context, days int, timezone *time.Locat
 		eventsByDate[dateKey] = eventsForDate
 	}
 
-	if eventsByDate == nil {
-		eventsByDate = make(map[string][]past_events.Event)
+	// Extract date keys and sort them in descending order (newest first)
+	dateKeys := make([]string, 0, len(eventsByDate))
+	for dateKey := range eventsByDate {
+		dateKeys = append(dateKeys, dateKey)
 	}
 
-	return eventsByDate, nil
+	// Sort date keys in descending order (2025-11-21, 2025-11-20, etc.)
+	for i := 0; i < len(dateKeys)-1; i++ {
+		for j := 0; j < len(dateKeys)-i-1; j++ {
+			if dateKeys[j] < dateKeys[j+1] {
+				dateKeys[j], dateKeys[j+1] = dateKeys[j+1], dateKeys[j]
+			}
+		}
+	}
+
+	// Build the result as a slice of DateGroup
+	result := make([]past_events.DateGroup, 0, len(dateKeys))
+	for _, dateKey := range dateKeys {
+		result = append(result, past_events.DateGroup{
+			Date:   dateKey,
+			Events: eventsByDate[dateKey],
+		})
+	}
+
+	return result, nil
 }
