@@ -1,0 +1,13 @@
+DROP TABLE IF EXISTS users;
+
+DROP TABLE IF EXISTS roles;
+
+DROP TABLE IF EXISTS users_roles;
+
+DROP TABLE IF EXISTS reservoirs;
+
+DROP TABLE IF EXISTS level_volume;
+
+DROP TABLE IF EXISTS data;
+
+DROP TABLE IF EXISTS indicator_height;

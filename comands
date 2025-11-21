@@ -1,0 +1,8 @@
+migrate create -ext sql -dir migrations\postgres -seq NAME
+
+docker build -t suxa/srmt-prime:1.5.12 .
+docker push suxa/srmt-prime:1.5.12
+
+
+
+migrate -path migrations/postgres -database "postgresql://postgres:postgres@192.168.40.225:5432/srmt?sslmode=disable" down 2
