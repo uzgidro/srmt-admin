@@ -51,6 +51,7 @@ import (
 	orgGet "srmt-admin/internal/http-server/handlers/organizations/get"
 	orgGetCascades "srmt-admin/internal/http-server/handlers/organizations/get-cascades"
 	orgGetFlat "srmt-admin/internal/http-server/handlers/organizations/get-flat"
+	past_events_handler "srmt-admin/internal/http-server/handlers/past-events-handler"
 	positionsAdd "srmt-admin/internal/http-server/handlers/positions/add"
 	positionsDelete "srmt-admin/internal/http-server/handlers/positions/delete"
 	positionsGet "srmt-admin/internal/http-server/handlers/positions/get"
@@ -240,6 +241,8 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 			r.Post("/shutdowns", shutdowns.Add(log, pg))
 			r.Patch("/shutdowns/{id}", shutdowns.Edit(log, pg))
 			r.Delete("/shutdowns/{id}", shutdowns.Delete(log, pg))
+
+			r.Get("/past-events", past_events_handler.Get(log, pg, loc))
 
 			r.Get("/reservoir-device", reservoirdevicesummary.Get(log, pg))
 			r.Patch("/reservoir-device", reservoirdevicesummary.Patch(log, pg))
