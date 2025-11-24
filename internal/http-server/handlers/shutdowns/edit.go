@@ -11,6 +11,7 @@ import (
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/dto"
 	"srmt-admin/internal/lib/logger/sl"
+	"srmt-admin/internal/lib/service/auth"
 	"srmt-admin/internal/storage"
 	"strconv"
 	"time"
@@ -37,6 +38,14 @@ func Edit(log *slog.Logger, editor shutdownEditor) http.HandlerFunc {
 		const op = "handlers.shutdown.Edit"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
 
+		userID, err := auth.GetUserID(r.Context())
+		if err != nil {
+			log.Error("failed to get user id from context", sl.Err(err))
+			render.Status(r, http.StatusUnauthorized)
+			render.JSON(w, r, resp.Unauthorized("Not authenticated"))
+			return
+		}
+
 		idStr := chi.URLParam(r, "id")
 		id, err := strconv.ParseInt(idStr, 10, 64)
 		if err != nil {
@@ -54,14 +63,6 @@ func Edit(log *slog.Logger, editor shutdownEditor) http.HandlerFunc {
 			return
 		}
 
-		if req.IdleDischargeVolume != nil && *req.IdleDischargeVolume > 0 &&
-			(req.EndTime == nil || (req.EndTime != nil && *req.EndTime == nil)) {
-			log.Warn("validation failed: end_time is required if idle_discharge_volume is provided")
-			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, resp.BadRequest("end_time is required when providing idle_discharge_volume"))
-			return
-		}
-
 		storageReq := dto.EditShutdownRequest{
 			OrganizationID:      req.OrganizationID,
 			StartTime:           req.StartTime,
@@ -71,6 +72,7 @@ func Edit(log *slog.Logger, editor shutdownEditor) http.HandlerFunc {
 			ReportedByContactID: req.ReportedByContactID,
 
 			IdleDischargeVolumeThousandM3: req.IdleDischargeVolume,
+			CreatedByUserID:               userID,
 		}
 
 		err = editor.EditShutdown(r.Context(), id, storageReq)

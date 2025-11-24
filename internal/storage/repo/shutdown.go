@@ -163,10 +163,23 @@ func (r *Repo) EditShutdown(ctx context.Context, id int64, req dto.EditShutdownR
 			start = *req.StartTime
 		}
 
-		end := currentEnd.Time
-		if req.EndTime != nil {
+		// (Определяем End)
+		var end time.Time
+		var hasEndTime bool
+		if req.EndTime != nil && *req.EndTime != nil {
+			// Пользователь передал новый EndTime
 			end = **req.EndTime
-		} // (Двойной указатель)
+			hasEndTime = true
+		} else if currentEnd.Valid {
+			// Используем существующий EndTime
+			end = currentEnd.Time
+			hasEndTime = true
+		}
+
+		// (Проверяем, что EndTime есть для расчета)
+		if !hasEndTime {
+			return fmt.Errorf("%s: end_time is required to calculate idle discharge flow rate", op)
+		}
 
 		// Рассчитываем поток
 		flowRate, err := calculateFlowRate(start, &end, volume)
@@ -189,8 +202,8 @@ func (r *Repo) EditShutdown(ctx context.Context, id int64, req dto.EditShutdownR
 			// (Не было, но объем > 0 - СОЗДАЕМ)
 			var createdIdleID int64
 			err = tx.QueryRowContext(ctx,
-				"INSERT INTO idle_water_discharges (organization_id, start_time, end_time, flow_rate_m3_s) VALUES ($1, $2, $3, $4) RETURNING id",
-				currentOrgID, start, end, flowRate, // (Используем currentOrgID)
+				"INSERT INTO idle_water_discharges (organization_id, start_time, end_time, flow_rate_m3_s, created_by) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+				currentOrgID, start, end, flowRate, req.CreatedByUserID,
 			).Scan(&createdIdleID)
 			if err != nil {
 				return fmt.Errorf("%s: failed to insert idle_discharge: %w", op, err)

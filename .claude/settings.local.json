@@ -3,8 +3,8 @@
     "allow": [
       "Bash(mkdir:*)",
       "Bash(go build:*)",
-      "Bash(nul)",
-      "Bash(test:*)"
+      "Bash(test:*)",
+      "Bash(go test:*)"
     ],
     "deny": [],
     "ask": []
