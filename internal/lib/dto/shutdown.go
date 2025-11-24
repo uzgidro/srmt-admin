@@ -23,6 +23,9 @@ type EditShutdownRequest struct {
 	ReportedByContactID *int64
 
 	IdleDischargeVolumeThousandM3 *float64
+
+	// CreatedByUserID is used when creating a new idle discharge during edit
+	CreatedByUserID int64
 }
 
 type GetShutdownsFilters struct {
