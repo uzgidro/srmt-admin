@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"srmt-admin/internal/lib/dto"
+	"srmt-admin/internal/lib/model/user"
 	"srmt-admin/internal/lib/model/visit"
 	"srmt-admin/internal/storage"
 	"strings"
@@ -183,6 +184,8 @@ func scanVisitRow(scanner interface {
 	Scan(dest ...interface{}) error
 }) (*visit.ResponseModel, error) {
 	var m visit.ResponseModel
+	var createdByUserID int64
+	var createdByUserFIO string
 
 	err := scanner.Scan(
 		&m.ID,
@@ -192,11 +195,16 @@ func scanVisitRow(scanner interface {
 		&m.Description,
 		&m.ResponsibleName,
 		&m.CreatedAt,
-		&m.CreatedByUserID,
-		&m.CreatedByUserFIO,
+		&createdByUserID,
+		&createdByUserFIO,
 	)
 	if err != nil {
 		return nil, err
+	}
+
+	m.CreatedByUser = &user.ShortInfo{
+		ID:   createdByUserID,
+		Name: &createdByUserFIO,
 	}
 
 	return &m, nil
