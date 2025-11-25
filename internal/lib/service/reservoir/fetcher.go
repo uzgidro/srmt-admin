@@ -35,20 +35,26 @@ type APIResponse struct {
 
 // Fetcher fetches reservoir data from external HTTP endpoints
 type Fetcher struct {
-	client *http.Client
-	config *config.ReservoirConfig
-	log    *slog.Logger
+	client          *http.Client
+	config          *config.ReservoirConfig
+	log             *slog.Logger
+	reservoirOrgIDs []int64
 }
 
 // NewFetcher creates a new reservoir data fetcher
-func NewFetcher(cfg *config.ReservoirConfig, log *slog.Logger) *Fetcher {
+func NewFetcher(cfg *config.ReservoirConfig, log *slog.Logger, reservoirOrgIDs []int64) *Fetcher {
 	return &Fetcher{
 		client: &http.Client{
 			Timeout: 10 * time.Second,
 		},
-		config: cfg,
-		log:    log,
+		config:          cfg,
+		log:             log,
+		reservoirOrgIDs: reservoirOrgIDs,
 	}
+}
+
+func (f *Fetcher) GetIDs() []int64 {
+	return f.reservoirOrgIDs
 }
 
 // FetchAll fetches data from all configured sources in parallel and returns a map of organization ID to metrics

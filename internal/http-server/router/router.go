@@ -91,38 +91,9 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo.Repo, mng *mongo.Repo, minioClient *minio.Repo, cfg config.Config) {
+func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo.Repo, mng *mongo.Repo, minioClient *minio.Repo, cfg config.Config, ascueFetcher *ascue.Fetcher, reservoirFetcher *reservoir.Fetcher) {
 	// Get the configured timezone location
 	loc := cfg.GetLocation()
-
-	// Initialize ASCUE fetcher for enriching cascade data with real-time metrics
-	ascueCfg, err := config.LoadASCUEConfig("config/ascue.yaml")
-	if err != nil {
-		log.Warn("failed to load ASCUE config, cascades will not include ASCUE metrics", "error", err)
-		ascueCfg = nil
-	}
-
-	var ascueFetcher *ascue.Fetcher
-	if ascueCfg != nil {
-		ascueFetcher = ascue.NewFetcher(ascueCfg, log)
-	}
-
-	// Initialize Reservoir fetcher for enriching organization data with reservoir metrics
-	reservoirCfg, err := config.LoadReservoirConfig("config/reservoir.yaml")
-	if err != nil {
-		log.Warn("failed to load reservoir config, organizations will not include reservoir metrics", "error", err)
-		reservoirCfg = nil
-	}
-
-	var reservoirFetcher *reservoir.Fetcher
-	var reservoirOrgIDs []int64
-	if reservoirCfg != nil {
-		reservoirFetcher = reservoir.NewFetcher(reservoirCfg, log)
-		// Extract organization IDs from config
-		for _, source := range reservoirCfg.Sources {
-			reservoirOrgIDs = append(reservoirOrgIDs, source.OrganizationID)
-		}
-	}
 
 	router.Post("/auth/sign-in", signIn.New(log, pg, token))
 	router.Post("/auth/refresh", refresh.New(log, pg, token))
@@ -174,7 +145,6 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 
 		// Organizations
 		r.Get("/organizations", orgGet.New(log, pg))
-		r.Get("/organizations/cascades", orgGetCascades.New(log, pg, ascueFetcher))
 		r.Get("/organizations/flat", orgGetFlat.New(log, pg))
 		r.Post("/organizations", orgAdd.New(log, pg))
 		r.Patch("/organizations/{id}", orgPatch.New(log, pg))
@@ -188,7 +158,8 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 		r.Delete("/contacts/{id}", contactDelete.New(log, pg))
 
 		// Dashboard
-		r.Get("/dashboard/reservoir", dashboardGetReservoir.New(log, pg, reservoirOrgIDs, reservoirFetcher))
+		r.Get("/dashboard/reservoir", dashboardGetReservoir.New(log, pg, reservoirFetcher))
+		r.Get("/dashboard/cascades", orgGetCascades.New(log, pg, ascueFetcher))
 
 		// Admin routes
 		r.Group(func(r chi.Router) {
