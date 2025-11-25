@@ -8,6 +8,7 @@ import (
 // ReservoirFetcher interface for fetching reservoir metrics
 type ReservoirFetcher interface {
 	FetchAll(ctx context.Context) (map[int64]*ReservoirMetrics, error)
+	GetIDs() []int64
 }
 
 // ReservoirMetrics holds the current and differential reservoir data

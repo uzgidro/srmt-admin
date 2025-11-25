@@ -16,13 +16,13 @@ type ReservoirGetter interface {
 	GetOrganizationsWithReservoir(ctx context.Context, orgIDs []int64, reservoirFetcher dto.ReservoirFetcher) ([]*dto.OrganizationWithReservoir, error)
 }
 
-func New(log *slog.Logger, getter ReservoirGetter, orgIDs []int64, reservoirFetcher dto.ReservoirFetcher) http.HandlerFunc {
+func New(log *slog.Logger, getter ReservoirGetter, reservoirFetcher dto.ReservoirFetcher) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.dashboard.get-reservoir.New"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
 
 		// Get organizations with reservoir metrics
-		organizations, err := getter.GetOrganizationsWithReservoir(r.Context(), orgIDs, reservoirFetcher)
+		organizations, err := getter.GetOrganizationsWithReservoir(r.Context(), reservoirFetcher.GetIDs(), reservoirFetcher)
 		if err != nil {
 			log.Error("failed to get organizations with reservoir data", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)

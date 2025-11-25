@@ -3,8 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 	"log/slog"
 	"net/http"
 	"os"
@@ -14,12 +12,17 @@ import (
 	"srmt-admin/internal/http-server/router"
 	startupadmin "srmt-admin/internal/lib/admin/startup-admin"
 	"srmt-admin/internal/lib/logger/sl"
+	"srmt-admin/internal/lib/service/ascue"
+	"srmt-admin/internal/lib/service/reservoir"
 	"srmt-admin/internal/storage/driver/mongo"
 	"srmt-admin/internal/storage/driver/postgres"
 	"srmt-admin/internal/storage/minio"
 	mngRepo "srmt-admin/internal/storage/mongo"
 	pgRepo "srmt-admin/internal/storage/repo"
 	"srmt-admin/internal/token"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 )
 
 const (
@@ -79,6 +82,35 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Initialize ASCUE fetcher for enriching cascade data with real-time metrics
+	ascueCfg, err := config.LoadASCUEConfig("config/ascue.yaml")
+	if err != nil {
+		log.Warn("failed to load ASCUE config, cascades will not include ASCUE metrics", "error", err)
+		ascueCfg = nil
+	}
+
+	// Ascue Fetcher
+	var ascueFetcher *ascue.Fetcher
+	if ascueCfg != nil {
+		ascueFetcher = ascue.NewFetcher(ascueCfg, log)
+	}
+
+	// Reservoir Fetcher
+	reservoirCfg, err := config.LoadReservoirConfig("config/reservoir.yaml")
+	if err != nil {
+		log.Warn("failed to load reservoir config, organizations will not include reservoir metrics", "error", err)
+		reservoirCfg = nil
+	}
+
+	var reservoirFetcher *reservoir.Fetcher
+	if reservoirCfg != nil {
+		var reservoirOrgIDs []int64
+		for _, source := range reservoirCfg.Sources {
+			reservoirOrgIDs = append(reservoirOrgIDs, source.OrganizationID)
+		}
+		reservoirFetcher = reservoir.NewFetcher(reservoirCfg, log, reservoirOrgIDs)
+	}
+
 	r := chi.NewRouter()
 
 	// A good base middleware stack
@@ -88,7 +120,7 @@ func main() {
 	r.Use(middleware.Recoverer)
 	r.Use(cors.New(cfg.AllowedOrigins))
 
-	router.SetupRoutes(r, log, t, repository, mngRepository, minioRepository, *cfg)
+	router.SetupRoutes(r, log, t, repository, mngRepository, minioRepository, *cfg, ascueFetcher, reservoirFetcher)
 	log.Info("router start")
 
 	srv := &http.Server{
