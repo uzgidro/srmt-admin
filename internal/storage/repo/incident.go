@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"srmt-admin/internal/lib/dto"
 	"srmt-admin/internal/lib/model/incident" // (Импорт ResponseModel)
+	"srmt-admin/internal/lib/model/user"
 	"srmt-admin/internal/storage"
 	"strings"
 	"time"
@@ -174,6 +175,8 @@ func scanIncidentRow(scanner interface {
 	var desc sql.NullString    // Для nullable description
 	var orgID sql.NullInt64    // Для nullable organization_id
 	var orgName sql.NullString // Для nullable organization name
+	var createdByUserID int64
+	var createdByUserFIO string
 
 	err := scanner.Scan(
 		&m.ID,
@@ -182,8 +185,8 @@ func scanIncidentRow(scanner interface {
 		&m.CreatedAt,
 		&orgID,
 		&orgName,
-		&m.CreatedByUserID,
-		&m.CreatedByUserFIO,
+		&createdByUserID,
+		&createdByUserFIO,
 	)
 	if err != nil {
 		return nil, err
@@ -197,6 +200,11 @@ func scanIncidentRow(scanner interface {
 	}
 	if orgName.Valid {
 		m.OrganizationName = &orgName.String
+	}
+
+	m.CreatedByUser = &user.ShortInfo{
+		ID:   createdByUserID,
+		Name: &createdByUserFIO,
 	}
 
 	return &m, nil
