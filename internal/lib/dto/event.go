@@ -1,6 +1,8 @@
 package dto
 
-import "time"
+import (
+	"time"
+)
 
 // GetAllEventsFilters - Filters for querying events
 type GetAllEventsFilters struct {
@@ -37,19 +39,4 @@ type EditEventRequest struct {
 	OrganizationID       *int64
 	UpdatedByID          int64   // Required: who is making this update
 	FileIDs              []int64 // If provided, replaces all existing file links
-}
-
-// EventShort - Compact event representation with just id, name, type, status, and date
-type EventShort struct {
-	ID        int64     `json:"id"`
-	Name      string    `json:"name"`
-	EventDate time.Time `json:"event_date"`
-	Status    struct {
-		ID   int    `json:"id"`
-		Name string `json:"name"`
-	} `json:"status"`
-	Type struct {
-		ID   int    `json:"id"`
-		Name string `json:"name"`
-	} `json:"type"`
 }

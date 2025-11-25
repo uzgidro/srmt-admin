@@ -616,16 +616,16 @@ func (r *Repo) GetEventTypes(ctx context.Context) ([]event_type.Model, error) {
 	return types, nil
 }
 
-// GetAllEventsShort retrieves events in compact format with only id, name, type, and status
-func (r *Repo) GetAllEventsShort(ctx context.Context, filters dto.GetAllEventsFilters) ([]dto.EventShort, error) {
+// GetAllEventsShort retrieves events in compact format with only id, name, event_date, status, and type
+func (r *Repo) GetAllEventsShort(ctx context.Context, filters dto.GetAllEventsFilters) ([]*event.Model, error) {
 	const op = "storage.repo.GetAllEventsShort"
 
 	var query strings.Builder
 	query.WriteString(`
 		SELECT
 			e.id, e.name, e.event_date,
-			es.id as status_id, es.name as status_name,
-			et.id as type_id, et.name as type_name
+			es.id as status_id, es.name as status_name, es.description as status_desc,
+			et.id as type_id, et.name as type_name, et.description as type_desc
 		FROM events e
 		INNER JOIN event_status es ON e.event_status_id = es.id
 		INNER JOIN event_type et ON e.event_type_id = et.id
@@ -689,27 +689,36 @@ func (r *Repo) GetAllEventsShort(ctx context.Context, filters dto.GetAllEventsFi
 	}
 	defer rows.Close()
 
-	var events []dto.EventShort
+	var events []*event.Model
 	for rows.Next() {
-		var e dto.EventShort
+		var e event.Model
 		var statusID, typeID int
 		var statusName, typeName string
+		var statusDesc, typeDesc sql.NullString
 
 		err := rows.Scan(
 			&e.ID, &e.Name, &e.EventDate,
-			&statusID, &statusName,
-			&typeID, &typeName,
+			&statusID, &statusName, &statusDesc,
+			&typeID, &typeName, &typeDesc,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("%s: failed to scan event row: %w", op, err)
 		}
 
-		e.Status.ID = statusID
-		e.Status.Name = statusName
-		e.Type.ID = typeID
-		e.Type.Name = typeName
+		// Populate only the required nested structures
+		e.EventStatus = &event_status.Model{
+			ID:          statusID,
+			Name:        statusName,
+			Description: statusDesc.String,
+		}
 
-		events = append(events, e)
+		e.EventType = &event_type.Model{
+			ID:          typeID,
+			Name:        typeName,
+			Description: typeDesc.String,
+		}
+
+		events = append(events, &e)
 	}
 
 	if err = rows.Err(); err != nil {
@@ -717,7 +726,7 @@ func (r *Repo) GetAllEventsShort(ctx context.Context, filters dto.GetAllEventsFi
 	}
 
 	if events == nil {
-		events = make([]dto.EventShort, 0)
+		events = make([]*event.Model, 0)
 	}
 
 	return events, nil

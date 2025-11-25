@@ -4,7 +4,8 @@
       "Bash(mkdir:*)",
       "Bash(go build:*)",
       "Bash(test:*)",
-      "Bash(go test:*)"
+      "Bash(go test:*)",
+      "Bash(npm run build:*)"
     ],
     "deny": [],
     "ask": []

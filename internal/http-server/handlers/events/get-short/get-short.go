@@ -10,6 +10,7 @@ import (
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/dto"
 	"srmt-admin/internal/lib/logger/sl"
+	"srmt-admin/internal/lib/model/event"
 	"strconv"
 	"strings"
 	"time"
@@ -17,7 +18,7 @@ import (
 
 // EventShortGetter defines repository interface for retrieving events in short format
 type EventShortGetter interface {
-	GetAllEventsShort(ctx context.Context, filters dto.GetAllEventsFilters) ([]dto.EventShort, error)
+	GetAllEventsShort(ctx context.Context, filters dto.GetAllEventsFilters) ([]*event.Model, error)
 }
 
 func New(log *slog.Logger, getter EventShortGetter) http.HandlerFunc {
