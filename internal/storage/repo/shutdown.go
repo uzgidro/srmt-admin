@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"srmt-admin/internal/lib/dto"
 	"srmt-admin/internal/lib/model/shutdown"
+	"srmt-admin/internal/lib/model/user"
 	"srmt-admin/internal/storage"
 	"strings"
 	"time"
@@ -364,6 +365,7 @@ func scanShutdownRow(scanner interface {
 	var (
 		reason, createdByFIO sql.NullString
 		genLoss, dVolumeThM3 sql.NullFloat64
+		createdByUserID      int64
 	)
 
 	err := scanner.Scan(
@@ -371,7 +373,7 @@ func scanShutdownRow(scanner interface {
 		&m.OrganizationID,
 		&m.OrganizationName,
 		&createdByFIO,
-		&m.CreatedByUserID,
+		&createdByUserID,
 		&dVolumeThM3, // (Объем)
 	)
 	if err != nil {
@@ -384,11 +386,16 @@ func scanShutdownRow(scanner interface {
 	if genLoss.Valid {
 		m.GenerationLossMwh = &genLoss.Float64
 	}
-	if createdByFIO.Valid {
-		m.CreatedByUserFIO = createdByFIO.String
-	}
 	if dVolumeThM3.Valid {
 		m.IdleDischargeVolumeThousandM3 = &dVolumeThM3.Float64
+	}
+
+	// Create user model
+	m.CreatedByUser = &user.ShortInfo{
+		ID: createdByUserID,
+	}
+	if createdByFIO.Valid {
+		m.CreatedByUser.Name = &createdByFIO.String
 	}
 
 	return &m, nil
