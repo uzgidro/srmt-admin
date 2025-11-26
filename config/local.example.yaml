@@ -1,0 +1,43 @@
+# Example configuration for local development
+# Copy this file to config/local.yaml and customize
+
+env: "local"
+
+storage_path: "postgresql://postgres:postgres@localhost:5432/srmt_dev?sslmode=disable"
+migrations_path: "file://./migrations/postgres"
+
+timezone: 'UTC'
+
+mongo:
+  host: 'localhost'
+  port: '27017'
+  username: 'admin'
+  password: 'admin'
+  auth_source: 'admin'
+
+minio:
+  endpoint: "localhost:9000"
+  access_key: "minioadmin"
+  secret_key: "minioadmin"
+  use_ssl: false
+
+http_server:
+  address: "0.0.0.0:9010"
+  timeout: 30s
+  idle_timeout: 60s
+  allowed_origins:
+    - "http://localhost:3000"
+    - "http://localhost:4200"
+
+jwt:
+  secret: "dev-secret-key-not-for-production"
+  access_timeout: 15m
+  refresh_timeout: 168h
+
+callback_api_key: 'dev-api-key-not-for-production'
+
+weather:
+  base_url: "https://api.openweathermap.org/data/2.5"
+  api_key: ""
+
+bucket: 'srmt-dev'

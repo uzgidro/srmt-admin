@@ -1,0 +1,24 @@
+# Development Dockerfile with hot reload support
+
+FROM golang:1.24.4-alpine
+
+# Install development dependencies
+RUN apk add --no-cache git make
+
+# Install Air for live reload (optional)
+RUN go install github.com/air-verse/air@latest
+
+WORKDIR /app
+
+# Copy go mod files
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Expose port
+EXPOSE 8080
+
+# Development mode - will be overridden by docker-compose command
+CMD ["sh", "-c", "cd cmd && go run github.com/google/wire/cmd/wire && cd .. && go run ./cmd"]

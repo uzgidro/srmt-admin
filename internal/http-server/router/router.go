@@ -87,104 +87,118 @@ import (
 	"srmt-admin/internal/storage/mongo"
 	"srmt-admin/internal/storage/repo"
 	"srmt-admin/internal/token"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 )
 
-func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo.Repo, mng *mongo.Repo, minioClient *minio.Repo, cfg config.Config, ascueFetcher *ascue.Fetcher, reservoirFetcher *reservoir.Fetcher) {
-	// Get the configured timezone location
-	loc := cfg.GetLocation()
+// AppDependencies contains all dependencies needed for route setup
+type AppDependencies struct {
+	Log              *slog.Logger
+	Token            *token.Token
+	PgRepo           *repo.Repo
+	MongoRepo        *mongo.Repo
+	MinioRepo        *minio.Repo
+	Config           config.Config
+	Location         *time.Location
+	ASCUEFetcher     *ascue.Fetcher
+	ReservoirFetcher *reservoir.Fetcher
+	HTTPClient       *http.Client
+}
 
-	router.Post("/auth/sign-in", signIn.New(log, pg, token))
-	router.Post("/auth/refresh", refresh.New(log, pg, token))
-	router.Post("/auth/sign-out", signOut.New(log))
+func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
+	// Get the configured timezone location
+	loc := deps.Location
+
+	router.Post("/auth/sign-in", signIn.New(deps.Log, deps.PgRepo, deps.Token))
+	router.Post("/auth/refresh", refresh.New(deps.Log, deps.PgRepo, deps.Token))
+	router.Post("/auth/sign-out", signOut.New(deps.Log))
 
 	router.Route("/api/v3", func(r chi.Router) {
-		r.Get("/modsnow", table.Get(log, mng))
-		r.Get("/stock", stock.Get(log, mng))
-		r.Get("/modsnow/cover", modsnowImg.Get(log, minioClient, "modsnow-cover"))
-		r.Get("/modsnow/dynamics", modsnowImg.Get(log, minioClient, "modsnow-dynamics"))
+		r.Get("/modsnow", table.Get(deps.Log, deps.MongoRepo))
+		r.Get("/stock", stock.Get(deps.Log, deps.MongoRepo))
+		r.Get("/modsnow/cover", modsnowImg.Get(deps.Log, deps.MinioRepo, "modsnow-cover"))
+		r.Get("/modsnow/dynamics", modsnowImg.Get(deps.Log, deps.MinioRepo, "modsnow-dynamics"))
 
-		r.Get("/analytics", analytics.New(log, pg))
+		r.Get("/analytics", analytics.New(deps.Log, deps.PgRepo))
 
 		r.Route("/weather", func(r chi.Router) {
-			httpClient := &http.Client{}
-			weatherCfg := cfg.Weather
+			weatherCfg := deps.Config.Weather
 
-			r.Get("/weather", weatherProxy.New(log, httpClient, weatherCfg.BaseURL, weatherCfg.APIKey, "/weather"))
-			r.Get("/forecast", weatherProxy.New(log, httpClient, weatherCfg.BaseURL, weatherCfg.APIKey, "/forecast"))
+			r.Get("/weather", weatherProxy.New(deps.Log, deps.HTTPClient, weatherCfg.BaseURL, weatherCfg.APIKey, "/weather"))
+			r.Get("/forecast", weatherProxy.New(deps.Log, deps.HTTPClient, weatherCfg.BaseURL, weatherCfg.APIKey, "/forecast"))
 		})
 
-		r.Get("/telegram/gidro/test", test.New(log, mng))
+		r.Get("/telegram/gidro/test", test.New(deps.Log, deps.MongoRepo))
 	})
 
 	// Service endpoints
 	router.Group(func(r chi.Router) {
-		r.Use(mwapikey.RequireAPIKey(cfg.ApiKey))
+		r.Use(mwapikey.RequireAPIKey(deps.Config.ApiKey))
 
-		r.Post("/sc/stock", callbackStock.New(log, mng))
-		r.Post("/sc/modsnow", callbackModsnow.New(log, mng))
-		r.Post("/data/{id}", dataSet.New(log, pg))
+		r.Post("/sc/stock", callbackStock.New(deps.Log, deps.MongoRepo))
+		r.Post("/sc/modsnow", callbackModsnow.New(deps.Log, deps.MongoRepo))
+		r.Post("/data/{id}", dataSet.New(deps.Log, deps.PgRepo))
 	})
 
 	// Token required routes
 	router.Group(func(r chi.Router) {
-		r.Use(mwauth.Authenticator(token))
+		r.Use(mwauth.Authenticator(deps.Token))
 
-		r.Get("/auth/me", me.New(log))
+		r.Get("/auth/me", me.New(deps.Log))
 
-		r.Get("/organization-type", orgTypeGet.New(log, pg))
-		r.Post("/organization-type", orgTypeAdd.New(log, pg))
-		r.Delete("/organization-type/{id}", orgTypeDelete.New(log, pg))
+		r.Get("/organization-type", orgTypeGet.New(deps.Log, deps.PgRepo))
+		r.Post("/organization-type", orgTypeAdd.New(deps.Log, deps.PgRepo))
+		r.Delete("/organization-type/{id}", orgTypeDelete.New(deps.Log, deps.PgRepo))
 
-		r.Get("/department", departmentGetAll.New(log, pg))
-		r.Get("/department/{id}", departmentGetById.New(log, pg))
-		r.Post("/department", departmentAdd.New(log, pg))
-		r.Patch("/department/{id}", departmentEdit.New(log, pg))
-		r.Delete("/department/{id}", departmentDelete.New(log, pg))
+		r.Get("/department", departmentGetAll.New(deps.Log, deps.PgRepo))
+		r.Get("/department/{id}", departmentGetById.New(deps.Log, deps.PgRepo))
+		r.Post("/department", departmentAdd.New(deps.Log, deps.PgRepo))
+		r.Patch("/department/{id}", departmentEdit.New(deps.Log, deps.PgRepo))
+		r.Delete("/department/{id}", departmentDelete.New(deps.Log, deps.PgRepo))
 
 		// Organizations
-		r.Get("/organizations", orgGet.New(log, pg))
-		r.Get("/organizations/flat", orgGetFlat.New(log, pg))
-		r.Post("/organizations", orgAdd.New(log, pg))
-		r.Patch("/organizations/{id}", orgPatch.New(log, pg))
-		r.Delete("/organizations/{id}", orgDelete.New(log, pg))
+		r.Get("/organizations", orgGet.New(deps.Log, deps.PgRepo))
+		r.Get("/organizations/flat", orgGetFlat.New(deps.Log, deps.PgRepo))
+		r.Post("/organizations", orgAdd.New(deps.Log, deps.PgRepo))
+		r.Patch("/organizations/{id}", orgPatch.New(deps.Log, deps.PgRepo))
+		r.Delete("/organizations/{id}", orgDelete.New(deps.Log, deps.PgRepo))
 
 		// Contacts
-		r.Get("/contacts", contactGetAll.New(log, pg))
-		r.Get("/contacts/{id}", contactGetById.New(log, pg))
-		r.Post("/contacts", contactAdd.New(log, pg))
-		r.Patch("/contacts/{id}", contactEdit.New(log, pg))
-		r.Delete("/contacts/{id}", contactDelete.New(log, pg))
+		r.Get("/contacts", contactGetAll.New(deps.Log, deps.PgRepo))
+		r.Get("/contacts/{id}", contactGetById.New(deps.Log, deps.PgRepo))
+		r.Post("/contacts", contactAdd.New(deps.Log, deps.PgRepo))
+		r.Patch("/contacts/{id}", contactEdit.New(deps.Log, deps.PgRepo))
+		r.Delete("/contacts/{id}", contactDelete.New(deps.Log, deps.PgRepo))
 
 		// Dashboard
-		r.Get("/dashboard/reservoir", dashboardGetReservoir.New(log, pg, reservoirFetcher))
-		r.Get("/dashboard/cascades", orgGetCascades.New(log, pg, ascueFetcher))
+		r.Get("/dashboard/reservoir", dashboardGetReservoir.New(deps.Log, deps.PgRepo, deps.ReservoirFetcher))
+		r.Get("/dashboard/cascades", orgGetCascades.New(deps.Log, deps.PgRepo, deps.ASCUEFetcher))
 
 		// Admin routes
 		r.Group(func(r chi.Router) {
 			r.Use(mwauth.AdminOnly)
 
 			// Roles
-			r.Get("/roles", roleGet.New(log, pg))
-			r.Post("/roles", roleAdd.New(log, pg))
-			r.Patch("/roles/{id}", roleEdit.New(log, pg))
-			r.Delete("/roles/{id}", roleDelete.New(log, pg))
+			r.Get("/roles", roleGet.New(deps.Log, deps.PgRepo))
+			r.Post("/roles", roleAdd.New(deps.Log, deps.PgRepo))
+			r.Patch("/roles/{id}", roleEdit.New(deps.Log, deps.PgRepo))
+			r.Delete("/roles/{id}", roleDelete.New(deps.Log, deps.PgRepo))
 
 			// Positions
-			r.Get("/positions", positionsGet.New(log, pg))
-			r.Post("/positions", positionsAdd.New(log, pg))
-			r.Patch("/positions/{id}", positionsPatch.New(log, pg))
-			r.Delete("/positions/{id}", positionsDelete.New(log, pg))
+			r.Get("/positions", positionsGet.New(deps.Log, deps.PgRepo))
+			r.Post("/positions", positionsAdd.New(deps.Log, deps.PgRepo))
+			r.Patch("/positions/{id}", positionsPatch.New(deps.Log, deps.PgRepo))
+			r.Delete("/positions/{id}", positionsDelete.New(deps.Log, deps.PgRepo))
 
 			// Users
-			r.Get("/users", usersGet.New(log, pg))
-			r.Post("/users", usersAdd.New(log, pg))
-			r.Patch("/users/{userID}", usersEdit.New(log, pg))
-			r.Get("/users/{userID}", usersGetById.New(log, pg))
-			r.Delete("/users/{userID}", usersDelete.New(log, pg))
-			r.Post("/users/{userID}/roles", assignRole.New(log, pg))
-			r.Delete("/users/{userID}/roles/{roleID}", revokeRole.New(log, pg))
+			r.Get("/users", usersGet.New(deps.Log, deps.PgRepo))
+			r.Post("/users", usersAdd.New(deps.Log, deps.PgRepo))
+			r.Patch("/users/{userID}", usersEdit.New(deps.Log, deps.PgRepo))
+			r.Get("/users/{userID}", usersGetById.New(deps.Log, deps.PgRepo))
+			r.Delete("/users/{userID}", usersDelete.New(deps.Log, deps.PgRepo))
+			r.Post("/users/{userID}/roles", assignRole.New(deps.Log, deps.PgRepo))
+			r.Delete("/users/{userID}/roles/{roleID}", revokeRole.New(deps.Log, deps.PgRepo))
 		})
 
 		// SC endpoints
@@ -192,72 +206,72 @@ func SetupRoutes(router *chi.Mux, log *slog.Logger, token *token.Token, pg *repo
 			r.Use(mwauth.RequireAnyRole("sc"))
 
 			// Indicator
-			r.Put("/indicators/{resID}", setIndicator.New(log, pg))
+			r.Put("/indicators/{resID}", setIndicator.New(deps.Log, deps.PgRepo))
 
 			// Upload
-			r.Post("/upload/stock", stock.Upload(log, &http.Client{}, cfg.Upload.Stock))
-			r.Post("/upload/modsnow", table.Upload(log, &http.Client{}, cfg.Upload.Modsnow))
-			r.Post("/upload/archive", modsnowImg.Upload(log, &http.Client{}, cfg.Upload.Archive))
-			r.Post("/upload/files", upload.New(log, minioClient, pg))
+			r.Post("/upload/stock", stock.Upload(deps.Log, deps.HTTPClient, deps.Config.Upload.Stock))
+			r.Post("/upload/modsnow", table.Upload(deps.Log, deps.HTTPClient, deps.Config.Upload.Modsnow))
+			r.Post("/upload/archive", modsnowImg.Upload(deps.Log, deps.HTTPClient, deps.Config.Upload.Archive))
+			r.Post("/upload/files", upload.New(deps.Log, deps.MinioRepo, deps.PgRepo))
 
 			// Reservoirs
-			r.Post("/reservoirs", resAdd.New(log, pg))
+			r.Post("/reservoirs", resAdd.New(deps.Log, deps.PgRepo))
 
 			// File category
-			r.Get("/files/categories", catGet.New(log, pg))
-			r.Post("/files/categories", catAdd.New(log, pg))
+			r.Get("/files/categories", catGet.New(deps.Log, deps.PgRepo))
+			r.Post("/files/categories", catAdd.New(deps.Log, deps.PgRepo))
 
 			// Delete
-			r.Delete("/files/{fileID}", fileDelete.New(log, pg, minioClient))
+			r.Delete("/files/{fileID}", fileDelete.New(deps.Log, deps.PgRepo, deps.MinioRepo))
 		})
 
 		r.Group(func(r chi.Router) {
 			r.Use(mwauth.RequireAnyRole("sc", "rais"))
 
-			r.Get("/files/latest", latest.New(log, pg, minioClient))
-			r.Get("/files/{fileID}/download", download.New(log, pg, minioClient))
+			r.Get("/files/latest", latest.New(deps.Log, deps.PgRepo, deps.MinioRepo))
+			r.Get("/files/{fileID}/download", download.New(deps.Log, deps.PgRepo, deps.MinioRepo))
 
 			// Discharges (Сбросы)
-			r.Get("/discharges", dischargeGet.New(log, pg, loc))
-			r.Get("/discharges/current", dischargeGetCurrent.New(log, pg))
-			r.Get("/discharges/flat", dischargeGetFlat.New(log, pg, loc))
-			r.Post("/discharges", dischargeAdd.New(log, pg))
-			r.Patch("/discharges/{id}", dischargePatch.New(log, pg))
-			r.Delete("/discharges/{id}", dischargeDelete.New(log, pg))
+			r.Get("/discharges", dischargeGet.New(deps.Log, deps.PgRepo, loc))
+			r.Get("/discharges/current", dischargeGetCurrent.New(deps.Log, deps.PgRepo))
+			r.Get("/discharges/flat", dischargeGetFlat.New(deps.Log, deps.PgRepo, loc))
+			r.Post("/discharges", dischargeAdd.New(deps.Log, deps.PgRepo))
+			r.Patch("/discharges/{id}", dischargePatch.New(deps.Log, deps.PgRepo))
+			r.Delete("/discharges/{id}", dischargeDelete.New(deps.Log, deps.PgRepo))
 
-			r.Get("/incidents", incidents_handler.Get(log, pg, loc))
-			r.Post("/incidents", incidents_handler.Add(log, pg))
-			r.Patch("/incidents/{id}", incidents_handler.Edit(log, pg))
-			r.Delete("/incidents/{id}", incidents_handler.Delete(log, pg))
+			r.Get("/incidents", incidents_handler.Get(deps.Log, deps.PgRepo, loc))
+			r.Post("/incidents", incidents_handler.Add(deps.Log, deps.PgRepo))
+			r.Patch("/incidents/{id}", incidents_handler.Edit(deps.Log, deps.PgRepo))
+			r.Delete("/incidents/{id}", incidents_handler.Delete(deps.Log, deps.PgRepo))
 
-			r.Get("/shutdowns", shutdowns.Get(log, pg, loc))
-			r.Post("/shutdowns", shutdowns.Add(log, pg))
-			r.Patch("/shutdowns/{id}", shutdowns.Edit(log, pg))
-			r.Delete("/shutdowns/{id}", shutdowns.Delete(log, pg))
+			r.Get("/shutdowns", shutdowns.Get(deps.Log, deps.PgRepo, loc))
+			r.Post("/shutdowns", shutdowns.Add(deps.Log, deps.PgRepo))
+			r.Patch("/shutdowns/{id}", shutdowns.Edit(deps.Log, deps.PgRepo))
+			r.Delete("/shutdowns/{id}", shutdowns.Delete(deps.Log, deps.PgRepo))
 
-			r.Get("/past-events", past_events_handler.Get(log, pg, loc))
+			r.Get("/past-events", past_events_handler.Get(deps.Log, deps.PgRepo, loc))
 
-			r.Get("/reservoir-device", reservoirdevicesummary.Get(log, pg))
-			r.Patch("/reservoir-device", reservoirdevicesummary.Patch(log, pg))
+			r.Get("/reservoir-device", reservoirdevicesummary.Get(deps.Log, deps.PgRepo))
+			r.Patch("/reservoir-device", reservoirdevicesummary.Patch(deps.Log, deps.PgRepo))
 
-			r.Get("/visits", visit.Get(log, pg, loc))
-			r.Post("/visits", visit.Add(log, pg))
-			r.Patch("/visits/{id}", visit.Edit(log, pg))
-			r.Delete("/visits/{id}", visit.Delete(log, pg))
+			r.Get("/visits", visit.Get(deps.Log, deps.PgRepo, loc))
+			r.Post("/visits", visit.Add(deps.Log, deps.PgRepo))
+			r.Patch("/visits/{id}", visit.Edit(deps.Log, deps.PgRepo))
+			r.Delete("/visits/{id}", visit.Delete(deps.Log, deps.PgRepo))
 		})
 
 		r.Group(func(r chi.Router) {
 			r.Use(mwauth.RequireAnyRole("assistant", "rais"))
 
 			// Events
-			r.Get("/events", eventGetAll.New(log, pg))
-			r.Get("/events/short", eventGetShort.New(log, pg))
-			r.Get("/events/statuses", eventGetStatuses.New(log, pg))
-			r.Get("/events/types", eventGetTypes.New(log, pg))
-			r.Get("/events/{id}", eventGetById.New(log, pg))
-			r.Post("/events", eventAdd.New(log, minioClient, pg))
-			r.Patch("/events/{id}", eventEdit.New(log, pg))
-			r.Delete("/events/{id}", eventDelete.New(log, pg))
+			r.Get("/events", eventGetAll.New(deps.Log, deps.PgRepo))
+			r.Get("/events/short", eventGetShort.New(deps.Log, deps.PgRepo))
+			r.Get("/events/statuses", eventGetStatuses.New(deps.Log, deps.PgRepo))
+			r.Get("/events/types", eventGetTypes.New(deps.Log, deps.PgRepo))
+			r.Get("/events/{id}", eventGetById.New(deps.Log, deps.PgRepo))
+			r.Post("/events", eventAdd.New(deps.Log, deps.MinioRepo, deps.PgRepo))
+			r.Patch("/events/{id}", eventEdit.New(deps.Log, deps.PgRepo))
+			r.Delete("/events/{id}", eventDelete.New(deps.Log, deps.PgRepo))
 		})
 
 	})

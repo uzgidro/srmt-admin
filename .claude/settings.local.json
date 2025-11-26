@@ -5,7 +5,11 @@
       "Bash(go build:*)",
       "Bash(test:*)",
       "Bash(go test:*)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "Bash(go get:*)",
+      "Bash(wire)",
+      "Bash(go run:*)",
+      "Bash(chmod:*)"
     ],
     "deny": [],
     "ask": []

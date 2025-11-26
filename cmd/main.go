@@ -6,159 +6,59 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"srmt-admin/internal/config"
-	"srmt-admin/internal/http-server/middleware/cors"
-	"srmt-admin/internal/http-server/middleware/logger"
-	"srmt-admin/internal/http-server/router"
+	"os/signal"
+	"syscall"
+	"time"
+
 	startupadmin "srmt-admin/internal/lib/admin/startup-admin"
 	"srmt-admin/internal/lib/logger/sl"
-	"srmt-admin/internal/lib/service/ascue"
-	"srmt-admin/internal/lib/service/reservoir"
-	"srmt-admin/internal/storage/driver/mongo"
-	"srmt-admin/internal/storage/driver/postgres"
-	"srmt-admin/internal/storage/minio"
-	mngRepo "srmt-admin/internal/storage/mongo"
-	pgRepo "srmt-admin/internal/storage/repo"
-	"srmt-admin/internal/token"
-
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
-)
-
-const (
-	envLocal = "local"
-	envDev   = "dev"
-	envProd  = "prod"
 )
 
 func main() {
-	cfg := config.MustLoad()
-
-	log := setupLogger(cfg.Env)
-	log.Info("logger start")
-	log.Info("timezone configured", "timezone", cfg.Timezone, "location", cfg.GetLocation().String())
-
-	pgDriver, err := postgres.New(cfg.StoragePath, cfg.MigrationsPath)
+	// Initialize app with Wire
+	app, cleanup, err := InitializeApp()
 	if err != nil {
-		log.Error("Error starting pgDriver", sl.Err(err))
+		slog.Error("failed to initialize application", "error", err)
 		os.Exit(1)
 	}
-	log.Info("pgDriver start")
+	defer cleanup()
 
-	repository := pgRepo.New(pgDriver)
-	log.Info("repository start")
+	log := app.Logger
+	log.Info("application initialized")
+	log.Info("timezone configured", "timezone", app.Config.Timezone, "location", app.Location.String())
 
-	mngClient, err := mongo.New(context.Background(), cfg.Mongo)
-	if err != nil {
-		log.Error("Error starting mongo", sl.Err(err))
-		os.Exit(1)
-	}
-	log.Info("mngClient start")
-
-	mngRepository := mngRepo.New(mngClient)
-	log.Info("mngRepository start")
-
-	minioRepository, err := minio.New(cfg.Minio, log, cfg.Bucket)
-	if err != nil {
-		log.Error("Error starting minio client", sl.Err(err))
-		os.Exit(1)
-	}
-	log.Info("minio client started")
-
-	t, err := token.New(cfg.JwtConfig.Secret, cfg.JwtConfig.AccessTimeout, cfg.JwtConfig.RefreshTimeout)
-	log.Info("token start")
-
-	defer func() {
-		if closeErr := StorageCloser.Close(repository); closeErr != nil {
-			log.Error("Error closing storage", sl.Err(closeErr))
-		}
-		if closeErr := mngRepository.Close(context.Background()); closeErr != nil {
-			log.Error("Error closing storage", sl.Err(closeErr))
-		}
-	}()
-
-	if err := startupadmin.EnsureAdminExists(context.Background(), log, repository); err != nil {
+	// Ensure admin user exists
+	if err := startupadmin.EnsureAdminExists(context.Background(), log, app.PgRepo); err != nil {
 		log.Error("failed to ensure admin exists", "error", err)
 		os.Exit(1)
 	}
 
-	// Initialize ASCUE fetcher for enriching cascade data with real-time metrics
-	ascueCfg, err := config.LoadASCUEConfig("config/ascue.yaml")
-	if err != nil {
-		log.Warn("failed to load ASCUE config, cascades will not include ASCUE metrics", "error", err)
-		ascueCfg = nil
-	}
+	// Start HTTP server with graceful shutdown
+	log.Info("starting http server", "address", app.Config.HttpServer.Address)
 
-	// Ascue Fetcher
-	var ascueFetcher *ascue.Fetcher
-	if ascueCfg != nil {
-		ascueFetcher = ascue.NewFetcher(ascueCfg, log)
-	}
+	serverErrors := make(chan error, 1)
+	go func() {
+		serverErrors <- app.Server.ListenAndServe()
+	}()
 
-	// Reservoir Fetcher
-	reservoirCfg, err := config.LoadReservoirConfig("config/reservoir.yaml")
-	if err != nil {
-		log.Warn("failed to load reservoir config, organizations will not include reservoir metrics", "error", err)
-		reservoirCfg = nil
-	}
+	shutdown := make(chan os.Signal, 1)
+	signal.Notify(shutdown, os.Interrupt, syscall.SIGTERM)
 
-	var reservoirFetcher *reservoir.Fetcher
-	if reservoirCfg != nil {
-		var reservoirOrgIDs []int64
-		for _, source := range reservoirCfg.Sources {
-			reservoirOrgIDs = append(reservoirOrgIDs, source.OrganizationID)
+	select {
+	case err := <-serverErrors:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Error("server error", sl.Err(err))
 		}
-		reservoirFetcher = reservoir.NewFetcher(reservoirCfg, log, reservoirOrgIDs)
+	case sig := <-shutdown:
+		log.Info("shutdown signal received", "signal", sig)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		if err := app.Server.Shutdown(ctx); err != nil {
+			log.Error("graceful shutdown failed", sl.Err(err))
+		}
 	}
 
-	r := chi.NewRouter()
-
-	// A good base middleware stack
-	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
-	r.Use(logger.New(log))
-	r.Use(middleware.Recoverer)
-	r.Use(cors.New(cfg.AllowedOrigins))
-
-	router.SetupRoutes(r, log, t, repository, mngRepository, minioRepository, *cfg, ascueFetcher, reservoirFetcher)
-	log.Info("router start")
-
-	srv := &http.Server{
-		Addr:         cfg.HttpServer.Address,
-		Handler:      r,
-		ReadTimeout:  cfg.HttpServer.Timeout,
-		WriteTimeout: cfg.HttpServer.Timeout,
-		IdleTimeout:  cfg.HttpServer.IdleTimeout,
-	}
-
-	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Error("Error starting http server", sl.Err(err))
-	}
-
-	log.Error("Server shutdown")
-}
-
-type StorageCloser interface {
-	Close() error
-}
-
-func setupLogger(env string) *slog.Logger {
-	var log *slog.Logger
-
-	switch env {
-	case envLocal:
-		log = slog.New(
-			slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}),
-		)
-	case envDev:
-		log = slog.New(
-			slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}),
-		)
-	case envProd:
-		log = slog.New(
-			slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}),
-		)
-	}
-
-	return log
+	log.Info("server stopped")
 }

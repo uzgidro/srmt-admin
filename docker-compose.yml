@@ -1,0 +1,96 @@
+version: '3.8'
+
+services:
+  # Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: srmt-admin
+    restart: unless-stopped
+    ports:
+      - "9010:9010"
+    environment:
+      - CONFIG_PATH=/app/config/prod.yaml
+    volumes:
+      - ./config:/app/config:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    networks:
+      - srmt-network
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: srmt-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=srmt
+      - POSTGRES_USER=srmt_user
+      - POSTGRES_PASSWORD=srmt_password
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U srmt_user -d srmt"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - srmt-network
+
+  # MongoDB Database
+  mongodb:
+    image: mongo:7
+    container_name: srmt-mongodb
+    restart: unless-stopped
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=admin_password
+      - MONGO_INITDB_DATABASE=srmt
+    volumes:
+      - mongodb-data:/data/db
+    ports:
+      - "27017:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - srmt-network
+
+  # MinIO Object Storage
+  minio:
+    image: minio/minio:latest
+    container_name: srmt-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    volumes:
+      - minio-data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    networks:
+      - srmt-network
+
+networks:
+  srmt-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
+    driver: local
+  mongodb-data:
+    driver: local
+  minio-data:
+    driver: local
