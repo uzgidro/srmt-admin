@@ -1,0 +1,45 @@
+# Ignore build artifacts
+*.exe
+srmt-admin
+build/
+
+# Ignore actual config files (should be mounted, contain secrets)
+/config/local.yaml
+/config/dev.yaml
+/config/prod.yaml
+/config/docker.yaml
+/config/ascue.yaml
+/config/reservoir.yaml
+
+# Keep example configs (no secrets)
+!/config/*.example.yaml
+
+# Ignore documentation
+docs/
+*.md
+LICENSE
+
+# Ignore Git
+.git/
+.gitignore
+
+# Ignore IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Ignore test files
+*_test.go
+coverage.out
+coverage.html
+
+# Ignore temporary files
+tmp/
+*.tmp
+
+# Don't ignore migrations (needed in container)
+!migrations/
+
+# Ignore Wire generated file (will be regenerated in Docker)
+cmd/wire_gen.go

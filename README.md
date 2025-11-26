@@ -25,16 +25,25 @@ go build -o srmt-admin.exe ./cmd
 
 ### Configuration
 
-Set the `CONFIG_PATH` environment variable to point to your config file:
-
+**Quick Setup:**
 ```bash
+# 1. Copy example config
+cp config/local.example.yaml config/local.yaml
+
+# 2. Edit with your settings (database credentials, API keys, etc.)
+nano config/local.yaml
+
+# 3. Set environment variable
 export CONFIG_PATH=config/local.yaml
 ```
 
-Available config files:
-- `config/local.yaml` - Local development
-- `config/dev.yaml` - Development environment
-- `config/prod.yaml` - Production environment
+**Configuration files:**
+- `config/*.example.yaml` - Templates (committed to git)
+- `config/local.yaml` - Your local config (git-ignored, contains secrets)
+- `config/dev.yaml` - Dev environment (git-ignored)
+- `config/prod.yaml` - Production (git-ignored)
+
+**📝 For detailed configuration guide, see [docs/CONFIG.md](docs/CONFIG.md)**
 
 ## Project Structure
 
@@ -99,6 +108,78 @@ go run ./cmd
 4. Build and test
 
 **📖 For detailed Wire usage, troubleshooting, and FAQ, see [docs/WIRE_FAQ.md](docs/WIRE_FAQ.md)**
+
+## Docker
+
+### Quick Start with Docker
+
+```bash
+# Production: Start all services (app, PostgreSQL, MongoDB, MinIO)
+make docker-up
+
+# Development: Start with live reload
+make docker-dev-up
+
+# View logs
+make docker-logs
+```
+
+### How Wire Works in Docker
+
+The Dockerfile automatically generates Wire code during the build:
+
+```dockerfile
+# Generate Wire dependency injection code
+RUN cd cmd && go run github.com/google/wire/cmd/wire
+
+# Build the entire cmd package (includes wire_gen.go)
+RUN go build -o srmt-admin ./cmd
+```
+
+### Docker Commands
+
+```bash
+# Production
+make docker-build      # Build image
+make docker-up         # Start services
+make docker-down       # Stop services
+make docker-logs       # View logs
+
+# Development
+make docker-dev-up     # Start dev environment
+make docker-dev-logs   # View dev logs
+make docker-dev-exec   # Shell into container
+
+# Database
+make docker-db-psql    # PostgreSQL CLI
+make docker-db-mongo   # MongoDB CLI
+```
+
+**📦 For complete Docker guide, troubleshooting, and deployment, see [docs/DOCKER.md](docs/DOCKER.md)**
+
+### Deploying from Docker Hub
+
+If you build and push to Docker Hub, then deploy to a server:
+
+```bash
+# On your server:
+# 1. Setup (one-time)
+curl -fsSL https://raw.githubusercontent.com/yourusername/srmt-prime/main/scripts/setup-server.sh | bash
+
+# 2. Edit config with your secrets
+nano /opt/srmt/config/prod.yaml
+
+# 3. Deploy
+docker pull yourusername/srmt-admin:latest
+docker run -d \
+  --name srmt-admin \
+  -p 9010:9010 \
+  -v /opt/srmt/config:/app/config:ro \
+  -e CONFIG_PATH=/app/config/prod.yaml \
+  yourusername/srmt-admin:latest
+```
+
+**🚀 For production deployment strategies (Docker Hub, CI/CD, secrets), see [docs/PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md)**
 
 ## IDE Setup (GoLand/VS Code)
 

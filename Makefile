@@ -1,17 +1,31 @@
 # Makefile for SRMT Prime
 
-.PHONY: help wire build run clean test dev
+.PHONY: help wire build run clean test dev docker-build docker-up docker-down docker-dev-up docker-dev-down docker-logs docker-clean
 
 # Default target
 help:
 	@echo "Available targets:"
-	@echo "  make wire      - Regenerate Wire dependency injection code"
-	@echo "  make build     - Build the application"
-	@echo "  make run       - Run the application"
-	@echo "  make dev       - Generate Wire code and run application"
-	@echo "  make clean     - Remove built binaries"
-	@echo "  make test      - Run tests"
-	@echo "  make all       - Generate Wire, build, and run"
+	@echo ""
+	@echo "Local Development:"
+	@echo "  make wire           - Regenerate Wire dependency injection code"
+	@echo "  make build          - Build the application"
+	@echo "  make run            - Run the application"
+	@echo "  make dev            - Generate Wire code and run application"
+	@echo "  make clean          - Remove built binaries"
+	@echo "  make test           - Run tests"
+	@echo "  make all            - Generate Wire, build, and run"
+	@echo ""
+	@echo "Docker (Production):"
+	@echo "  make docker-build   - Build Docker image"
+	@echo "  make docker-up      - Start all services with docker-compose"
+	@echo "  make docker-down    - Stop all services"
+	@echo "  make docker-logs    - Show logs from all services"
+	@echo "  make docker-clean   - Remove all containers and volumes"
+	@echo ""
+	@echo "Docker (Development):"
+	@echo "  make docker-dev-up  - Start dev environment with live reload"
+	@echo "  make docker-dev-down - Stop dev environment"
+	@echo "  make docker-dev-logs - Show dev logs"
 
 # Generate Wire dependency injection code
 wire:
@@ -85,3 +99,87 @@ verify-wire: wire
 all: build
 	@echo "Running application..."
 	./srmt-admin.exe
+
+# ===== Docker Commands =====
+
+# Build Docker image
+docker-build:
+	@echo "Building Docker image..."
+	docker build -t srmt-admin:latest .
+	@echo "Docker image built successfully"
+
+# Start all services (production)
+docker-up:
+	@echo "Starting services with docker-compose..."
+	docker-compose up -d
+	@echo "Services started. Access app at http://localhost:9010"
+
+# Stop all services
+docker-down:
+	@echo "Stopping services..."
+	docker-compose down
+	@echo "Services stopped"
+
+# Show logs from all services
+docker-logs:
+	docker-compose logs -f
+
+# Show logs from app only
+docker-logs-app:
+	docker-compose logs -f app
+
+# Restart app service
+docker-restart:
+	@echo "Restarting app service..."
+	docker-compose restart app
+
+# Clean up Docker (remove containers, networks, volumes)
+docker-clean:
+	@echo "Cleaning up Docker resources..."
+	docker-compose down -v
+	docker system prune -f
+	@echo "Docker cleanup complete"
+
+# ===== Docker Development Commands =====
+
+# Start development environment
+docker-dev-up:
+	@echo "Starting development environment..."
+	docker-compose -f docker-compose.dev.yml up -d
+	@echo "Dev environment started. Access app at http://localhost:9010"
+
+# Stop development environment
+docker-dev-down:
+	@echo "Stopping development environment..."
+	docker-compose -f docker-compose.dev.yml down
+	@echo "Dev environment stopped"
+
+# Show development logs
+docker-dev-logs:
+	docker-compose -f docker-compose.dev.yml logs -f
+
+# Rebuild and restart dev environment
+docker-dev-rebuild:
+	@echo "Rebuilding dev environment..."
+	docker-compose -f docker-compose.dev.yml up -d --build
+	@echo "Dev environment rebuilt"
+
+# Execute command in dev container
+docker-dev-exec:
+	docker-compose -f docker-compose.dev.yml exec app sh
+
+# ===== Database Commands =====
+
+# Access PostgreSQL CLI
+docker-db-psql:
+	docker-compose exec postgres psql -U srmt_user -d srmt
+
+# Access MongoDB CLI
+docker-db-mongo:
+	docker-compose exec mongodb mongosh -u admin -p admin_password
+
+# Backup PostgreSQL database
+docker-db-backup:
+	@echo "Backing up PostgreSQL database..."
+	docker-compose exec -T postgres pg_dump -U srmt_user srmt > backup_$(shell date +%Y%m%d_%H%M%S).sql
+	@echo "Backup complete"

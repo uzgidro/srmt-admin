@@ -1,6 +1,12 @@
 .idea
-/config
 build
 nul
 wire_gen.go
 *.exe
+
+# Config files (contain secrets)
+/config/*.yaml
+/config/*.yml
+
+# Keep example configs (no secrets)
+!/config/*.example.yaml

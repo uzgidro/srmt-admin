@@ -1,0 +1,64 @@
+# Example configuration for Docker deployment
+# Copy this file and customize for your environment:
+#   cp config/docker.example.yaml config/docker.yaml
+# Then mount it in docker-compose.yml
+
+env: "prod"
+
+# PostgreSQL connection (use docker-compose service name)
+storage_path: "postgresql://srmt_user:srmt_password@postgres:5432/srmt?sslmode=disable"
+migrations_path: "file://./migrations/postgres"
+
+# Timezone
+timezone: 'UTC'
+
+# MongoDB configuration (use docker-compose service name)
+mongo:
+  host: 'mongodb'
+  port: '27017'
+  username: 'admin'
+  password: 'admin_password'
+  auth_source: 'admin'
+
+# MinIO configuration (use docker-compose service name)
+minio:
+  endpoint: "minio:9000"
+  access_key: "minioadmin"
+  secret_key: "minioadmin"
+  use_ssl: false
+
+# External service URLs (optional)
+upload:
+  archive: 'http://srmt-parser:19789/parse-archive'
+  stock: 'http://srmt-parser:19789/parse-stock'
+  modsnow: 'http://srmt-parser:19789/parse-modsnow'
+
+# HTTP server settings
+http_server:
+  address: "0.0.0.0:9010"
+  timeout: 30s
+  idle_timeout: 60s
+  allowed_origins:
+    - "http://localhost:3000"
+    - "http://localhost:4200"
+
+# JWT configuration - CHANGE THESE IN PRODUCTION!
+jwt:
+  secret: "CHANGE-THIS-SECRET-IN-PRODUCTION-USE-STRONG-RANDOM-STRING"
+  access_timeout: 15m
+  refresh_timeout: 168h
+
+# API key for callbacks - CHANGE IN PRODUCTION!
+callback_api_key: 'CHANGE-THIS-API-KEY-IN-PRODUCTION'
+
+# Weather API (optional)
+weather:
+  base_url: "https://api.openweathermap.org/data/2.5"
+  api_key: "YOUR-OPENWEATHER-API-KEY"
+
+# MinIO bucket name
+bucket: 'srmt-files'
+
+# Telegram bot (optional)
+telegram:
+  api_key: 'YOUR-TELEGRAM-BOT-TOKEN'

@@ -8,7 +8,8 @@
       "Bash(npm run build:*)",
       "Bash(go get:*)",
       "Bash(wire)",
-      "Bash(go run:*)"
+      "Bash(go run:*)",
+      "Bash(chmod:*)"
     ],
     "deny": [],
     "ask": []
