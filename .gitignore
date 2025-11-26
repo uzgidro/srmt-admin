@@ -2,3 +2,5 @@
 /config
 build
 nul
+wire_gen.go
+*.exe
