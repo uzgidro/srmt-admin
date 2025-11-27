@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	resp "srmt-admin/internal/lib/api/response"
+	"srmt-admin/internal/lib/helpers"
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/lib/model/discharge"
 	"strconv"
@@ -18,7 +19,7 @@ type DischargeGetter interface {
 	GetAllDischarges(ctx context.Context, isOngoing *bool, startDate, endDate *time.Time) ([]discharge.Model, error)
 }
 
-func New(log *slog.Logger, getter DischargeGetter, loc *time.Location) http.HandlerFunc {
+func New(log *slog.Logger, getter DischargeGetter, minioRepo helpers.MinioURLGenerator, loc *time.Location) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.discharge.get.New"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
@@ -74,7 +75,27 @@ func New(log *slog.Logger, getter DischargeGetter, loc *time.Location) http.Hand
 			return
 		}
 
-		log.Info("successfully retrieved discharges", slog.Int("count", len(discharges)))
-		render.JSON(w, r, discharges)
+		// 3. Transform discharges to include presigned URLs
+		dischargesWithURLs := make([]discharge.ModelWithURLs, 0, len(discharges))
+		for _, d := range discharges {
+			dWithURLs := discharge.ModelWithURLs{
+				ID:             d.ID,
+				Organization:   d.Organization,
+				CreatedByUser:  d.CreatedByUser,
+				ApprovedByUser: d.ApprovedByUser,
+				StartedAt:      d.StartedAt,
+				EndedAt:        d.EndedAt,
+				FlowRate:       d.FlowRate,
+				TotalVolume:    d.TotalVolume,
+				Reason:         d.Reason,
+				IsOngoing:      d.IsOngoing,
+				Approved:       d.Approved,
+				Files:          helpers.TransformFilesWithURLs(r.Context(), d.Files, minioRepo, log),
+			}
+			dischargesWithURLs = append(dischargesWithURLs, dWithURLs)
+		}
+
+		log.Info("successfully retrieved discharges", slog.Int("count", len(dischargesWithURLs)))
+		render.JSON(w, r, dischargesWithURLs)
 	}
 }

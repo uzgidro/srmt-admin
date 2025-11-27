@@ -21,7 +21,23 @@ import (
 
 // mockShutdownEditor is a mock implementation of shutdownEditor interface
 type mockShutdownEditor struct {
-	editFunc func(ctx context.Context, id int64, req dto.EditShutdownRequest) error
+	editFunc   func(ctx context.Context, id int64, req dto.EditShutdownRequest) error
+	unlinkFunc func(ctx context.Context, shutdownID int64) error
+	linkFunc   func(ctx context.Context, shutdownID int64, fileIDs []int64) error
+}
+
+func (m *mockShutdownEditor) UnlinkShutdownFiles(ctx context.Context, shutdownID int64) error {
+	if m.unlinkFunc != nil {
+		return m.unlinkFunc(ctx, shutdownID)
+	}
+	return nil
+}
+
+func (m *mockShutdownEditor) LinkShutdownFiles(ctx context.Context, shutdownID int64, fileIDs []int64) error {
+	if m.linkFunc != nil {
+		return m.linkFunc(ctx, shutdownID, fileIDs)
+	}
+	return nil
 }
 
 func (m *mockShutdownEditor) EditShutdown(ctx context.Context, id int64, req dto.EditShutdownRequest) error {
@@ -223,7 +239,7 @@ func TestEdit(t *testing.T) {
 			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 			// Call handler
-			handler := Edit(logger, mock)
+			handler := Edit(logger, mock, nil, nil)
 			handler.ServeHTTP(rr, req)
 
 			// Check status code
@@ -315,7 +331,7 @@ func TestEdit_IdleDischargeScenarios(t *testing.T) {
 			rr := httptest.NewRecorder()
 			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-			handler := Edit(logger, mock)
+			handler := Edit(logger, mock, nil, nil)
 			handler.ServeHTTP(rr, req)
 
 			if rr.Code != http.StatusOK {

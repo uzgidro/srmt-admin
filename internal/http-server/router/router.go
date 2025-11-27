@@ -232,19 +232,19 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Get("/files/{fileID}/download", download.New(deps.Log, deps.PgRepo, deps.MinioRepo))
 
 			// Discharges (Сбросы)
-			r.Get("/discharges", dischargeGet.New(deps.Log, deps.PgRepo, loc))
-			r.Get("/discharges/current", dischargeGetCurrent.New(deps.Log, deps.PgRepo))
-			r.Get("/discharges/flat", dischargeGetFlat.New(deps.Log, deps.PgRepo, loc))
+			r.Get("/discharges", dischargeGet.New(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
+			r.Get("/discharges/current", dischargeGetCurrent.New(deps.Log, deps.PgRepo, deps.MinioRepo))
+			r.Get("/discharges/flat", dischargeGetFlat.New(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
 			r.Post("/discharges", dischargeAdd.New(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo))
 			r.Patch("/discharges/{id}", dischargePatch.New(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo))
 			r.Delete("/discharges/{id}", dischargeDelete.New(deps.Log, deps.PgRepo))
 
-			r.Get("/incidents", incidents_handler.Get(deps.Log, deps.PgRepo, loc))
+			r.Get("/incidents", incidents_handler.Get(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
 			r.Post("/incidents", incidents_handler.Add(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo))
 			r.Patch("/incidents/{id}", incidents_handler.Edit(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo))
 			r.Delete("/incidents/{id}", incidents_handler.Delete(deps.Log, deps.PgRepo))
 
-			r.Get("/shutdowns", shutdowns.Get(deps.Log, deps.PgRepo, loc))
+			r.Get("/shutdowns", shutdowns.Get(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
 			r.Post("/shutdowns", shutdowns.Add(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo))
 			r.Patch("/shutdowns/{id}", shutdowns.Edit(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo))
 			r.Delete("/shutdowns/{id}", shutdowns.Delete(deps.Log, deps.PgRepo))
@@ -254,7 +254,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Get("/reservoir-device", reservoirdevicesummary.Get(deps.Log, deps.PgRepo))
 			r.Patch("/reservoir-device", reservoirdevicesummary.Patch(deps.Log, deps.PgRepo))
 
-			r.Get("/visits", visit.Get(deps.Log, deps.PgRepo, loc))
+			r.Get("/visits", visit.Get(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
 			r.Post("/visits", visit.Add(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo))
 			r.Patch("/visits/{id}", visit.Edit(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo))
 			r.Delete("/visits/{id}", visit.Delete(deps.Log, deps.PgRepo))
@@ -264,11 +264,11 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Use(mwauth.RequireAnyRole("assistant", "rais"))
 
 			// Events
-			r.Get("/events", eventGetAll.New(deps.Log, deps.PgRepo))
+			r.Get("/events", eventGetAll.New(deps.Log, deps.PgRepo, deps.MinioRepo))
 			r.Get("/events/short", eventGetShort.New(deps.Log, deps.PgRepo))
 			r.Get("/events/statuses", eventGetStatuses.New(deps.Log, deps.PgRepo))
 			r.Get("/events/types", eventGetTypes.New(deps.Log, deps.PgRepo))
-			r.Get("/events/{id}", eventGetById.New(deps.Log, deps.PgRepo))
+			r.Get("/events/{id}", eventGetById.New(deps.Log, deps.PgRepo, deps.MinioRepo))
 			r.Post("/events", eventAdd.New(deps.Log, deps.MinioRepo, deps.PgRepo))
 			r.Patch("/events/{id}", eventEdit.New(deps.Log, deps.PgRepo))
 			r.Delete("/events/{id}", eventDelete.New(deps.Log, deps.PgRepo))

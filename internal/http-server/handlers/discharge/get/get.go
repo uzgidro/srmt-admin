@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	resp "srmt-admin/internal/lib/api/response"
+	"srmt-admin/internal/lib/helpers"
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/lib/model/discharge"
 	"strconv"
@@ -17,7 +18,7 @@ type DischargeGetter interface {
 	GetDischargesByCascades(ctx context.Context, isOngoing *bool, startDate, endDate *time.Time) ([]discharge.Cascade, error)
 }
 
-func New(log *slog.Logger, getter DischargeGetter, loc *time.Location) http.HandlerFunc {
+func New(log *slog.Logger, getter DischargeGetter, minioRepo helpers.MinioURLGenerator, loc *time.Location) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.discharge.get.New"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
@@ -65,7 +66,7 @@ func New(log *slog.Logger, getter DischargeGetter, loc *time.Location) http.Hand
 		}
 
 		// 2. Вызываем метод репозитория с фильтрами
-		discharges, err := getter.GetDischargesByCascades(r.Context(), isOngoing, startDate, endDate)
+		cascades, err := getter.GetDischargesByCascades(r.Context(), isOngoing, startDate, endDate)
 		if err != nil {
 			log.Error("failed to get all discharges", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)
@@ -73,7 +74,47 @@ func New(log *slog.Logger, getter DischargeGetter, loc *time.Location) http.Hand
 			return
 		}
 
-		log.Info("successfully retrieved discharges", slog.Int("count", len(discharges)))
-		render.JSON(w, r, discharges)
+		// 3. Transform cascades to include presigned URLs for all nested discharges
+		cascadesWithURLs := make([]discharge.CascadeWithURLs, 0, len(cascades))
+		for _, c := range cascades {
+			hppsWithURLs := make([]discharge.HPPWithURLs, 0, len(c.HPPs))
+			for _, hpp := range c.HPPs {
+				dischargesWithURLs := make([]discharge.ModelWithURLs, 0, len(hpp.Discharges))
+				for _, d := range hpp.Discharges {
+					dWithURLs := discharge.ModelWithURLs{
+						ID:             d.ID,
+						Organization:   d.Organization,
+						CreatedByUser:  d.CreatedByUser,
+						ApprovedByUser: d.ApprovedByUser,
+						StartedAt:      d.StartedAt,
+						EndedAt:        d.EndedAt,
+						FlowRate:       d.FlowRate,
+						TotalVolume:    d.TotalVolume,
+						Reason:         d.Reason,
+						IsOngoing:      d.IsOngoing,
+						Approved:       d.Approved,
+						Files:          helpers.TransformFilesWithURLs(r.Context(), d.Files, minioRepo, log),
+					}
+					dischargesWithURLs = append(dischargesWithURLs, dWithURLs)
+				}
+				hppWithURLs := discharge.HPPWithURLs{
+					ID:          hpp.ID,
+					Name:        hpp.Name,
+					TotalVolume: hpp.TotalVolume,
+					Discharges:  dischargesWithURLs,
+				}
+				hppsWithURLs = append(hppsWithURLs, hppWithURLs)
+			}
+			cascadeWithURLs := discharge.CascadeWithURLs{
+				ID:          c.ID,
+				Name:        c.Name,
+				TotalVolume: c.TotalVolume,
+				HPPs:        hppsWithURLs,
+			}
+			cascadesWithURLs = append(cascadesWithURLs, cascadeWithURLs)
+		}
+
+		log.Info("successfully retrieved discharges", slog.Int("count", len(cascadesWithURLs)))
+		render.JSON(w, r, cascadesWithURLs)
 	}
 }

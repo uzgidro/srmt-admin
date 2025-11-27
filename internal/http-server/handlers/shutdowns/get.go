@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	resp "srmt-admin/internal/lib/api/response"
+	"srmt-admin/internal/lib/helpers"
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/lib/model/shutdown"
 	"time"
@@ -20,7 +21,7 @@ type shutdownGetter interface {
 
 const layout = "2006-01-02" // YYYY-MM-DD
 
-func Get(log *slog.Logger, getter shutdownGetter, loc *time.Location) http.HandlerFunc {
+func Get(log *slog.Logger, getter shutdownGetter, minioRepo helpers.MinioURLGenerator, loc *time.Location) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.shutdown.Get"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
@@ -58,17 +59,34 @@ func Get(log *slog.Logger, getter shutdownGetter, loc *time.Location) http.Handl
 			return
 		}
 
-		response := shutdown.GroupedResponse{
-			Ges:   make([]*shutdown.ResponseModel, 0),
-			Mini:  make([]*shutdown.ResponseModel, 0),
-			Micro: make([]*shutdown.ResponseModel, 0),
-			Other: make([]*shutdown.ResponseModel, 0),
+		// Transform function to convert shutdown to WithURLs version
+		transformShutdown := func(s *shutdown.ResponseModel) *shutdown.ResponseWithURLs {
+			return &shutdown.ResponseWithURLs{
+				ID:                            s.ID,
+				OrganizationID:                s.OrganizationID,
+				OrganizationName:              s.OrganizationName,
+				StartedAt:                     s.StartedAt,
+				EndedAt:                       s.EndedAt,
+				Reason:                        s.Reason,
+				CreatedByUser:                 s.CreatedByUser,
+				GenerationLossMwh:             s.GenerationLossMwh,
+				CreatedAt:                     s.CreatedAt,
+				IdleDischargeVolumeThousandM3: s.IdleDischargeVolumeThousandM3,
+				Files:                         helpers.TransformFilesWithURLs(r.Context(), s.Files, minioRepo, log),
+			}
+		}
+
+		response := shutdown.GroupedResponseWithURLs{
+			Ges:   make([]*shutdown.ResponseWithURLs, 0),
+			Mini:  make([]*shutdown.ResponseWithURLs, 0),
+			Micro: make([]*shutdown.ResponseWithURLs, 0),
+			Other: make([]*shutdown.ResponseWithURLs, 0),
 		}
 
 		for _, s := range shutdowns {
 			types, ok := orgTypesMap[s.OrganizationID]
 			if !ok {
-				response.Other = append(response.Other, s)
+				response.Other = append(response.Other, transformShutdown(s))
 				continue
 			}
 
@@ -76,18 +94,18 @@ func Get(log *slog.Logger, getter shutdownGetter, loc *time.Location) http.Handl
 			for _, t := range types {
 				switch t {
 				case "ges":
-					response.Ges = append(response.Ges, s)
+					response.Ges = append(response.Ges, transformShutdown(s))
 					wasGrouped = true
 				case "mini":
-					response.Mini = append(response.Mini, s)
+					response.Mini = append(response.Mini, transformShutdown(s))
 					wasGrouped = true
 				case "micro":
-					response.Micro = append(response.Micro, s)
+					response.Micro = append(response.Micro, transformShutdown(s))
 					wasGrouped = true
 				}
 			}
 			if !wasGrouped {
-				response.Other = append(response.Other, s)
+				response.Other = append(response.Other, transformShutdown(s))
 			}
 		}
 

@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	resp "srmt-admin/internal/lib/api/response"
+	"srmt-admin/internal/lib/helpers"
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/lib/model/visit"
 	"time"
@@ -19,7 +20,7 @@ type visitGetter interface {
 
 const dateLayout = "2006-01-02"
 
-func Get(log *slog.Logger, getter visitGetter, loc *time.Location) http.HandlerFunc {
+func Get(log *slog.Logger, getter visitGetter, minioRepo helpers.MinioURLGenerator, loc *time.Location) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.visit.get.New"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
@@ -51,8 +52,25 @@ func Get(log *slog.Logger, getter visitGetter, loc *time.Location) http.HandlerF
 			return
 		}
 
+		// Transform incidents to include presigned URLs
+		visitsWithURLs := make([]*visit.ResponseWithURLs, 0, len(visits))
+		for _, inc := range visits {
+			incWithURLs := &visit.ResponseWithURLs{
+				ID:               inc.ID,
+				ResponsibleName:  inc.ResponsibleName,
+				VisitDate:        inc.VisitDate,
+				Description:      inc.Description,
+				CreatedAt:        inc.CreatedAt,
+				OrganizationID:   inc.OrganizationID,
+				OrganizationName: inc.OrganizationName,
+				CreatedByUser:    inc.CreatedByUser,
+				Files:            helpers.TransformFilesWithURLs(r.Context(), inc.Files, minioRepo, log),
+			}
+			visitsWithURLs = append(visitsWithURLs, incWithURLs)
+		}
+
 		log.Info("successfully retrieved visits", slog.Int("count", len(visits)))
 
-		render.JSON(w, r, visits)
+		render.JSON(w, r, visitsWithURLs)
 	}
 }

@@ -3,17 +3,19 @@ package get_all
 import (
 	"context"
 	"errors"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/render"
 	"log/slog"
 	"net/http"
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/dto"
+	"srmt-admin/internal/lib/helpers"
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/lib/model/event"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/render"
 )
 
 // EventGetter defines repository interface for retrieving events
@@ -21,7 +23,7 @@ type EventGetter interface {
 	GetAllEvents(ctx context.Context, filters dto.GetAllEventsFilters) ([]*event.Model, error)
 }
 
-func New(log *slog.Logger, getter EventGetter) http.HandlerFunc {
+func New(log *slog.Logger, getter EventGetter, minioRepo helpers.MinioURLGenerator) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.event.get_all.New"
 		log := log.With(
@@ -106,13 +108,41 @@ func New(log *slog.Logger, getter EventGetter) http.HandlerFunc {
 			return
 		}
 
+		// Transform incidents to include presigned URLs
+		eventsWithURLs := make([]*event.ModelWithURLs, 0, len(events))
+		for _, ev := range events {
+			evWithURLs := &event.ModelWithURLs{
+				ID:                   ev.ID,
+				Description:          ev.Description,
+				CreatedAt:            ev.CreatedAt,
+				OrganizationID:       ev.OrganizationID,
+				CreatedBy:            ev.CreatedBy,
+				CreatedByID:          ev.CreatedByID,
+				EventType:            ev.EventType,
+				EventStatus:          ev.EventStatus,
+				Location:             ev.Location,
+				EventDate:            ev.EventDate,
+				ResponsibleContact:   ev.ResponsibleContact,
+				ResponsibleContactID: ev.ResponsibleContactID,
+				EventStatusID:        ev.EventStatusID,
+				EventTypeID:          ev.EventTypeID,
+				Name:                 ev.Name,
+				Organization:         ev.Organization,
+				UpdatedAt:            ev.UpdatedAt,
+				UpdatedBy:            ev.UpdatedBy,
+				UpdatedByID:          ev.UpdatedByID,
+				Files:                helpers.TransformFilesWithURLs(r.Context(), ev.Files, minioRepo, log),
+			}
+			eventsWithURLs = append(eventsWithURLs, evWithURLs)
+		}
+
 		log.Info("successfully retrieved events",
 			slog.Int("count", len(events)),
 			slog.Int("status_filters", len(filters.EventStatusIDs)),
 			slog.Int("type_filters", len(filters.EventTypeIDs)),
 		)
 
-		render.JSON(w, r, events)
+		render.JSON(w, r, eventsWithURLs)
 	}
 }
 
