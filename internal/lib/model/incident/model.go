@@ -1,6 +1,7 @@
 package incident
 
 import (
+	"srmt-admin/internal/lib/model/file"
 	"srmt-admin/internal/lib/model/user"
 	"time"
 )
@@ -13,4 +14,5 @@ type ResponseModel struct {
 	OrganizationID   *int64          `json:"organization_id,omitempty"`
 	OrganizationName *string         `json:"organization,omitempty"`
 	CreatedByUser    *user.ShortInfo `json:"created_by"`
+	Files            []file.Model    `json:"files,omitempty"`
 }

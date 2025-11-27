@@ -1,6 +1,7 @@
 package shutdown
 
 import (
+	"srmt-admin/internal/lib/model/file"
 	"srmt-admin/internal/lib/model/user"
 	"time"
 )
@@ -16,7 +17,8 @@ type ResponseModel struct {
 	GenerationLossMwh *float64        `json:"generation_loss,omitempty"`
 	CreatedAt         time.Time       `json:"created_at"`
 
-	IdleDischargeVolumeThousandM3 *float64 `json:"idle_discharge_volume,omitempty"`
+	IdleDischargeVolumeThousandM3 *float64     `json:"idle_discharge_volume,omitempty"`
+	Files                         []file.Model `json:"files,omitempty"`
 }
 
 type GroupedResponse struct {

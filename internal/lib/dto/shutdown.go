@@ -12,6 +12,7 @@ type AddShutdownRequest struct {
 	CreatedByUserID     int64
 
 	IdleDischargeVolumeThousandM3 *float64
+	FileIDs                       []int64 `json:"file_ids,omitempty"`
 }
 
 type EditShutdownRequest struct {
@@ -26,6 +27,7 @@ type EditShutdownRequest struct {
 
 	// CreatedByUserID is used when creating a new idle discharge during edit
 	CreatedByUserID int64
+	FileIDs         []int64 `json:"file_ids,omitempty"`
 }
 
 type GetShutdownsFilters struct {
