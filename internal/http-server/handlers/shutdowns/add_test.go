@@ -19,7 +19,15 @@ import (
 
 // mockShutdownAdder is a mock implementation of ShutdownAdder interface
 type mockShutdownAdder struct {
-	addFunc func(ctx context.Context, req dto.AddShutdownRequest) (int64, error)
+	addFunc  func(ctx context.Context, req dto.AddShutdownRequest) (int64, error)
+	linkFunc func(ctx context.Context, shutdownID int64, fileIDs []int64) error
+}
+
+func (m *mockShutdownAdder) LinkShutdownFiles(ctx context.Context, shutdownID int64, fileIDs []int64) error {
+	if m.linkFunc != nil {
+		return m.linkFunc(ctx, shutdownID, fileIDs)
+	}
+	return nil
 }
 
 func (m *mockShutdownAdder) AddShutdown(ctx context.Context, req dto.AddShutdownRequest) (int64, error) {
@@ -192,7 +200,7 @@ func TestAdd(t *testing.T) {
 			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 			// Call handler
-			handler := Add(logger, mock)
+			handler := Add(logger, mock, nil, nil)
 			handler.ServeHTTP(rr, req)
 
 			// Check status code
@@ -240,7 +248,7 @@ func TestAdd_NoUserID(t *testing.T) {
 
 	rr := httptest.NewRecorder()
 
-	handler := Add(logger, mock)
+	handler := Add(logger, mock, nil, nil)
 	handler.ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusUnauthorized {
