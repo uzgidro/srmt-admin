@@ -5,8 +5,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/lib/pq"
 	"math"
 	"srmt-admin/internal/lib/model/discharge"
+	"srmt-admin/internal/lib/model/file"
 	"srmt-admin/internal/lib/model/organization"
 	"srmt-admin/internal/lib/model/user"
 	"srmt-admin/internal/storage"
@@ -173,6 +175,15 @@ func (r *Repo) GetAllDischarges(ctx context.Context, isOngoing *bool, startDate,
 		return []discharge.Model{}, nil // Возвращаем пустой слайс вместо nil
 	}
 
+	// Load files for each discharge
+	for i := range discharges {
+		files, err := r.loadDischargeFiles(ctx, discharges[i].ID)
+		if err != nil {
+			return nil, fmt.Errorf("%s: failed to load files for discharge %d: %w", op, discharges[i].ID, err)
+		}
+		discharges[i].Files = files
+	}
+
 	return discharges, nil
 }
 
@@ -336,6 +347,19 @@ func (r *Repo) GetDischargesByCascades(ctx context.Context, isOngoing *bool, sta
 
 	if result == nil {
 		return []discharge.Cascade{}, nil
+	}
+
+	// Load files for each discharge in the cascades
+	for i := range result {
+		for j := range result[i].HPPs {
+			for k := range result[i].HPPs[j].Discharges {
+				files, err := r.loadDischargeFiles(ctx, result[i].HPPs[j].Discharges[k].ID)
+				if err != nil {
+					return nil, fmt.Errorf("%s: failed to load files for discharge %d: %w", op, result[i].HPPs[j].Discharges[k].ID, err)
+				}
+				result[i].HPPs[j].Discharges[k].Files = files
+			}
+		}
 	}
 
 	return result, nil
@@ -543,9 +567,87 @@ func (r *Repo) GetCurrentDischarges(ctx context.Context) ([]discharge.Model, err
 		return []discharge.Model{}, nil
 	}
 
+	// Load files for each discharge
+	for i := range discharges {
+		files, err := r.loadDischargeFiles(ctx, discharges[i].ID)
+		if err != nil {
+			return nil, fmt.Errorf("%s: failed to load files for discharge %d: %w", op, discharges[i].ID, err)
+		}
+		discharges[i].Files = files
+	}
+
 	return discharges, nil
 }
 
 func roundToThree(val float64) float64 {
 	return math.Round(val*1000) / 1000
+}
+
+// LinkDischargeFiles links files to a discharge
+func (r *Repo) LinkDischargeFiles(ctx context.Context, dischargeID int64, fileIDs []int64) error {
+	const op = "storage.repo.discharge.LinkDischargeFiles"
+
+	if len(fileIDs) == 0 {
+		return nil
+	}
+
+	query := `
+		INSERT INTO discharge_file_links (discharge_id, file_id)
+		VALUES ($1, unnest($2::bigint[]))
+		ON CONFLICT DO NOTHING
+	`
+
+	_, err := r.db.ExecContext(ctx, query, dischargeID, pq.Array(fileIDs))
+	if err != nil {
+		return fmt.Errorf("%s: failed to link files: %w", op, err)
+	}
+
+	return nil
+}
+
+// UnlinkDischargeFiles removes all file links for a discharge
+func (r *Repo) UnlinkDischargeFiles(ctx context.Context, dischargeID int64) error {
+	const op = "storage.repo.discharge.UnlinkDischargeFiles"
+
+	query := `DELETE FROM discharge_file_links WHERE discharge_id = $1`
+	_, err := r.db.ExecContext(ctx, query, dischargeID)
+	if err != nil {
+		return fmt.Errorf("%s: failed to unlink files: %w", op, err)
+	}
+
+	return nil
+}
+
+// loadDischargeFiles loads files for a discharge
+func (r *Repo) loadDischargeFiles(ctx context.Context, dischargeID int64) ([]file.Model, error) {
+	const op = "storage.repo.discharge.loadDischargeFiles"
+
+	query := `
+		SELECT f.id, f.file_name, f.object_key, f.category_id, f.mime_type, f.size_bytes, f.created_at
+		FROM files f
+		INNER JOIN discharge_file_links dfl ON f.id = dfl.file_id
+		WHERE dfl.discharge_id = $1
+		ORDER BY f.created_at DESC
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, dischargeID)
+	if err != nil {
+		return nil, fmt.Errorf("%s: failed to query files: %w", op, err)
+	}
+	defer rows.Close()
+
+	var files []file.Model
+	for rows.Next() {
+		var f file.Model
+		if err := rows.Scan(&f.ID, &f.FileName, &f.ObjectKey, &f.CategoryID, &f.MimeType, &f.SizeBytes, &f.CreatedAt); err != nil {
+			return nil, fmt.Errorf("%s: failed to scan file row: %w", op, err)
+		}
+		files = append(files, f)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: rows iteration error: %w", op, err)
+	}
+
+	return files, nil
 }

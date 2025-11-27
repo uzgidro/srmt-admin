@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/lib/pq"
 	"srmt-admin/internal/lib/dto"
+	"srmt-admin/internal/lib/model/file"
 	"srmt-admin/internal/lib/model/shutdown"
 	"srmt-admin/internal/lib/model/user"
 	"srmt-admin/internal/storage"
@@ -114,6 +116,16 @@ func (r *Repo) GetShutdowns(ctx context.Context, day time.Time) ([]*shutdown.Res
 	if shutdowns == nil {
 		shutdowns = make([]*shutdown.ResponseModel, 0)
 	}
+
+	// Load files for each shutdown
+	for _, s := range shutdowns {
+		files, err := r.loadShutdownFiles(ctx, s.ID)
+		if err != nil {
+			return nil, fmt.Errorf("%s: failed to load files for shutdown %d: %w", op, s.ID, err)
+		}
+		s.Files = files
+	}
+
 	return shutdowns, nil
 }
 
@@ -425,3 +437,72 @@ const (
 			v_idle_water_discharges_with_volume v_idw ON s.idle_discharge_id = v_idw.id
 	`
 )
+
+// LinkShutdownFiles links files to a shutdown
+func (r *Repo) LinkShutdownFiles(ctx context.Context, shutdownID int64, fileIDs []int64) error {
+	const op = "storage.repo.shutdown.LinkShutdownFiles"
+
+	if len(fileIDs) == 0 {
+		return nil
+	}
+
+	query := `
+		INSERT INTO shutdown_file_links (shutdown_id, file_id)
+		VALUES ($1, unnest($2::bigint[]))
+		ON CONFLICT DO NOTHING
+	`
+
+	_, err := r.db.ExecContext(ctx, query, shutdownID, pq.Array(fileIDs))
+	if err != nil {
+		return fmt.Errorf("%s: failed to link files: %w", op, err)
+	}
+
+	return nil
+}
+
+// UnlinkShutdownFiles removes all file links for a shutdown
+func (r *Repo) UnlinkShutdownFiles(ctx context.Context, shutdownID int64) error {
+	const op = "storage.repo.shutdown.UnlinkShutdownFiles"
+
+	query := `DELETE FROM shutdown_file_links WHERE shutdown_id = $1`
+	_, err := r.db.ExecContext(ctx, query, shutdownID)
+	if err != nil {
+		return fmt.Errorf("%s: failed to unlink files: %w", op, err)
+	}
+
+	return nil
+}
+
+// loadShutdownFiles loads files for a shutdown
+func (r *Repo) loadShutdownFiles(ctx context.Context, shutdownID int64) ([]file.Model, error) {
+	const op = "storage.repo.shutdown.loadShutdownFiles"
+
+	query := `
+		SELECT f.id, f.file_name, f.object_key, f.category_id, f.mime_type, f.size_bytes, f.created_at
+		FROM files f
+		INNER JOIN shutdown_file_links sfl ON f.id = sfl.file_id
+		WHERE sfl.shutdown_id = $1
+		ORDER BY f.created_at DESC
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, shutdownID)
+	if err != nil {
+		return nil, fmt.Errorf("%s: failed to query files: %w", op, err)
+	}
+	defer rows.Close()
+
+	var files []file.Model
+	for rows.Next() {
+		var f file.Model
+		if err := rows.Scan(&f.ID, &f.FileName, &f.ObjectKey, &f.CategoryID, &f.MimeType, &f.SizeBytes, &f.CreatedAt); err != nil {
+			return nil, fmt.Errorf("%s: failed to scan file row: %w", op, err)
+		}
+		files = append(files, f)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: rows iteration error: %w", op, err)
+	}
+
+	return files, nil
+}

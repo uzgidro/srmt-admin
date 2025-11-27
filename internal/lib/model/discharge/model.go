@@ -1,6 +1,7 @@
 package discharge
 
 import (
+	"srmt-admin/internal/lib/model/file"
 	"srmt-admin/internal/lib/model/organization"
 	"srmt-admin/internal/lib/model/user"
 	"time"
@@ -17,11 +18,12 @@ type Model struct {
 	CreatedByUser  *user.ShortInfo     `json:"created_by"`
 	ApprovedByUser *user.ShortInfo     `json:"approved_by"`
 
-	StartedAt   time.Time  `json:"started_at"`
-	EndedAt     *time.Time `json:"ended_at"`
-	FlowRate    float64    `json:"flow_rate"`
-	TotalVolume float64    `json:"total_volume"`
-	Reason      *string    `json:"reason"`
-	IsOngoing   bool       `json:"is_ongoing"`
-	Approved    *bool      `json:"approved"`
+	StartedAt   time.Time    `json:"started_at"`
+	EndedAt     *time.Time   `json:"ended_at"`
+	FlowRate    float64      `json:"flow_rate"`
+	TotalVolume float64      `json:"total_volume"`
+	Reason      *string      `json:"reason"`
+	IsOngoing   bool         `json:"is_ongoing"`
+	Approved    *bool        `json:"approved"`
+	Files       []file.Model `json:"files,omitempty"`
 }

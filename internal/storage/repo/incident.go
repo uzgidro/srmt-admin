@@ -4,7 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/lib/pq"
 	"srmt-admin/internal/lib/dto"
+	"srmt-admin/internal/lib/model/file"
 	"srmt-admin/internal/lib/model/incident" // (Импорт ResponseModel)
 	"srmt-admin/internal/lib/model/user"
 	"srmt-admin/internal/storage"
@@ -65,6 +67,15 @@ func (r *Repo) GetIncidents(ctx context.Context, day time.Time) ([]*incident.Res
 
 	if incidents == nil {
 		incidents = make([]*incident.ResponseModel, 0)
+	}
+
+	// Load files for each incident
+	for _, inc := range incidents {
+		files, err := r.loadIncidentFiles(ctx, inc.ID)
+		if err != nil {
+			return nil, fmt.Errorf("%s: failed to load files for incident %d: %w", op, inc.ID, err)
+		}
+		inc.Files = files
 	}
 
 	return incidents, nil
@@ -208,4 +219,73 @@ func scanIncidentRow(scanner interface {
 	}
 
 	return &m, nil
+}
+
+// LinkIncidentFiles links files to an incident
+func (r *Repo) LinkIncidentFiles(ctx context.Context, incidentID int64, fileIDs []int64) error {
+	const op = "storage.repo.incident.LinkIncidentFiles"
+
+	if len(fileIDs) == 0 {
+		return nil
+	}
+
+	query := `
+		INSERT INTO incident_file_links (incident_id, file_id)
+		VALUES ($1, unnest($2::bigint[]))
+		ON CONFLICT DO NOTHING
+	`
+
+	_, err := r.db.ExecContext(ctx, query, incidentID, pq.Array(fileIDs))
+	if err != nil {
+		return fmt.Errorf("%s: failed to link files: %w", op, err)
+	}
+
+	return nil
+}
+
+// UnlinkIncidentFiles removes all file links for an incident
+func (r *Repo) UnlinkIncidentFiles(ctx context.Context, incidentID int64) error {
+	const op = "storage.repo.incident.UnlinkIncidentFiles"
+
+	query := `DELETE FROM incident_file_links WHERE incident_id = $1`
+	_, err := r.db.ExecContext(ctx, query, incidentID)
+	if err != nil {
+		return fmt.Errorf("%s: failed to unlink files: %w", op, err)
+	}
+
+	return nil
+}
+
+// loadIncidentFiles loads files for an incident
+func (r *Repo) loadIncidentFiles(ctx context.Context, incidentID int64) ([]file.Model, error) {
+	const op = "storage.repo.incident.loadIncidentFiles"
+
+	query := `
+		SELECT f.id, f.file_name, f.object_key, f.category_id, f.mime_type, f.size_bytes, f.created_at
+		FROM files f
+		INNER JOIN incident_file_links ifl ON f.id = ifl.file_id
+		WHERE ifl.incident_id = $1
+		ORDER BY f.created_at DESC
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, incidentID)
+	if err != nil {
+		return nil, fmt.Errorf("%s: failed to query files: %w", op, err)
+	}
+	defer rows.Close()
+
+	var files []file.Model
+	for rows.Next() {
+		var f file.Model
+		if err := rows.Scan(&f.ID, &f.FileName, &f.ObjectKey, &f.CategoryID, &f.MimeType, &f.SizeBytes, &f.CreatedAt); err != nil {
+			return nil, fmt.Errorf("%s: failed to scan file row: %w", op, err)
+		}
+		files = append(files, f)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: rows iteration error: %w", op, err)
+	}
+
+	return files, nil
 }

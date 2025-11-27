@@ -3,7 +3,9 @@ package repo
 import (
 	"context"
 	"fmt"
+	"github.com/lib/pq"
 	"srmt-admin/internal/lib/dto"
+	"srmt-admin/internal/lib/model/file"
 	"srmt-admin/internal/lib/model/user"
 	"srmt-admin/internal/lib/model/visit"
 	"srmt-admin/internal/storage"
@@ -71,6 +73,15 @@ func (r *Repo) GetVisits(ctx context.Context, day time.Time) ([]*visit.ResponseM
 
 	if visits == nil {
 		visits = make([]*visit.ResponseModel, 0)
+	}
+
+	// Load files for each visit
+	for _, v := range visits {
+		files, err := r.loadVisitFiles(ctx, v.ID)
+		if err != nil {
+			return nil, fmt.Errorf("%s: failed to load files for visit %d: %w", op, v.ID, err)
+		}
+		v.Files = files
 	}
 
 	return visits, nil
@@ -208,4 +219,73 @@ func scanVisitRow(scanner interface {
 	}
 
 	return &m, nil
+}
+
+// LinkVisitFiles links files to a visit
+func (r *Repo) LinkVisitFiles(ctx context.Context, visitID int64, fileIDs []int64) error {
+	const op = "storage.repo.visit.LinkVisitFiles"
+
+	if len(fileIDs) == 0 {
+		return nil
+	}
+
+	query := `
+		INSERT INTO visit_file_links (visit_id, file_id)
+		VALUES ($1, unnest($2::bigint[]))
+		ON CONFLICT DO NOTHING
+	`
+
+	_, err := r.db.ExecContext(ctx, query, visitID, pq.Array(fileIDs))
+	if err != nil {
+		return fmt.Errorf("%s: failed to link files: %w", op, err)
+	}
+
+	return nil
+}
+
+// UnlinkVisitFiles removes all file links for a visit
+func (r *Repo) UnlinkVisitFiles(ctx context.Context, visitID int64) error {
+	const op = "storage.repo.visit.UnlinkVisitFiles"
+
+	query := `DELETE FROM visit_file_links WHERE visit_id = $1`
+	_, err := r.db.ExecContext(ctx, query, visitID)
+	if err != nil {
+		return fmt.Errorf("%s: failed to unlink files: %w", op, err)
+	}
+
+	return nil
+}
+
+// loadVisitFiles loads files for a visit
+func (r *Repo) loadVisitFiles(ctx context.Context, visitID int64) ([]file.Model, error) {
+	const op = "storage.repo.visit.loadVisitFiles"
+
+	query := `
+		SELECT f.id, f.file_name, f.object_key, f.category_id, f.mime_type, f.size_bytes, f.created_at
+		FROM files f
+		INNER JOIN visit_file_links vfl ON f.id = vfl.file_id
+		WHERE vfl.visit_id = $1
+		ORDER BY f.created_at DESC
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, visitID)
+	if err != nil {
+		return nil, fmt.Errorf("%s: failed to query files: %w", op, err)
+	}
+	defer rows.Close()
+
+	var files []file.Model
+	for rows.Next() {
+		var f file.Model
+		if err := rows.Scan(&f.ID, &f.FileName, &f.ObjectKey, &f.CategoryID, &f.MimeType, &f.SizeBytes, &f.CreatedAt); err != nil {
+			return nil, fmt.Errorf("%s: failed to scan file row: %w", op, err)
+		}
+		files = append(files, f)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: rows iteration error: %w", op, err)
+	}
+
+	return files, nil
 }
