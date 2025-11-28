@@ -88,7 +88,17 @@ func (r *Repo) GetPastEvents(ctx context.Context, days int, timezone *time.Locat
 			s.end_time,
 			s.organization_id,
 			COALESCE(o.name, '') as org_name,
-			COALESCE(s.reason, '') as reason
+			COALESCE(s.reason, '') as reason,
+			EXISTS(
+				SELECT 1 FROM shutdowns prev
+				WHERE prev.organization_id = s.organization_id
+				AND prev.end_time = s.start_time
+			) as is_continuation,
+			EXISTS(
+				SELECT 1 FROM shutdowns next
+				WHERE next.organization_id = s.organization_id
+				AND next.start_time = s.end_time
+			) as has_continuation
 		FROM
 			shutdowns s
 		LEFT JOIN
@@ -107,15 +117,17 @@ func (r *Repo) GetPastEvents(ctx context.Context, days int, timezone *time.Locat
 
 	for rows.Next() {
 		var (
-			shutdownID int64
-			startTime  time.Time
-			endTime    sql.NullTime
-			orgID      int64
-			orgName    string
-			reason     string
+			shutdownID      int64
+			startTime       time.Time
+			endTime         sql.NullTime
+			orgID           int64
+			orgName         string
+			reason          string
+			isContinuation  bool
+			hasContinuation bool
 		)
 
-		if err := rows.Scan(&shutdownID, &startTime, &endTime, &orgID, &orgName, &reason); err != nil {
+		if err := rows.Scan(&shutdownID, &startTime, &endTime, &orgID, &orgName, &reason, &isContinuation, &hasContinuation); err != nil {
 			rows.Close()
 			return nil, fmt.Errorf("%s: failed to scan shutdown row: %w", op, err)
 		}
@@ -124,9 +136,9 @@ func (r *Repo) GetPastEvents(ctx context.Context, days int, timezone *time.Locat
 
 		// Check if start_time == end_time (same-time event)
 		if endTime.Valid && endTime.Time.Equal(startTime) {
-			// Same time - only one event with special description
+			// Same time - only one event with special description (INFO for continuous)
 			events = append(events, past_events.Event{
-				Type:             past_events.EventTypeWarning,
+				Type:             past_events.EventTypeInfo,
 				Date:             startTime,
 				OrganizationID:   &orgID,
 				OrganizationName: orgNamePtr,
@@ -137,10 +149,14 @@ func (r *Repo) GetPastEvents(ctx context.Context, days int, timezone *time.Locat
 		} else {
 			// Different times - create two events
 
-			// Event 1: Start event (warning)
+			// Event 1: Start event - INFO if continuation, WARNING if new
 			if startTime.After(startDate) && startTime.Before(now) || startTime.Equal(startDate) || startTime.Equal(now) {
+				eventType := past_events.EventTypeWarning
+				if isContinuation {
+					eventType = past_events.EventTypeInfo
+				}
 				events = append(events, past_events.Event{
-					Type:             past_events.EventTypeWarning,
+					Type:             eventType,
 					Date:             startTime,
 					OrganizationID:   &orgID,
 					OrganizationName: orgNamePtr,
@@ -151,7 +167,8 @@ func (r *Repo) GetPastEvents(ctx context.Context, days int, timezone *time.Locat
 			}
 
 			// Event 2: End event (success) - "аппарат исправен"
-			if endTime.Valid {
+			// Skip if there's a continuation (next record starts when this ends)
+			if endTime.Valid && !hasContinuation {
 				if endTime.Time.After(startDate) && endTime.Time.Before(now) || endTime.Time.Equal(startDate) || endTime.Time.Equal(now) {
 					events = append(events, past_events.Event{
 						Type:             past_events.EventTypeSuccess,
@@ -159,7 +176,8 @@ func (r *Repo) GetPastEvents(ctx context.Context, days int, timezone *time.Locat
 						OrganizationID:   &orgID,
 						OrganizationName: orgNamePtr,
 						Description:      "аппарат исправен",
-						// No EntityType/EntityID for end events
+						EntityType:       "shutdown",
+						EntityID:         shutdownID,
 					})
 				}
 			}
@@ -175,7 +193,17 @@ func (r *Repo) GetPastEvents(ctx context.Context, days int, timezone *time.Locat
 			d.end_time,
 			d.organization_id,
 			COALESCE(o.name, '') as org_name,
-			COALESCE(d.reason, '') as reason
+			COALESCE(d.reason, '') as reason,
+			EXISTS(
+				SELECT 1 FROM idle_water_discharges prev
+				WHERE prev.organization_id = d.organization_id
+				AND prev.end_time = d.start_time
+			) as is_continuation,
+			EXISTS(
+				SELECT 1 FROM idle_water_discharges next
+				WHERE next.organization_id = d.organization_id
+				AND next.start_time = d.end_time
+			) as has_continuation
 		FROM
 			idle_water_discharges d
 		LEFT JOIN
@@ -194,15 +222,17 @@ func (r *Repo) GetPastEvents(ctx context.Context, days int, timezone *time.Locat
 
 	for rows.Next() {
 		var (
-			dischargeID int64
-			startTime   time.Time
-			endTime     sql.NullTime
-			orgID       int64
-			orgName     string
-			reason      string
+			dischargeID     int64
+			startTime       time.Time
+			endTime         sql.NullTime
+			orgID           int64
+			orgName         string
+			reason          string
+			isContinuation  bool
+			hasContinuation bool
 		)
 
-		if err := rows.Scan(&dischargeID, &startTime, &endTime, &orgID, &orgName, &reason); err != nil {
+		if err := rows.Scan(&dischargeID, &startTime, &endTime, &orgID, &orgName, &reason, &isContinuation, &hasContinuation); err != nil {
 			rows.Close()
 			return nil, fmt.Errorf("%s: failed to scan discharge row: %w", op, err)
 		}
@@ -211,9 +241,9 @@ func (r *Repo) GetPastEvents(ctx context.Context, days int, timezone *time.Locat
 
 		// Check if start_time == end_time (same-time event)
 		if endTime.Valid && endTime.Time.Equal(startTime) {
-			// Same time - only start event
+			// Same time - only one event (INFO for continuous)
 			events = append(events, past_events.Event{
-				Type:             past_events.EventTypeWarning,
+				Type:             past_events.EventTypeInfo,
 				Date:             startTime,
 				OrganizationID:   &orgID,
 				OrganizationName: orgNamePtr,
@@ -224,10 +254,14 @@ func (r *Repo) GetPastEvents(ctx context.Context, days int, timezone *time.Locat
 		} else {
 			// Different times - create two events
 
-			// Event 1: Start event (warning)
+			// Event 1: Start event - INFO if continuation, WARNING if new
 			if startTime.After(startDate) && startTime.Before(now) || startTime.Equal(startDate) || startTime.Equal(now) {
+				eventType := past_events.EventTypeWarning
+				if isContinuation {
+					eventType = past_events.EventTypeInfo
+				}
 				events = append(events, past_events.Event{
-					Type:             past_events.EventTypeWarning,
+					Type:             eventType,
 					Date:             startTime,
 					OrganizationID:   &orgID,
 					OrganizationName: orgNamePtr,
@@ -237,16 +271,18 @@ func (r *Repo) GetPastEvents(ctx context.Context, days int, timezone *time.Locat
 				})
 			}
 
-			// Event 2: End event (info) - "Водосброс остановлен"
-			if endTime.Valid {
+			// Event 2: End event (success) - "Водосброс остановлен"
+			// Skip if there's a continuation (next record starts when this ends)
+			if endTime.Valid && !hasContinuation {
 				if endTime.Time.After(startDate) && endTime.Time.Before(now) || endTime.Time.Equal(startDate) || endTime.Time.Equal(now) {
 					events = append(events, past_events.Event{
-						Type:             past_events.EventTypeInfo,
+						Type:             past_events.EventTypeSuccess,
 						Date:             endTime.Time,
 						OrganizationID:   &orgID,
 						OrganizationName: orgNamePtr,
 						Description:      "Водосброс остановлен",
-						// No EntityType/EntityID for end events
+						EntityType:       "discharge",
+						EntityID:         dischargeID,
 					})
 				}
 			}
