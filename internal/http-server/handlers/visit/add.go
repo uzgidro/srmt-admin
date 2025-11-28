@@ -147,10 +147,14 @@ func Add(log *slog.Logger, adder visitAdder, uploader fileupload.FileUploader, s
 			}
 		}
 
+		uploadedFilesCount := 0
+		if uploadResult != nil {
+			uploadedFilesCount = len(uploadResult.FileIDs)
+		}
 		log.Info("visit added successfully",
 			slog.Int64("id", id),
 			slog.Int("total_files", len(fileIDs)),
-			slog.Int("uploaded_files", len(uploadResult.FileIDs)),
+			slog.Int("uploaded_files", uploadedFilesCount),
 		)
 
 		render.Status(r, http.StatusCreated)
