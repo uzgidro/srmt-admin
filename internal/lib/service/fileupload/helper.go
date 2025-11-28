@@ -34,7 +34,7 @@ type CategoryModel interface {
 
 // CategoryGetter defines interface for getting category by name
 type CategoryGetter interface {
-	GetCategoryByName(ctx context.Context, categoryName, categoryDisplayName string) (CategoryModel, error)
+	GetCategoryByName(ctx context.Context, categoryName string) (CategoryModel, error)
 }
 
 // UploadedFileInfo contains information about a successfully uploaded file
@@ -90,15 +90,15 @@ func ProcessFormFiles(
 	}
 
 	// Get category ID
-	catModel, err := categoryGetter.GetCategoryByName(ctx, categoryName, categoryDisplayName)
+	catModel, err := categoryGetter.GetCategoryByName(ctx, categoryName)
 	if err != nil {
 		return nil, fmt.Errorf("%s: failed to get category: %w", op, err)
 	}
 
 	// Track uploaded files for compensation
-	uploadedFiles := []UploadedFileInfo{}
-	uploadedFileIDs := []int64{}
-	uploadedObjectKeys := []string{}
+	var uploadedFiles []UploadedFileInfo
+	var uploadedFileIDs []int64
+	var uploadedObjectKeys []string
 
 	// Upload each file
 	for _, fileHeader := range files {
