@@ -4,9 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/render"
-	"github.com/go-playground/validator/v10"
 	"log/slog"
 	"net/http"
 	"srmt-admin/internal/lib/api/formparser"
@@ -16,6 +13,10 @@ import (
 	"srmt-admin/internal/lib/service/fileupload"
 	"srmt-admin/internal/storage"
 	"time"
+
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/render"
+	"github.com/go-playground/validator/v10"
 )
 
 // Request (JSON DTO)
@@ -37,7 +38,7 @@ type incidentAdder interface {
 	LinkIncidentFiles(ctx context.Context, incidentID int64, fileIDs []int64) error
 }
 
-func Add(log *slog.Logger, adder incidentAdder, uploader fileupload.FileUploader, saver fileupload.FileMetaSaver) http.HandlerFunc {
+func Add(log *slog.Logger, adder incidentAdder, uploader fileupload.FileUploader, saver fileupload.FileMetaSaver, categoryGetter fileupload.CategoryGetter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.incident.add.New"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
@@ -59,7 +60,7 @@ func Add(log *slog.Logger, adder incidentAdder, uploader fileupload.FileUploader
 			log.Info("processing multipart/form-data request")
 
 			// Parse request from multipart form
-			req, uploadResult, err = parseMultipartAddRequest(r, log, uploader, saver)
+			req, uploadResult, err = parseMultipartAddRequest(r, log, uploader, saver, categoryGetter)
 			if err != nil {
 				log.Error("failed to parse multipart request", sl.Err(err))
 				render.Status(r, http.StatusBadRequest)
@@ -168,6 +169,7 @@ func parseMultipartAddRequest(
 	log *slog.Logger,
 	uploader fileupload.FileUploader,
 	saver fileupload.FileMetaSaver,
+	categoryGetter fileupload.CategoryGetter,
 ) (addRequest, *fileupload.UploadResult, error) {
 	const op = "incidents_handler.parseMultipartAddRequest"
 
@@ -203,7 +205,9 @@ func parseMultipartAddRequest(
 		log,
 		uploader,
 		saver,
-		"incident", // category name for MinIO path
+		categoryGetter,
+		"incidents", // category name for MinIO path
+		"Инциденты", // category display name
 		incidentTime,
 	)
 	if err != nil {

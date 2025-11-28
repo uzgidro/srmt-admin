@@ -9,3 +9,8 @@ type Model struct {
 	DisplayName string `json:"display_name"`
 	Description string `json:"description,omitempty"`
 }
+
+// GetID returns the category ID (implements CategoryModel interface)
+func (m Model) GetID() int64 {
+	return m.ID
+}

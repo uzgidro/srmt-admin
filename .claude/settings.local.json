@@ -10,7 +10,10 @@
       "Bash(wire)",
       "Bash(go run:*)",
       "Bash(chmod:*)",
-      "Bash(go mod tidy:*)"
+      "Bash(go mod tidy:*)",
+      "Bash(cd:*)",
+      "Bash(dir:*)",
+      "Bash(findstr:*)"
     ],
     "deny": [],
     "ask": []

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"srmt-admin/internal/lib/model/category"
+	"srmt-admin/internal/lib/service/fileupload"
 	"srmt-admin/internal/storage"
 )
 
@@ -99,10 +100,9 @@ func (r *Repo) GetAllCategories(ctx context.Context) ([]category.Model, error) {
 	return categories, nil
 }
 
-func (r *Repo) GetEventsCategory(ctx context.Context) (category.Model, error) {
-	const op = "repo.file-category.GetEventsCategory"
-	const categoryName = "events"
-	const categoryDisplayName = "События"
+// GetCategoryByName finds a category by name, creating it if it doesn't exist
+func (r *Repo) GetCategoryByName(ctx context.Context, categoryName, categoryDisplayName string) (fileupload.CategoryModel, error) {
+	const op = "repo.file-category.GetCategoryByName"
 
 	// Attempt to find the category first
 	const findQuery = `
@@ -157,4 +157,44 @@ func (r *Repo) GetEventsCategory(ctx context.Context) (category.Model, error) {
 
 	// Return the newly created category
 	return newCat, nil
+}
+
+func (r *Repo) GetEventsCategory(ctx context.Context) (category.Model, error) {
+	catModel, err := r.GetCategoryByName(ctx, "events", "События")
+	if err != nil {
+		return category.Model{}, err
+	}
+	return catModel.(category.Model), nil
+}
+
+func (r *Repo) GetIncidentsCategory(ctx context.Context) (category.Model, error) {
+	catModel, err := r.GetCategoryByName(ctx, "incidents", "Инциденты")
+	if err != nil {
+		return category.Model{}, err
+	}
+	return catModel.(category.Model), nil
+}
+
+func (r *Repo) GetShutdownsCategory(ctx context.Context) (category.Model, error) {
+	catModel, err := r.GetCategoryByName(ctx, "shutdowns", "Аварийные отключения")
+	if err != nil {
+		return category.Model{}, err
+	}
+	return catModel.(category.Model), nil
+}
+
+func (r *Repo) GetDischargesCategory(ctx context.Context) (category.Model, error) {
+	catModel, err := r.GetCategoryByName(ctx, "discharges", "Холостые водосбросы")
+	if err != nil {
+		return category.Model{}, err
+	}
+	return catModel.(category.Model), nil
+}
+
+func (r *Repo) GetVisitsCategory(ctx context.Context) (category.Model, error) {
+	catModel, err := r.GetCategoryByName(ctx, "visits", "Визиты")
+	if err != nil {
+		return category.Model{}, err
+	}
+	return catModel.(category.Model), nil
 }

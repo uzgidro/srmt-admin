@@ -3,7 +3,6 @@ package fileupload
 import (
 	"context"
 	"fmt"
-	"github.com/google/uuid"
 	"io"
 	"log/slog"
 	"mime/multipart"
@@ -12,6 +11,8 @@ import (
 	"srmt-admin/internal/lib/logger/sl"
 	filemodel "srmt-admin/internal/lib/model/file"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // FileUploader defines interface for uploading files to storage (MinIO)
@@ -24,6 +25,16 @@ type FileUploader interface {
 type FileMetaSaver interface {
 	AddFile(ctx context.Context, fileData filemodel.Model) (int64, error)
 	DeleteFile(ctx context.Context, id int64) error
+}
+
+// CategoryModel minimal interface for category information
+type CategoryModel interface {
+	GetID() int64
+}
+
+// CategoryGetter defines interface for getting category by name
+type CategoryGetter interface {
+	GetCategoryByName(ctx context.Context, categoryName, categoryDisplayName string) (CategoryModel, error)
 }
 
 // UploadedFileInfo contains information about a successfully uploaded file
@@ -56,7 +67,9 @@ func ProcessFormFiles(
 	log *slog.Logger,
 	uploader FileUploader,
 	saver FileMetaSaver,
+	categoryGetter CategoryGetter,
 	categoryName string,
+	categoryDisplayName string,
 	uploadDate time.Time,
 ) (*UploadResult, error) {
 	const op = "fileupload.ProcessFormFiles"
@@ -76,6 +89,12 @@ func ProcessFormFiles(
 		}, nil
 	}
 
+	// Get category ID
+	catModel, err := categoryGetter.GetCategoryByName(ctx, categoryName, categoryDisplayName)
+	if err != nil {
+		return nil, fmt.Errorf("%s: failed to get category: %w", op, err)
+	}
+
 	// Track uploaded files for compensation
 	uploadedFiles := []UploadedFileInfo{}
 	uploadedFileIDs := []int64{}
@@ -90,6 +109,7 @@ func ProcessFormFiles(
 			saver,
 			fileHeader,
 			categoryName,
+			catModel.GetID(),
 			uploadDate,
 		)
 		if err != nil {
@@ -123,6 +143,7 @@ func uploadSingleFile(
 	saver FileMetaSaver,
 	fileHeader *multipart.FileHeader,
 	categoryName string,
+	categoryID int64,
 	uploadDate time.Time,
 ) (*UploadedFileInfo, error) {
 	const op = "fileupload.uploadSingleFile"
@@ -160,7 +181,7 @@ func uploadSingleFile(
 	fileData := filemodel.Model{
 		FileName:   fileHeader.Filename,
 		ObjectKey:  objectKey,
-		CategoryID: 0, // Will be set by caller if needed
+		CategoryID: categoryID,
 		MimeType:   fileHeader.Header.Get("Content-Type"),
 		SizeBytes:  fileHeader.Size,
 		CreatedAt:  uploadDate,
@@ -197,6 +218,8 @@ func compensateUploads(
 	objectKeys []string,
 ) {
 	const op = "fileupload.compensateUploads"
+
+	log = log.With(slog.String("op", op))
 
 	log.Warn("starting upload compensation",
 		slog.Int("files_to_delete", len(fileIDs)),
