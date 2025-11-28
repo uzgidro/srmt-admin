@@ -42,7 +42,7 @@ type ShutdownAdder interface {
 	LinkShutdownFiles(ctx context.Context, shutdownID int64, fileIDs []int64) error
 }
 
-func Add(log *slog.Logger, adder ShutdownAdder, uploader fileupload.FileUploader, saver fileupload.FileMetaSaver) http.HandlerFunc {
+func Add(log *slog.Logger, adder ShutdownAdder, uploader fileupload.FileUploader, saver fileupload.FileMetaSaver, categoryGetter fileupload.CategoryGetter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.shutdown.Add"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
@@ -64,7 +64,7 @@ func Add(log *slog.Logger, adder ShutdownAdder, uploader fileupload.FileUploader
 			log.Info("processing multipart/form-data request")
 
 			// Parse request from multipart form
-			req, uploadResult, err = parseMultipartAddRequest(r, log, uploader, saver)
+			req, uploadResult, err = parseMultipartAddRequest(r, log, uploader, saver, categoryGetter)
 			if err != nil {
 				log.Error("failed to parse multipart request", sl.Err(err))
 				render.Status(r, http.StatusBadRequest)
@@ -198,6 +198,7 @@ func parseMultipartAddRequest(
 	log *slog.Logger,
 	uploader fileupload.FileUploader,
 	saver fileupload.FileMetaSaver,
+	categoryGetter fileupload.CategoryGetter,
 ) (addRequest, *fileupload.UploadResult, error) {
 	const op = "shutdowns.parseMultipartAddRequest"
 
@@ -258,7 +259,9 @@ func parseMultipartAddRequest(
 		log,
 		uploader,
 		saver,
-		"shutdown", // category name for MinIO path
+		categoryGetter,
+		"shutdowns", // category name for MinIO path
+		"Аварийные отключения", // category display name
 		startTime,
 	)
 	if err != nil {

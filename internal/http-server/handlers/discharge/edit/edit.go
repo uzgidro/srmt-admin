@@ -40,7 +40,7 @@ type DischargeEditor interface {
 	LinkDischargeFiles(ctx context.Context, dischargeID int64, fileIDs []int64) error
 }
 
-func New(log *slog.Logger, editor DischargeEditor, uploader fileupload.FileUploader, saver fileupload.FileMetaSaver) http.HandlerFunc {
+func New(log *slog.Logger, editor DischargeEditor, uploader fileupload.FileUploader, saver fileupload.FileMetaSaver, categoryGetter fileupload.CategoryGetter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.discharge.patch.New"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
@@ -71,7 +71,7 @@ func New(log *slog.Logger, editor DischargeEditor, uploader fileupload.FileUploa
 			log.Info("processing multipart/form-data request")
 
 			// Parse request from multipart form
-			req, uploadResult, err = parseMultipartEditRequest(r, log, uploader, saver)
+			req, uploadResult, err = parseMultipartEditRequest(r, log, uploader, saver, categoryGetter)
 			if err != nil {
 				log.Error("failed to parse multipart request", sl.Err(err))
 				render.Status(r, http.StatusBadRequest)
@@ -164,6 +164,7 @@ func parseMultipartEditRequest(
 	log *slog.Logger,
 	uploader fileupload.FileUploader,
 	saver fileupload.FileMetaSaver,
+	categoryGetter fileupload.CategoryGetter,
 ) (Request, *fileupload.UploadResult, error) {
 	const op = "discharge.edit.parseMultipartEditRequest"
 
@@ -211,8 +212,10 @@ func parseMultipartEditRequest(
 		log,
 		uploader,
 		saver,
-		"discharge",
-		time.Now(), // For edits, use current time
+		categoryGetter,
+		"discharges",          // category name for MinIO path
+		"Холостые водосбросы", // category display name
+		time.Now(),            // For edits, use current time
 	)
 	if err != nil {
 		return Request{}, nil, fmt.Errorf("%s: failed to process file uploads: %w", op, err)

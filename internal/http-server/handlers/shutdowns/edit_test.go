@@ -239,7 +239,7 @@ func TestEdit(t *testing.T) {
 			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 			// Call handler
-			handler := Edit(logger, mock, nil, nil)
+			handler := Edit(logger, mock, nil, nil, nil)
 			handler.ServeHTTP(rr, req)
 
 			// Check status code
@@ -331,7 +331,7 @@ func TestEdit_IdleDischargeScenarios(t *testing.T) {
 			rr := httptest.NewRecorder()
 			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-			handler := Edit(logger, mock, nil, nil)
+			handler := Edit(logger, mock, nil, nil, nil)
 			handler.ServeHTTP(rr, req)
 
 			if rr.Code != http.StatusOK {

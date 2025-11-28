@@ -44,7 +44,7 @@ type shutdownEditor interface {
 	LinkShutdownFiles(ctx context.Context, shutdownID int64, fileIDs []int64) error
 }
 
-func Edit(log *slog.Logger, editor shutdownEditor, uploader fileupload.FileUploader, saver fileupload.FileMetaSaver) http.HandlerFunc {
+func Edit(log *slog.Logger, editor shutdownEditor, uploader fileupload.FileUploader, saver fileupload.FileMetaSaver, categoryGetter fileupload.CategoryGetter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.shutdown.Edit"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
@@ -76,7 +76,7 @@ func Edit(log *slog.Logger, editor shutdownEditor, uploader fileupload.FileUploa
 			log.Info("processing multipart/form-data request")
 
 			// Parse request from multipart form
-			req, uploadResult, err = parseMultipartEditRequest(r, log, uploader, saver)
+			req, uploadResult, err = parseMultipartEditRequest(r, log, uploader, saver, categoryGetter)
 			if err != nil {
 				log.Error("failed to parse multipart request", sl.Err(err))
 				render.Status(r, http.StatusBadRequest)
@@ -188,6 +188,7 @@ func parseMultipartEditRequest(
 	log *slog.Logger,
 	uploader fileupload.FileUploader,
 	saver fileupload.FileMetaSaver,
+	categoryGetter fileupload.CategoryGetter,
 ) (editRequest, *fileupload.UploadResult, error) {
 	const op = "shutdowns.parseMultipartEditRequest"
 
@@ -242,7 +243,9 @@ func parseMultipartEditRequest(
 		log,
 		uploader,
 		saver,
-		"shutdown",
+		categoryGetter,
+		"shutdowns", // category name for MinIO path
+		"Аварийные отключения", // category display name
 		time.Now(), // For edits, use current time
 	)
 	if err != nil {

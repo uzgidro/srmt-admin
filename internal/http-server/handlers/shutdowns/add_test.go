@@ -200,7 +200,7 @@ func TestAdd(t *testing.T) {
 			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 			// Call handler
-			handler := Add(logger, mock, nil, nil)
+			handler := Add(logger, mock, nil, nil, nil)
 			handler.ServeHTTP(rr, req)
 
 			// Check status code
@@ -248,7 +248,7 @@ func TestAdd_NoUserID(t *testing.T) {
 
 	rr := httptest.NewRecorder()
 
-	handler := Add(logger, mock, nil, nil)
+	handler := Add(logger, mock, nil, nil, nil)
 	handler.ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusUnauthorized {

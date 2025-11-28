@@ -39,7 +39,7 @@ type visitAdder interface {
 	LinkVisitFiles(ctx context.Context, visitID int64, fileIDs []int64) error
 }
 
-func Add(log *slog.Logger, adder visitAdder, uploader fileupload.FileUploader, saver fileupload.FileMetaSaver) http.HandlerFunc {
+func Add(log *slog.Logger, adder visitAdder, uploader fileupload.FileUploader, saver fileupload.FileMetaSaver, categoryGetter fileupload.CategoryGetter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.visit.add.New"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
@@ -62,7 +62,7 @@ func Add(log *slog.Logger, adder visitAdder, uploader fileupload.FileUploader, s
 			log.Info("processing multipart/form-data request")
 
 			// Parse request from multipart form
-			req, visitDate, uploadResult, err = parseMultipartAddRequest(r, log, uploader, saver)
+			req, visitDate, uploadResult, err = parseMultipartAddRequest(r, log, uploader, saver, categoryGetter)
 			if err != nil {
 				log.Error("failed to parse multipart request", sl.Err(err))
 				render.Status(r, http.StatusBadRequest)
@@ -175,6 +175,7 @@ func parseMultipartAddRequest(
 	log *slog.Logger,
 	uploader fileupload.FileUploader,
 	saver fileupload.FileMetaSaver,
+	categoryGetter fileupload.CategoryGetter,
 ) (addRequest, time.Time, *fileupload.UploadResult, error) {
 	const op = "visit.parseMultipartAddRequest"
 
@@ -217,7 +218,9 @@ func parseMultipartAddRequest(
 		log,
 		uploader,
 		saver,
-		"visit", // category name for MinIO path
+		categoryGetter,
+		"visits", // category name for MinIO path
+		"Визиты", // category display name
 		visitDate,
 	)
 	if err != nil {
