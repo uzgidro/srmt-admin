@@ -170,10 +170,14 @@ func Add(log *slog.Logger, adder ShutdownAdder, uploader fileupload.FileUploader
 			}
 		}
 
+		uploadedFilesCount := 0
+		if uploadResult != nil {
+			uploadedFilesCount = len(uploadResult.FileIDs)
+		}
 		log.Info("shutdown added successfully",
 			slog.Int64("id", id),
 			slog.Int("total_files", len(fileIDs)),
-			slog.Int("uploaded_files", len(uploadResult.FileIDs)),
+			slog.Int("uploaded_files", uploadedFilesCount),
 		)
 
 		render.Status(r, http.StatusCreated)
