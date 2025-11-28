@@ -8,6 +8,7 @@ import (
 	"net/http"
 	resp "srmt-admin/internal/lib/api/response"
 	past_events "srmt-admin/internal/lib/dto/past-events"
+	"srmt-admin/internal/lib/helpers"
 	"srmt-admin/internal/lib/logger/sl"
 	"strconv"
 	"time"
@@ -19,7 +20,7 @@ type pastEventsGetter interface {
 
 const defaultDays = 7
 
-func Get(log *slog.Logger, getter pastEventsGetter, loc *time.Location) http.HandlerFunc {
+func Get(log *slog.Logger, getter pastEventsGetter, minioRepo helpers.MinioURLGenerator, loc *time.Location) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.past_events.get.New"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
@@ -50,17 +51,38 @@ func Get(log *slog.Logger, getter pastEventsGetter, loc *time.Location) http.Han
 			return
 		}
 
-		// Count total events across all dates
+		// Transform to response model with presigned URLs
+		dateGroupsWithURLs := make([]past_events.DateGroupWithURLs, len(eventsByDate))
 		totalEvents := 0
-		for _, dateGroup := range eventsByDate {
-			totalEvents += len(dateGroup.Events)
+
+		for i, dateGroup := range eventsByDate {
+			eventsWithURLs := make([]past_events.EventWithURLs, len(dateGroup.Events))
+
+			for j, event := range dateGroup.Events {
+				eventsWithURLs[j] = past_events.EventWithURLs{
+					Type:             event.Type,
+					Date:             event.Date,
+					OrganizationID:   event.OrganizationID,
+					OrganizationName: event.OrganizationName,
+					Description:      event.Description,
+					EntityType:       event.EntityType,
+					EntityID:         event.EntityID,
+					Files:            helpers.TransformFilesWithURLs(r.Context(), event.Files, minioRepo, log),
+				}
+			}
+
+			dateGroupsWithURLs[i] = past_events.DateGroupWithURLs{
+				Date:   dateGroup.Date,
+				Events: eventsWithURLs,
+			}
+			totalEvents += len(eventsWithURLs)
 		}
 
 		log.Info("successfully retrieved past events",
-			slog.Int("dates", len(eventsByDate)),
+			slog.Int("dates", len(dateGroupsWithURLs)),
 			slog.Int("total_events", totalEvents),
 			slog.Int("days", days))
 
-		render.JSON(w, r, past_events.Response{EventsByDate: eventsByDate})
+		render.JSON(w, r, past_events.ResponseWithURLs{EventsByDate: dateGroupsWithURLs})
 	}
 }

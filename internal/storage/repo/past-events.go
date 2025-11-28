@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	past_events "srmt-admin/internal/lib/dto/past-events"
+	"srmt-admin/internal/lib/model/file"
 	"time"
 )
 
@@ -22,6 +23,7 @@ func (r *Repo) GetPastEvents(ctx context.Context, days int, timezone *time.Locat
 	// 1. Get incidents (type: warning)
 	incidentsQuery := `
 		SELECT
+			i.id,
 			i.incident_time,
 			i.organization_id,
 			COALESCE(o.name, '') as org_name,
@@ -43,13 +45,14 @@ func (r *Repo) GetPastEvents(ctx context.Context, days int, timezone *time.Locat
 
 	for rows.Next() {
 		var (
+			incidentID  int64
 			date        time.Time
 			orgID       sql.NullInt64
 			orgName     string
 			description string
 		)
 
-		if err := rows.Scan(&date, &orgID, &orgName, &description); err != nil {
+		if err := rows.Scan(&incidentID, &date, &orgID, &orgName, &description); err != nil {
 			rows.Close()
 			return nil, fmt.Errorf("%s: failed to scan incident row: %w", op, err)
 		}
@@ -71,6 +74,8 @@ func (r *Repo) GetPastEvents(ctx context.Context, days int, timezone *time.Locat
 			OrganizationID:   orgIDPtr,
 			OrganizationName: orgNamePtr,
 			Description:      description,
+			EntityType:       "incident",
+			EntityID:         incidentID,
 		})
 	}
 	rows.Close()
@@ -78,6 +83,7 @@ func (r *Repo) GetPastEvents(ctx context.Context, days int, timezone *time.Locat
 	// 2. Get shutdowns (create 2 events per shutdown)
 	shutdownsQuery := `
 		SELECT
+			s.id,
 			s.start_time,
 			s.end_time,
 			s.organization_id,
@@ -101,41 +107,61 @@ func (r *Repo) GetPastEvents(ctx context.Context, days int, timezone *time.Locat
 
 	for rows.Next() {
 		var (
-			startTime time.Time
-			endTime   sql.NullTime
-			orgID     int64
-			orgName   string
-			reason    string
+			shutdownID int64
+			startTime  time.Time
+			endTime    sql.NullTime
+			orgID      int64
+			orgName    string
+			reason     string
 		)
 
-		if err := rows.Scan(&startTime, &endTime, &orgID, &orgName, &reason); err != nil {
+		if err := rows.Scan(&shutdownID, &startTime, &endTime, &orgID, &orgName, &reason); err != nil {
 			rows.Close()
 			return nil, fmt.Errorf("%s: failed to scan shutdown row: %w", op, err)
 		}
 
 		orgNamePtr := &orgName
 
-		// Event 1: Start event (warning)
-		if startTime.After(startDate) && startTime.Before(now) || startTime.Equal(startDate) || startTime.Equal(now) {
+		// Check if start_time == end_time (same-time event)
+		if endTime.Valid && endTime.Time.Equal(startTime) {
+			// Same time - only one event with special description
 			events = append(events, past_events.Event{
 				Type:             past_events.EventTypeWarning,
 				Date:             startTime,
 				OrganizationID:   &orgID,
 				OrganizationName: orgNamePtr,
-				Description:      reason,
+				Description:      "Ремонт продолжается",
+				EntityType:       "shutdown",
+				EntityID:         shutdownID,
 			})
-		}
+		} else {
+			// Different times - create two events
 
-		// Event 2: End event (info) - "аппарат исправен"
-		if endTime.Valid {
-			if endTime.Time.After(startDate) && endTime.Time.Before(now) || endTime.Time.Equal(startDate) || endTime.Time.Equal(now) {
+			// Event 1: Start event (warning)
+			if startTime.After(startDate) && startTime.Before(now) || startTime.Equal(startDate) || startTime.Equal(now) {
 				events = append(events, past_events.Event{
-					Type:             past_events.EventTypeSuccess,
-					Date:             endTime.Time,
+					Type:             past_events.EventTypeWarning,
+					Date:             startTime,
 					OrganizationID:   &orgID,
 					OrganizationName: orgNamePtr,
-					Description:      "аппарат исправен",
+					Description:      reason,
+					EntityType:       "shutdown",
+					EntityID:         shutdownID,
 				})
+			}
+
+			// Event 2: End event (success) - "аппарат исправен"
+			if endTime.Valid {
+				if endTime.Time.After(startDate) && endTime.Time.Before(now) || endTime.Time.Equal(startDate) || endTime.Time.Equal(now) {
+					events = append(events, past_events.Event{
+						Type:             past_events.EventTypeSuccess,
+						Date:             endTime.Time,
+						OrganizationID:   &orgID,
+						OrganizationName: orgNamePtr,
+						Description:      "аппарат исправен",
+						// No EntityType/EntityID for end events
+					})
+				}
 			}
 		}
 	}
@@ -144,6 +170,7 @@ func (r *Repo) GetPastEvents(ctx context.Context, days int, timezone *time.Locat
 	// 3. Get idle_water_discharges (create 2 events per discharge, similar to shutdowns)
 	dischargesQuery := `
 		SELECT
+			d.id,
 			d.start_time,
 			d.end_time,
 			d.organization_id,
@@ -167,45 +194,91 @@ func (r *Repo) GetPastEvents(ctx context.Context, days int, timezone *time.Locat
 
 	for rows.Next() {
 		var (
-			startTime time.Time
-			endTime   sql.NullTime
-			orgID     int64
-			orgName   string
-			reason    string
+			dischargeID int64
+			startTime   time.Time
+			endTime     sql.NullTime
+			orgID       int64
+			orgName     string
+			reason      string
 		)
 
-		if err := rows.Scan(&startTime, &endTime, &orgID, &orgName, &reason); err != nil {
+		if err := rows.Scan(&dischargeID, &startTime, &endTime, &orgID, &orgName, &reason); err != nil {
 			rows.Close()
 			return nil, fmt.Errorf("%s: failed to scan discharge row: %w", op, err)
 		}
 
 		orgNamePtr := &orgName
 
-		// Event 1: Start event (warning)
-		if startTime.After(startDate) && startTime.Before(now) || startTime.Equal(startDate) || startTime.Equal(now) {
+		// Check if start_time == end_time (same-time event)
+		if endTime.Valid && endTime.Time.Equal(startTime) {
+			// Same time - only start event
 			events = append(events, past_events.Event{
 				Type:             past_events.EventTypeWarning,
 				Date:             startTime,
 				OrganizationID:   &orgID,
 				OrganizationName: orgNamePtr,
 				Description:      reason,
+				EntityType:       "discharge",
+				EntityID:         dischargeID,
 			})
-		}
+		} else {
+			// Different times - create two events
 
-		// Event 2: End event (info) - "Водосброс остановлен"
-		if endTime.Valid {
-			if endTime.Time.After(startDate) && endTime.Time.Before(now) || endTime.Time.Equal(startDate) || endTime.Time.Equal(now) {
+			// Event 1: Start event (warning)
+			if startTime.After(startDate) && startTime.Before(now) || startTime.Equal(startDate) || startTime.Equal(now) {
 				events = append(events, past_events.Event{
-					Type:             past_events.EventTypeInfo,
-					Date:             endTime.Time,
+					Type:             past_events.EventTypeWarning,
+					Date:             startTime,
 					OrganizationID:   &orgID,
 					OrganizationName: orgNamePtr,
-					Description:      "Водосброс остановлен",
+					Description:      reason,
+					EntityType:       "discharge",
+					EntityID:         dischargeID,
 				})
+			}
+
+			// Event 2: End event (info) - "Водосброс остановлен"
+			if endTime.Valid {
+				if endTime.Time.After(startDate) && endTime.Time.Before(now) || endTime.Time.Equal(startDate) || endTime.Time.Equal(now) {
+					events = append(events, past_events.Event{
+						Type:             past_events.EventTypeInfo,
+						Date:             endTime.Time,
+						OrganizationID:   &orgID,
+						OrganizationName: orgNamePtr,
+						Description:      "Водосброс остановлен",
+						// No EntityType/EntityID for end events
+					})
+				}
 			}
 		}
 	}
 	rows.Close()
+
+	// Load files for events that have EntityType set (incidents, start events)
+	for i := range events {
+		if events[i].EntityType == "" {
+			continue // Skip end events (they don't have entity info)
+		}
+
+		var files []file.Model
+		var err error
+
+		switch events[i].EntityType {
+		case "incident":
+			files, err = r.loadIncidentFiles(ctx, events[i].EntityID)
+		case "shutdown":
+			files, err = r.loadShutdownFiles(ctx, events[i].EntityID)
+		case "discharge":
+			files, err = r.loadDischargeFiles(ctx, events[i].EntityID)
+		}
+
+		if err != nil {
+			// Log error but continue - graceful degradation
+			continue
+		}
+
+		events[i].Files = files
+	}
 
 	// Group events by date (YYYY-MM-DD format)
 	eventsByDate := make(map[string][]past_events.Event)
