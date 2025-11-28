@@ -101,7 +101,7 @@ func (r *Repo) GetAllCategories(ctx context.Context) ([]category.Model, error) {
 }
 
 // GetCategoryByName finds a category by name, creating it if it doesn't exist
-func (r *Repo) GetCategoryByName(ctx context.Context, categoryName, categoryDisplayName string) (fileupload.CategoryModel, error) {
+func (r *Repo) GetCategoryByName(ctx context.Context, categoryName string) (fileupload.CategoryModel, error) {
 	const op = "repo.file-category.GetCategoryByName"
 
 	// Attempt to find the category first
@@ -134,12 +134,12 @@ func (r *Repo) GetCategoryByName(ctx context.Context, categoryName, categoryDisp
 
 	// Not found (sql.ErrNoRows), so create it
 	const createQuery = `
-		INSERT INTO categories (name, display_name)
-		VALUES ($1, $2)
+		INSERT INTO categories (name, display_name, description)
+		VALUES ($1, $2, $3)
 		RETURNING id, name, display_name, description, parent_id
 	`
 	var newCat category.Model
-	err = r.db.QueryRowContext(ctx, createQuery, categoryName, categoryDisplayName).Scan(
+	err = r.db.QueryRowContext(ctx, createQuery, categoryName, categoryName, categoryName).Scan(
 		&newCat.ID,
 		&newCat.Name,
 		&newCat.DisplayName,
@@ -160,7 +160,7 @@ func (r *Repo) GetCategoryByName(ctx context.Context, categoryName, categoryDisp
 }
 
 func (r *Repo) GetEventsCategory(ctx context.Context) (category.Model, error) {
-	catModel, err := r.GetCategoryByName(ctx, "events", "События")
+	catModel, err := r.GetCategoryByName(ctx, "events")
 	if err != nil {
 		return category.Model{}, err
 	}
@@ -168,7 +168,7 @@ func (r *Repo) GetEventsCategory(ctx context.Context) (category.Model, error) {
 }
 
 func (r *Repo) GetIncidentsCategory(ctx context.Context) (category.Model, error) {
-	catModel, err := r.GetCategoryByName(ctx, "incidents", "Инциденты")
+	catModel, err := r.GetCategoryByName(ctx, "incidents")
 	if err != nil {
 		return category.Model{}, err
 	}
@@ -176,7 +176,7 @@ func (r *Repo) GetIncidentsCategory(ctx context.Context) (category.Model, error)
 }
 
 func (r *Repo) GetShutdownsCategory(ctx context.Context) (category.Model, error) {
-	catModel, err := r.GetCategoryByName(ctx, "shutdowns", "Аварийные отключения")
+	catModel, err := r.GetCategoryByName(ctx, "ges-shutdowns")
 	if err != nil {
 		return category.Model{}, err
 	}
@@ -184,7 +184,7 @@ func (r *Repo) GetShutdownsCategory(ctx context.Context) (category.Model, error)
 }
 
 func (r *Repo) GetDischargesCategory(ctx context.Context) (category.Model, error) {
-	catModel, err := r.GetCategoryByName(ctx, "discharges", "Холостые водосбросы")
+	catModel, err := r.GetCategoryByName(ctx, "discharges")
 	if err != nil {
 		return category.Model{}, err
 	}
@@ -192,7 +192,7 @@ func (r *Repo) GetDischargesCategory(ctx context.Context) (category.Model, error
 }
 
 func (r *Repo) GetVisitsCategory(ctx context.Context) (category.Model, error) {
-	catModel, err := r.GetCategoryByName(ctx, "visits", "Визиты")
+	catModel, err := r.GetCategoryByName(ctx, "visits")
 	if err != nil {
 		return category.Model{}, err
 	}
