@@ -249,7 +249,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Patch("/shutdowns/{id}", shutdowns.Edit(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo))
 			r.Delete("/shutdowns/{id}", shutdowns.Delete(deps.Log, deps.PgRepo))
 
-			r.Get("/past-events", past_events_handler.Get(deps.Log, deps.PgRepo, loc))
+			r.Get("/past-events", past_events_handler.Get(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
 
 			r.Get("/reservoir-device", reservoirdevicesummary.Get(deps.Log, deps.PgRepo))
 			r.Patch("/reservoir-device", reservoirdevicesummary.Patch(deps.Log, deps.PgRepo))
