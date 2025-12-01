@@ -2,8 +2,6 @@ package past_events_handler
 
 import (
 	"context"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/render"
 	"log/slog"
 	"net/http"
 	resp "srmt-admin/internal/lib/api/response"
@@ -12,6 +10,9 @@ import (
 	"srmt-admin/internal/lib/logger/sl"
 	"strconv"
 	"time"
+
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/render"
 )
 
 type pastEventsGetter interface {
@@ -83,6 +84,6 @@ func Get(log *slog.Logger, getter pastEventsGetter, minioRepo helpers.MinioURLGe
 			slog.Int("total_events", totalEvents),
 			slog.Int("days", days))
 
-		render.JSON(w, r, past_events.ResponseWithURLs{EventsByDate: dateGroupsWithURLs})
+		render.JSON(w, r, dateGroupsWithURLs)
 	}
 }
