@@ -2,14 +2,15 @@ package proxy
 
 import (
 	"fmt"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/render"
 	"io"
 	"log/slog"
 	"net/http"
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
 	"strconv"
+
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/render"
 )
 
 func New(log *slog.Logger, client *http.Client, baseURL, apiKey, path string) http.HandlerFunc {
@@ -40,7 +41,7 @@ func New(log *slog.Logger, client *http.Client, baseURL, apiKey, path string) ht
 		}
 
 		// 3. Construct the target URL for the external API
-		targetURL := fmt.Sprintf("%s%s?lat=%s&lon=%s&appid=%s&units=metric",
+		targetURL := fmt.Sprintf("%s%s?lat=%s&lon=%s&appid=%s&units=metric&lang=ru",
 			baseURL,
 			path,
 			latStr,
