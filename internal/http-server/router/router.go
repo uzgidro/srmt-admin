@@ -269,8 +269,8 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Get("/events/statuses", eventGetStatuses.New(deps.Log, deps.PgRepo))
 			r.Get("/events/types", eventGetTypes.New(deps.Log, deps.PgRepo))
 			r.Get("/events/{id}", eventGetById.New(deps.Log, deps.PgRepo, deps.MinioRepo))
-			r.Post("/events", eventAdd.New(deps.Log, deps.MinioRepo, deps.PgRepo))
-			r.Patch("/events/{id}", eventEdit.New(deps.Log, deps.PgRepo))
+			r.Post("/events", eventAdd.New(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
+			r.Patch("/events/{id}", eventEdit.New(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
 			r.Delete("/events/{id}", eventDelete.New(deps.Log, deps.PgRepo))
 		})
 
