@@ -44,6 +44,8 @@ type editResponse struct {
 type eventEditor interface {
 	EditEvent(ctx context.Context, eventID int64, req dto.EditEventRequest) error
 	GetEventByID(ctx context.Context, id int64) (*event.Model, error)
+	UnlinkEventFiles(ctx context.Context, eventID int64) error
+	LinkEventFiles(ctx context.Context, eventID int64, fileIDs []int64) error
 }
 
 func New(log *slog.Logger, editor eventEditor, uploader fileupload.FileUploader, saver fileupload.FileMetaSaver, categoryGetter fileupload.CategoryGetter) http.HandlerFunc {
@@ -172,6 +174,21 @@ func New(log *slog.Logger, editor eventEditor, uploader fileupload.FileUploader,
 			render.Status(r, http.StatusInternalServerError)
 			render.JSON(w, r, resp.InternalServerError("Failed to update event"))
 			return
+		}
+
+		// Update file links if explicitly requested
+		if shouldUpdateFiles {
+			// Remove old links
+			if err := editor.UnlinkEventFiles(r.Context(), eventID); err != nil {
+				log.Error("failed to unlink old files", sl.Err(err))
+			}
+
+			// Add new links (if any)
+			if len(fileIDs) > 0 {
+				if err := editor.LinkEventFiles(r.Context(), eventID, fileIDs); err != nil {
+					log.Error("failed to link new files", sl.Err(err))
+				}
+			}
 		}
 
 		log.Info("event updated successfully",
