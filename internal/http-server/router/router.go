@@ -125,7 +125,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 		r.Route("/weather", func(r chi.Router) {
 			weatherCfg := deps.Config.Weather
 
-			r.Get("/weather", weatherProxy.New(deps.Log, deps.HTTPClient, weatherCfg.BaseURL, weatherCfg.APIKey, "/weather"))
+			r.Get("/", weatherProxy.New(deps.Log, deps.HTTPClient, weatherCfg.BaseURL, weatherCfg.APIKey, "/weather"))
 			r.Get("/forecast", weatherProxy.New(deps.Log, deps.HTTPClient, weatherCfg.BaseURL, weatherCfg.APIKey, "/forecast"))
 		})
 
