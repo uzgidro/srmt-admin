@@ -13,6 +13,7 @@ import (
 	contactEdit "srmt-admin/internal/http-server/handlers/contacts/edit"
 	contactGetAll "srmt-admin/internal/http-server/handlers/contacts/get-all"
 	contactGetById "srmt-admin/internal/http-server/handlers/contacts/get-by-id"
+	"srmt-admin/internal/http-server/handlers/currency"
 	dashboardGetReservoir "srmt-admin/internal/http-server/handlers/dashboard/get-reservoir"
 	"srmt-admin/internal/http-server/handlers/data/analytics"
 	dataSet "srmt-admin/internal/http-server/handlers/data/set"
@@ -127,6 +128,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 		r.Get("/modsnow/dynamics", modsnowImg.Get(deps.Log, deps.MinioRepo, "modsnow-dynamics"))
 
 		r.Get("/analytics", analytics.New(deps.Log, deps.PgRepo))
+		r.Get("/currency", currency.Get(deps.Log, deps.HTTPClient))
 
 		r.Route("/weather", func(r chi.Router) {
 			weatherCfg := deps.Config.Weather
