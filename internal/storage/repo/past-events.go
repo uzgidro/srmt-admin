@@ -140,7 +140,7 @@ func processEntityToEvents(e intervalEntity, filterStart, filterEnd time.Time) [
 			if e.EntityType == "discharge" {
 				endMsg = "Водосброс остановлен"
 			} else if e.EntityType == "shutdown" {
-				endMsg = "Аппарат исправен"
+				endMsg = "Агрегат исправен"
 			}
 
 			result = append(result, past_events.Event{
