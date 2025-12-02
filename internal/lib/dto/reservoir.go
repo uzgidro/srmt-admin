@@ -7,7 +7,7 @@ import (
 
 // ReservoirFetcher interface for fetching reservoir metrics
 type ReservoirFetcher interface {
-	FetchAll(ctx context.Context) (map[int64]*ReservoirMetrics, error)
+	FetchAll(ctx context.Context, date string) (map[int64]*ReservoirMetrics, error)
 	GetIDs() []int64
 }
 

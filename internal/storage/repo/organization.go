@@ -634,7 +634,7 @@ func (r *Repo) GetCascadesWithDetails(ctx context.Context, ascueFetcher dto.ASCU
 }
 
 // GetOrganizationsWithReservoir gets specific organizations with reservoir metrics
-func (r *Repo) GetOrganizationsWithReservoir(ctx context.Context, orgIDs []int64, reservoirFetcher dto.ReservoirFetcher) ([]*dto.OrganizationWithReservoir, error) {
+func (r *Repo) GetOrganizationsWithReservoir(ctx context.Context, orgIDs []int64, reservoirFetcher dto.ReservoirFetcher, date string) ([]*dto.OrganizationWithReservoir, error) {
 	const op = "storage.repo.GetOrganizationsWithReservoir"
 
 	if len(orgIDs) == 0 {
@@ -751,7 +751,7 @@ func (r *Repo) GetOrganizationsWithReservoir(ctx context.Context, orgIDs []int64
 
 	// Enrich with reservoir metrics if fetcher is provided
 	if reservoirFetcher != nil {
-		reservoirMetrics, err := reservoirFetcher.FetchAll(ctx)
+		reservoirMetrics, err := reservoirFetcher.FetchAll(ctx, date)
 		if err != nil {
 			// Error fetching reservoir metrics - graceful degradation
 			// Just continue without reservoir metrics (silently)
