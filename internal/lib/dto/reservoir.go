@@ -30,5 +30,6 @@ type OrganizationWithReservoir struct {
 	OrganizationID   int64             `json:"organization_id"`
 	OrganizationName string            `json:"organization_name"`
 	Contacts         []*contact.Model  `json:"contacts"`
+	CurrentDischarge float64           `json:"current_discharge"` // Current water discharge in m³/s (ongoing or end_date > now), 0 if none
 	ReservoirMetrics *ReservoirMetrics `json:"reservoir_metrics,omitempty"`
 }
