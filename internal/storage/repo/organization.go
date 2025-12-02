@@ -749,6 +749,44 @@ func (r *Repo) GetOrganizationsWithReservoir(ctx context.Context, orgIDs []int64
 		return nil, fmt.Errorf("%s: contact rows iteration error: %w", op, err)
 	}
 
+	// Get current discharges for all organizations (for the specified date)
+	const dischargeQuery = `
+		SELECT
+			d.organization_id,
+			SUM(d.flow_rate_m3_s) as total_flow_rate
+		FROM
+			idle_water_discharges d
+		WHERE
+			d.organization_id = ANY($1)
+			AND d.start_time <= $2::date
+			AND (d.end_time > $2::date OR d.end_time IS NULL)
+		GROUP BY d.organization_id;
+	`
+
+	if len(orgIDs) > 0 {
+		dischargeRows, err := r.db.QueryContext(ctx, dischargeQuery, pq.Array(orgIDs), date)
+		if err != nil {
+			return nil, fmt.Errorf("%s: failed to query discharges: %w", op, err)
+		}
+		defer dischargeRows.Close()
+
+		for dischargeRows.Next() {
+			var orgID int64
+			var totalFlow float64
+			if err := dischargeRows.Scan(&orgID, &totalFlow); err != nil {
+				return nil, fmt.Errorf("%s: failed to scan discharge: %w", op, err)
+			}
+
+			if org, ok := orgMap[orgID]; ok {
+				org.CurrentDischarge = totalFlow
+			}
+		}
+
+		if err = dischargeRows.Err(); err != nil {
+			return nil, fmt.Errorf("%s: discharge rows iteration error: %w", op, err)
+		}
+	}
+
 	// Enrich with reservoir metrics if fetcher is provided
 	if reservoirFetcher != nil {
 		reservoirMetrics, err := reservoirFetcher.FetchAll(ctx, date)
