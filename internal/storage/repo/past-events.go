@@ -55,6 +55,40 @@ func (r *Repo) GetPastEvents(ctx context.Context, days int, timezone *time.Locat
 	return groupAndSortEvents(allEvents, timezone), nil
 }
 
+func (r *Repo) GetPastEventsByDate(ctx context.Context, date time.Time, timezone *time.Location) ([]past_events.DateGroup, error) {
+	const op = "storage.repo.GetPastEventsByDate"
+
+	// Set start of day and end of day in the specified timezone
+	startOfDay := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, timezone)
+	endOfDay := time.Date(date.Year(), date.Month(), date.Day(), 23, 59, 59, 999999999, timezone)
+
+	var allEvents []past_events.Event
+
+	incidents, err := r.getIncidentsHelper(ctx, startOfDay, endOfDay)
+	if err != nil {
+		return nil, fmt.Errorf("%s: incidents: %w", op, err)
+	}
+	allEvents = append(allEvents, incidents...)
+
+	shutdownsQuery := r.buildExactIntervalQuery("shutdowns")
+	shutdowns, err := r.getIntervalEvents(ctx, shutdownsQuery, "shutdown", startOfDay, endOfDay)
+	if err != nil {
+		return nil, fmt.Errorf("%s: shutdowns: %w", op, err)
+	}
+	allEvents = append(allEvents, shutdowns...)
+
+	dischargesQuery := r.buildExactIntervalQuery("idle_water_discharges")
+	discharges, err := r.getIntervalEvents(ctx, dischargesQuery, "discharge", startOfDay, endOfDay)
+	if err != nil {
+		return nil, fmt.Errorf("%s: discharges: %w", op, err)
+	}
+	allEvents = append(allEvents, discharges...)
+
+	r.enrichWithFiles(ctx, allEvents)
+
+	return groupAndSortEvents(allEvents, timezone), nil
+}
+
 func (r *Repo) buildExactIntervalQuery(tableName string) string {
 	return fmt.Sprintf(`SELECT
           t.id,

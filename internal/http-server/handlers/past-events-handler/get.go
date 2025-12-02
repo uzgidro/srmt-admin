@@ -17,6 +17,7 @@ import (
 
 type pastEventsGetter interface {
 	GetPastEvents(ctx context.Context, days int, timezone *time.Location) ([]past_events.DateGroup, error)
+	GetPastEventsByDate(ctx context.Context, date time.Time, timezone *time.Location) ([]past_events.DateGroup, error)
 }
 
 const defaultDays = 7
@@ -26,25 +27,53 @@ func Get(log *slog.Logger, getter pastEventsGetter, minioRepo helpers.MinioURLGe
 		const op = "handlers.past_events.get.New"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
 
-		// Get 'days' parameter from query (default: 7)
-		days := defaultDays
-		daysStr := r.URL.Query().Get("days")
+		// Check for 'date' parameter first (takes precedence over 'days')
+		dateStr := r.URL.Query().Get("date")
+		var eventsByDate []past_events.DateGroup
+		var err error
 
-		if daysStr != "" {
-			parsedDays, err := strconv.Atoi(daysStr)
-			if err != nil || parsedDays < 1 || parsedDays > 365 {
-				log.Warn("invalid 'days' parameter", sl.Err(err))
+		if dateStr != "" {
+			// Parse date in the format "YYYY-MM-DD"
+			parsedDate, parseErr := time.Parse("2006-01-02", dateStr)
+			if parseErr != nil {
+				log.Warn("invalid 'date' parameter", sl.Err(parseErr))
 				render.Status(r, http.StatusBadRequest)
-				render.JSON(w, r, resp.BadRequest("Invalid 'days' parameter, must be between 1 and 365"))
+				render.JSON(w, r, resp.BadRequest("Invalid 'date' parameter, must be in format YYYY-MM-DD"))
 				return
 			}
-			days = parsedDays
-			log.Info("using provided 'days' parameter", "days", days)
-		} else {
-			log.Info("no 'days' parameter provided, using default", "days", defaultDays)
-		}
 
-		eventsByDate, err := getter.GetPastEvents(r.Context(), days, loc)
+			// Convert parsed date to the specified timezone
+			dateInTimezone := time.Date(
+				parsedDate.Year(),
+				parsedDate.Month(),
+				parsedDate.Day(),
+				0, 0, 0, 0,
+				loc,
+			)
+
+			log.Info("using provided 'date' parameter", "date", dateInTimezone.Format("2006-01-02"))
+			eventsByDate, err = getter.GetPastEventsByDate(r.Context(), dateInTimezone, loc)
+		} else {
+			// Get 'days' parameter from query (default: 7)
+			days := defaultDays
+			daysStr := r.URL.Query().Get("days")
+
+			if daysStr != "" {
+				parsedDays, parseErr := strconv.Atoi(daysStr)
+				if parseErr != nil || parsedDays < 1 || parsedDays > 365 {
+					log.Warn("invalid 'days' parameter", sl.Err(parseErr))
+					render.Status(r, http.StatusBadRequest)
+					render.JSON(w, r, resp.BadRequest("Invalid 'days' parameter, must be between 1 and 365"))
+					return
+				}
+				days = parsedDays
+				log.Info("using provided 'days' parameter", "days", days)
+			} else {
+				log.Info("no 'days' parameter provided, using default", "days", defaultDays)
+			}
+
+			eventsByDate, err = getter.GetPastEvents(r.Context(), days, loc)
+		}
 		if err != nil {
 			log.Error("failed to get past events", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)
@@ -79,10 +108,14 @@ func Get(log *slog.Logger, getter pastEventsGetter, minioRepo helpers.MinioURLGe
 			totalEvents += len(eventsWithURLs)
 		}
 
-		log.Info("successfully retrieved past events",
+		logFields := []any{
 			slog.Int("dates", len(dateGroupsWithURLs)),
 			slog.Int("total_events", totalEvents),
-			slog.Int("days", days))
+		}
+		if dateStr != "" {
+			logFields = append(logFields, slog.String("date", dateStr))
+		}
+		log.Info("successfully retrieved past events", logFields...)
 
 		render.JSON(w, r, dateGroupsWithURLs)
 	}
