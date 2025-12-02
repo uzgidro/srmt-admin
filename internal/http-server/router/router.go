@@ -70,6 +70,7 @@ import (
 	roleGet "srmt-admin/internal/http-server/handlers/role/get"
 	callbackModsnow "srmt-admin/internal/http-server/handlers/sc/callback/modsnow"
 	callbackStock "srmt-admin/internal/http-server/handlers/sc/callback/stock"
+	"srmt-admin/internal/http-server/handlers/sc/dc"
 	modsnowImg "srmt-admin/internal/http-server/handlers/sc/modsnow/img"
 	"srmt-admin/internal/http-server/handlers/sc/modsnow/table"
 	"srmt-admin/internal/http-server/handlers/sc/stock"
@@ -267,6 +268,8 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 
 		r.Group(func(r chi.Router) {
 			r.Use(mwauth.RequireAnyRole("assistant", "rais"))
+
+			r.Get("/dc", dc.Get(deps.Log, deps.MongoRepo))
 
 			// Events
 			r.Get("/events", eventGetAll.New(deps.Log, deps.PgRepo, deps.MinioRepo))

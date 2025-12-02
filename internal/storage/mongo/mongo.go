@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"srmt-admin/internal/storage"
+	"time"
+
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
-	"srmt-admin/internal/storage"
-	"time"
 )
 
 type Repo struct {
@@ -41,6 +42,11 @@ func (r *Repo) SaveSnowData(ctx context.Context, jsonData string) error {
 func (r *Repo) GetLatestSnowData(ctx context.Context) (string, error) {
 	const op = "storage.mongo.GetLatestSnowData"
 	return r.getRawJSON(ctx, "modsnow_data", op)
+}
+
+func (r *Repo) GetDC(ctx context.Context) (string, error) {
+	const op = "storage.mongo.GetDC"
+	return r.getRawJSON(ctx, "dc", op)
 }
 
 func (r *Repo) getRawJSON(ctx context.Context, collectionName, op string) (string, error) {
