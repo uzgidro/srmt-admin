@@ -36,6 +36,11 @@ import (
 	eventGetShort "srmt-admin/internal/http-server/handlers/events/get-short"
 	eventGetStatuses "srmt-admin/internal/http-server/handlers/events/get-statuses"
 	eventGetTypes "srmt-admin/internal/http-server/handlers/events/get-types"
+	fastCallAdd "srmt-admin/internal/http-server/handlers/fast-call/add"
+	fastCallDelete "srmt-admin/internal/http-server/handlers/fast-call/delete"
+	fastCallEdit "srmt-admin/internal/http-server/handlers/fast-call/edit"
+	fastCallGetAll "srmt-admin/internal/http-server/handlers/fast-call/get-all"
+	fastCallGetById "srmt-admin/internal/http-server/handlers/fast-call/get-by-id"
 	catAdd "srmt-admin/internal/http-server/handlers/file/category/add"
 	catGet "srmt-admin/internal/http-server/handlers/file/category/list"
 	fileDelete "srmt-admin/internal/http-server/handlers/file/delete"
@@ -289,6 +294,13 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Post("/receptions", receptionAdd.New(deps.Log, deps.PgRepo))
 			r.Patch("/receptions/{id}", receptionEdit.New(deps.Log, deps.PgRepo))
 			r.Delete("/receptions/{id}", receptionDelete.New(deps.Log, deps.PgRepo))
+
+			// Fast Calls
+			r.Get("/fast-calls", fastCallGetAll.New(deps.Log, deps.PgRepo))
+			r.Get("/fast-calls/{id}", fastCallGetById.New(deps.Log, deps.PgRepo))
+			r.Post("/fast-calls", fastCallAdd.New(deps.Log, deps.PgRepo))
+			r.Patch("/fast-calls/{id}", fastCallEdit.New(deps.Log, deps.PgRepo))
+			r.Delete("/fast-calls/{id}", fastCallDelete.New(deps.Log, deps.PgRepo))
 		})
 
 	})
