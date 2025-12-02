@@ -57,6 +57,11 @@ import (
 	positionsDelete "srmt-admin/internal/http-server/handlers/positions/delete"
 	positionsGet "srmt-admin/internal/http-server/handlers/positions/get"
 	positionsPatch "srmt-admin/internal/http-server/handlers/positions/patch"
+	receptionAdd "srmt-admin/internal/http-server/handlers/reception/add"
+	receptionDelete "srmt-admin/internal/http-server/handlers/reception/delete"
+	receptionEdit "srmt-admin/internal/http-server/handlers/reception/edit"
+	receptionGetAll "srmt-admin/internal/http-server/handlers/reception/get-all"
+	receptionGetById "srmt-admin/internal/http-server/handlers/reception/get-by-id"
 	reservoirdevicesummary "srmt-admin/internal/http-server/handlers/reservoir-device-summary"
 	resAdd "srmt-admin/internal/http-server/handlers/reservoirs/add"
 	roleAdd "srmt-admin/internal/http-server/handlers/role/add"
@@ -272,6 +277,13 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Post("/events", eventAdd.New(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
 			r.Patch("/events/{id}", eventEdit.New(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
 			r.Delete("/events/{id}", eventDelete.New(deps.Log, deps.PgRepo))
+
+			// Receptions
+			r.Get("/receptions", receptionGetAll.New(deps.Log, deps.PgRepo, loc))
+			r.Get("/receptions/{id}", receptionGetById.New(deps.Log, deps.PgRepo))
+			r.Post("/receptions", receptionAdd.New(deps.Log, deps.PgRepo))
+			r.Patch("/receptions/{id}", receptionEdit.New(deps.Log, deps.PgRepo))
+			r.Delete("/receptions/{id}", receptionDelete.New(deps.Log, deps.PgRepo))
 		})
 
 	})
