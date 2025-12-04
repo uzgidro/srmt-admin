@@ -1,0 +1,2 @@
+ALTER TABLE Contacts
+    DROP COLUMN IF EXISTS icon_id;

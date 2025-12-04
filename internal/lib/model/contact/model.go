@@ -15,6 +15,7 @@ type Model struct {
 	IPPhone         *string    `json:"ip_phone,omitempty"`
 	DOB             *time.Time `json:"dob,omitempty"`
 	ExternalOrgName *string    `json:"external_organization_name,omitempty"`
+	IconID          *int64     `json:"icon_id,omitempty"`
 
 	// Вложенные "обогащенные" модели
 	Organization *organization.Model `json:"organization,omitempty"`

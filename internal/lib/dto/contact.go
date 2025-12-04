@@ -15,6 +15,7 @@ type AddContactRequest struct {
 	IPPhone         *string
 	DOB             *time.Time
 	ExternalOrgName *string
+	IconID          *int64
 	OrganizationID  *int64 // Nullable
 	DepartmentID    *int64 // Nullable
 	PositionID      *int64 // Nullable
@@ -28,6 +29,7 @@ type EditContactRequest struct {
 	IPPhone         *string
 	DOB             *time.Time
 	ExternalOrgName *string
+	IconID          *int64
 	OrganizationID  *int64
 	DepartmentID    *int64
 	PositionID      *int64
