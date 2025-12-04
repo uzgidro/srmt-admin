@@ -59,7 +59,9 @@ const (
 
 			d.id as dept_id, d.name as dept_name,
 
-			p.id as pos_id, p.name as pos_name, p.description as pos_description
+			p.id as pos_id, p.name as pos_name, p.description as pos_description,
+
+			f.id as file_id, f.file_name, f.object_key, f.mime_type, f.size_bytes
 	`
 	fromContactJoins = `
 		FROM
@@ -70,6 +72,8 @@ const (
 			departments d ON c.department_id = d.id
 		LEFT JOIN
 			positions p ON c.position_id = p.id
+		LEFT JOIN
+			files f ON c.icon_id = f.id
 	`
 )
 
@@ -85,6 +89,9 @@ func scanContactRow(scanner interface {
 		orgID, deptID, posID          sql.NullInt64
 		orgName, deptName, posName    sql.NullString
 		posDescription                sql.NullString
+		fileID                        sql.NullInt64
+		fileName, objectKey, mimeType sql.NullString
+		sizeBytes                     sql.NullInt64
 	)
 
 	err := scanner.Scan(
@@ -93,6 +100,7 @@ func scanContactRow(scanner interface {
 		&orgID, &orgName,
 		&deptID, &deptName,
 		&posID, &posName, &posDescription,
+		&fileID, &fileName, &objectKey, &mimeType, &sizeBytes,
 	)
 	if err != nil {
 		return nil, err
@@ -131,6 +139,17 @@ func scanContactRow(scanner interface {
 			desc = &posDescription.String
 		}
 		c.Position = &position.Model{ID: posID.Int64, Name: posName.String, Description: desc}
+	}
+
+	// Icon file information
+	if fileID.Valid && fileName.Valid && objectKey.Valid {
+		c.Icon = &contact.IconFile{
+			ID:        fileID.Int64,
+			FileName:  fileName.String,
+			URL:       objectKey.String, // Store object_key as URL for now, can be transformed to presigned URL by handler
+			MimeType:  mimeType.String,
+			SizeBytes: sizeBytes.Int64,
+		}
 	}
 
 	return &c, nil
