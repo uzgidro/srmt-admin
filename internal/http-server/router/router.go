@@ -180,8 +180,8 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 		// Contacts
 		r.Get("/contacts", contactGetAll.New(deps.Log, deps.PgRepo))
 		r.Get("/contacts/{id}", contactGetById.New(deps.Log, deps.PgRepo))
-		r.Post("/contacts", contactAdd.New(deps.Log, deps.PgRepo))
-		r.Patch("/contacts/{id}", contactEdit.New(deps.Log, deps.PgRepo))
+		r.Post("/contacts", contactAdd.New(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo))
+		r.Patch("/contacts/{id}", contactEdit.New(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo))
 		r.Delete("/contacts/{id}", contactDelete.New(deps.Log, deps.PgRepo))
 
 		// Dashboard

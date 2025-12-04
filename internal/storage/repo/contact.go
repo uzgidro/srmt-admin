@@ -24,15 +24,15 @@ func (r *Repo) AddContact(ctx context.Context, req dto.AddContactRequest) (int64
 
 	const query = `
 		INSERT INTO contacts (
-			fio, email, phone, ip_phone, external_organization_name,
+			fio, email, phone, ip_phone, external_organization_name, icon_id,
 			organization_id, department_id, position_id, dob
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING id`
 
 	var id int64
 	err := r.db.QueryRowContext(ctx, query,
-		req.Name, req.Email, req.Phone, req.IPPhone, req.ExternalOrgName,
+		req.Name, req.Email, req.Phone, req.IPPhone, req.ExternalOrgName, req.IconID,
 		req.OrganizationID, req.DepartmentID, req.PositionID, req.DOB,
 	).Scan(&id)
 
@@ -53,7 +53,7 @@ const (
 	selectContactFields = `
 		SELECT
 			c.id, c.fio, c.email, c.phone, c.ip_phone, c.dob,
-			c.external_organization_name, c.created_at, c.updated_at,
+			c.external_organization_name, c.icon_id, c.created_at, c.updated_at,
 
 			o.id as org_id, o.name as org_name,
 
@@ -81,13 +81,14 @@ func scanContactRow(scanner interface {
 	var (
 		email, phone, ipPhone, extOrg sql.NullString
 		dob                           sql.NullTime
+		iconID                        sql.NullInt64
 		orgID, deptID, posID          sql.NullInt64
 		orgName, deptName, posName    sql.NullString
 		posDescription                sql.NullString
 	)
 
 	err := scanner.Scan(
-		&c.ID, &c.Name, &email, &phone, &ipPhone, &dob, &extOrg,
+		&c.ID, &c.Name, &email, &phone, &ipPhone, &dob, &extOrg, &iconID,
 		&c.CreatedAt, &c.UpdatedAt,
 		&orgID, &orgName,
 		&deptID, &deptName,
@@ -109,6 +110,9 @@ func scanContactRow(scanner interface {
 	}
 	if extOrg.Valid {
 		c.ExternalOrgName = &extOrg.String
+	}
+	if iconID.Valid {
+		c.IconID = &iconID.Int64
 	}
 	if dob.Valid {
 		c.DOB = &dob.Time
@@ -245,6 +249,11 @@ func (r *Repo) EditContact(ctx context.Context, contactID int64, req dto.EditCon
 	if req.ExternalOrgName != nil {
 		updates = append(updates, fmt.Sprintf("external_organization_name = $%d", argID))
 		args = append(args, *req.ExternalOrgName)
+		argID++
+	}
+	if req.IconID != nil {
+		updates = append(updates, fmt.Sprintf("icon_id = $%d", argID))
+		args = append(args, *req.IconID)
 		argID++
 	}
 	if req.OrganizationID != nil {
