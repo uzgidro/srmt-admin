@@ -141,12 +141,12 @@ func scanContactRow(scanner interface {
 		c.Position = &position.Model{ID: posID.Int64, Name: posName.String, Description: desc}
 	}
 
-	// Icon file information
+	// Icon file information (object_key stored, will be transformed to presigned URL by handler)
 	if fileID.Valid && fileName.Valid && objectKey.Valid {
 		c.Icon = &contact.IconFile{
 			ID:        fileID.Int64,
 			FileName:  fileName.String,
-			URL:       objectKey.String, // Store object_key as URL for now, can be transformed to presigned URL by handler
+			URL:       objectKey.String, // Store object_key, handler will generate presigned URL
 			MimeType:  mimeType.String,
 			SizeBytes: sizeBytes.Int64,
 		}
