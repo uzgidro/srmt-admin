@@ -53,7 +53,7 @@ type UploadResult struct {
 }
 
 const (
-	MaxUploadSize       = 50 * 1024 * 1024 // 50 MB
+	MaxUploadSize       = 1024 * 1024 * 1024 // 1GB
 	FormFieldFiles      = "files"
 	FormFieldCategoryID = "category_id"
 )
