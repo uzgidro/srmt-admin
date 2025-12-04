@@ -206,8 +206,8 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 
 			// Users
 			r.Get("/users", usersGet.New(deps.Log, deps.PgRepo))
-			r.Post("/users", usersAdd.New(deps.Log, deps.PgRepo))
-			r.Patch("/users/{userID}", usersEdit.New(deps.Log, deps.PgRepo))
+			r.Post("/users", usersAdd.New(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo))
+			r.Patch("/users/{userID}", usersEdit.New(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo))
 			r.Get("/users/{userID}", usersGetById.New(deps.Log, deps.PgRepo))
 			r.Delete("/users/{userID}", usersDelete.New(deps.Log, deps.PgRepo))
 			r.Post("/users/{userID}/roles", assignRole.New(deps.Log, deps.PgRepo))
