@@ -91,7 +91,7 @@ func New(log *slog.Logger, adder ContactAdder, uploader FileUploader, fileSaver 
 				req.IPPhone = &ipPhone
 			}
 			if dobStr := r.FormValue("dob"); dobStr != "" {
-				dob, err := time.Parse(time.RFC3339, dobStr)
+				dob, err := time.Parse(time.DateOnly, dobStr)
 				if err != nil {
 					log.Error("invalid dob format", sl.Err(err))
 					render.Status(r, http.StatusBadRequest)
