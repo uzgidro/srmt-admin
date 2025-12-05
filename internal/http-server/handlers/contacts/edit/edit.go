@@ -4,11 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/render"
-	"github.com/go-playground/validator/v10"
-	"github.com/google/uuid"
 	"io"
 	"log/slog"
 	"net/http"
@@ -22,6 +17,12 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/render"
+	"github.com/go-playground/validator/v10"
+	"github.com/google/uuid"
 )
 
 // Request (DTO хендлера)
@@ -97,7 +98,7 @@ func New(log *slog.Logger, updater ContactUpdater, uploader FileUploader, fileSa
 				req.IPPhone = &ipPhone
 			}
 			if dobStr := r.FormValue("dob"); dobStr != "" {
-				dob, err := time.Parse(time.RFC3339, dobStr)
+				dob, err := time.Parse(time.DateOnly, dobStr)
 				if err != nil {
 					log.Error("invalid dob format", sl.Err(err))
 					render.Status(r, http.StatusBadRequest)

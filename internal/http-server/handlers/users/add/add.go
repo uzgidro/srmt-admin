@@ -142,7 +142,7 @@ func New(log *slog.Logger, userRepo UserLinker, uploader FileUploader, fileSaver
 					contact.IPPhone = &ipPhone
 				}
 				if dobStr := r.FormValue("contact.dob"); dobStr != "" {
-					dob, err := time.Parse(time.RFC3339, dobStr)
+					dob, err := time.Parse(time.DateOnly, dobStr)
 					if err != nil {
 						log.Error("invalid contact.dob format", sl.Err(err))
 						render.Status(r, http.StatusBadRequest)
