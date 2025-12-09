@@ -20,32 +20,85 @@ func (r *Repo) GetReservoirSummary(ctx context.Context, date string) ([]*reservo
 	}
 	defer rows.Close()
 
-	var summaries []*reservoirsummary.ResponseModel
+	var reservoirs []reservoirsummary.ReservoirResponseModel
+	var summaryRow *reservoirsummary.ReservoirResponseModel
+
 	for rows.Next() {
-		summary, err := scanReservoirSummaryRow(rows)
+		summaryRaw, err := scanReservoirSummaryRow(rows)
 		if err != nil {
 			return nil, fmt.Errorf("%s: failed to scan reservoir summary row: %w", op, err)
 		}
-		summaries = append(summaries, summary)
+
+		reservoirModel := reservoirsummary.ReservoirResponseModel{
+			OrganizationID:   summaryRaw.OrganizationID,
+			OrganizationName: summaryRaw.OrganizationName,
+			Level: reservoirsummary.ValueResponse{
+				Current:     summaryRaw.LevelCurrent,
+				Previous:    summaryRaw.LevelPrev,
+				YearAgo:     &summaryRaw.LevelYearAgo,
+				TwoYearsAgo: &summaryRaw.LevelTwoYearsAgo,
+			},
+			Volume: reservoirsummary.ValueResponse{
+				Current:     summaryRaw.VolumeCurrent,
+				Previous:    summaryRaw.VolumePrev,
+				YearAgo:     &summaryRaw.VolumeYearAgo,
+				TwoYearsAgo: &summaryRaw.VolumeTwoYearsAgo,
+			},
+			Income: reservoirsummary.ValueResponse{
+				Current:     summaryRaw.IncomeCurrent,
+				Previous:    summaryRaw.IncomePrev,
+				YearAgo:     &summaryRaw.IncomeYearAgo,
+				TwoYearsAgo: &summaryRaw.IncomeTwoYearsAgo,
+			},
+			Release: reservoirsummary.ValueResponse{
+				Current:     summaryRaw.ReleaseCurrent,
+				Previous:    summaryRaw.ReleasePrev,
+				YearAgo:     &summaryRaw.ReleaseYearAgo,
+				TwoYearsAgo: &summaryRaw.ReleaseTwoYearsAgo,
+			},
+			IncomingVolume:         summaryRaw.IncomingVolumeMlnM3,
+			IncomingVolumePrevYear: summaryRaw.IncomingVolumeMlnM3PrevYear,
+		}
+
+		// Separate summary row (organization_id = NULL) from individual reservoirs
+		if summaryRaw.OrganizationID == nil {
+			summaryRow = &reservoirModel
+		} else {
+			reservoirs = append(reservoirs, reservoirModel)
+		}
 	}
 
 	if err = rows.Err(); err != nil {
 		return nil, fmt.Errorf("%s: rows iteration error: %w", op, err)
 	}
 
-	// Return empty slice instead of nil for consistency
-	if summaries == nil {
-		summaries = make([]*reservoirsummary.ResponseModel, 0)
+	// Create response with empty summary if not found
+	if summaryRow == nil {
+		summaryRow = &reservoirsummary.ReservoirResponseModel{}
 	}
 
-	return summaries, nil
+	// Build result - one ResponseModel per reservoir
+	var results []*reservoirsummary.ResponseModel
+	for _, reservoir := range reservoirs {
+		results = append(results, &reservoirsummary.ResponseModel{
+			Reservoir: reservoir,
+			Summary:   *summaryRow,
+		})
+	}
+
+	// Return empty slice instead of nil for consistency
+	if results == nil {
+		results = make([]*reservoirsummary.ResponseModel, 0)
+	}
+
+	return results, nil
 }
 
 // scanReservoirSummaryRow scans a single row from the query result
 func scanReservoirSummaryRow(scanner interface {
 	Scan(dest ...interface{}) error
-}) (*reservoirsummary.ResponseModel, error) {
-	var m reservoirsummary.ResponseModel
+}) (*reservoirsummary.ResponseModelRaw, error) {
+	var m reservoirsummary.ResponseModelRaw
 	var orgID sql.NullInt64
 
 	err := scanner.Scan(
@@ -53,6 +106,8 @@ func scanReservoirSummaryRow(scanner interface {
 		&m.OrganizationName,
 		&m.LevelCurrent,
 		&m.LevelPrev,
+		&m.LevelYearAgo,
+		&m.LevelTwoYearsAgo,
 		&m.VolumeCurrent,
 		&m.VolumePrev,
 		&m.VolumeYearAgo,
@@ -100,10 +155,12 @@ level_data AS (
     SELECT
         rd.organization_id,
         COALESCE(MAX(rd.level_m) FILTER (WHERE rd.date::date = dp.target_date), 0) AS level_current,
-        COALESCE(MAX(rd.level_m) FILTER (WHERE rd.date::date = dp.prev_date), 0) AS level_prev
+        COALESCE(MAX(rd.level_m) FILTER (WHERE rd.date::date = dp.prev_date), 0) AS level_prev,
+        COALESCE(MAX(rd.level_m) FILTER (WHERE rd.date::date = dp.year_ago_date), 0) AS level_year_ago,
+        COALESCE(MAX(rd.level_m) FILTER (WHERE rd.date::date = dp.two_years_ago_date), 0) AS level_two_years_ago
     FROM reservoir_data rd
     CROSS JOIN date_params dp
-    WHERE rd.date::date IN (dp.target_date, dp.prev_date)
+    WHERE rd.date::date IN (dp.target_date, dp.prev_date, dp.year_ago_date, dp.two_years_ago_date)
     GROUP BY rd.organization_id
 ),
 volume_data AS (
@@ -145,24 +202,30 @@ release_data AS (
 incoming_volume AS (
     SELECT
         rd.organization_id,
-        COALESCE(
-            (SELECT SUM(rd2.income_m3_s)
-             FROM reservoir_data rd2
-             WHERE rd2.organization_id = rd.organization_id
-               AND rd2.date::date >= dp.year_start
-               AND rd2.date::date < dp.target_date)
-            * 0.0864,
-            0
+        ROUND(
+            COALESCE(
+                (SELECT SUM(rd2.income_m3_s)
+                 FROM reservoir_data rd2
+                 WHERE rd2.organization_id = rd.organization_id
+                   AND rd2.date::date >= dp.year_start
+                   AND rd2.date::date < dp.target_date)
+                * 0.0864,
+                0
+            ),
+            2
         ) AS incoming_volume_mln_m3_current_year,
 
-        COALESCE(
-            (SELECT SUM(rd2.income_m3_s)
-             FROM reservoir_data rd2
-             WHERE rd2.organization_id = rd.organization_id
-               AND rd2.date::date >= dp.prev_year_start
-               AND rd2.date::date < dp.year_ago_date)
-            * 0.0864,
-            0
+        ROUND(
+            COALESCE(
+                (SELECT SUM(rd2.income_m3_s)
+                 FROM reservoir_data rd2
+                 WHERE rd2.organization_id = rd.organization_id
+                   AND rd2.date::date >= dp.prev_year_start
+                   AND rd2.date::date < dp.year_ago_date)
+                * 0.0864,
+                0
+            ),
+            2
         ) AS incoming_volume_mln_m3_prev_year
     FROM org_data rd
     CROSS JOIN date_params dp
@@ -172,6 +235,8 @@ SELECT
     COALESCE(o.name, '') AS organization_name,
     COALESCE(ld.level_current, 0) AS level_current,
     COALESCE(ld.level_prev, 0) AS level_prev,
+    COALESCE(ld.level_year_ago, 0) AS level_year_ago,
+    COALESCE(ld.level_two_years_ago, 0) AS level_two_years_ago,
     COALESCE(vd.volume_current, 0) AS volume_current,
     COALESCE(vd.volume_prev, 0) AS volume_prev,
     COALESCE(vd.volume_year_ago, 0) AS volume_year_ago,
@@ -201,6 +266,8 @@ SELECT
     'ИТОГО' AS organization_name,
     0 AS level_current,
     0 AS level_prev,
+    0 AS level_year_ago,
+    0 AS level_two_years_ago,
     COALESCE(SUM(COALESCE(vd.volume_current, 0)), 0) AS volume_current,
     COALESCE(SUM(COALESCE(vd.volume_prev, 0)), 0) AS volume_prev,
     COALESCE(SUM(COALESCE(vd.volume_year_ago, 0)), 0) AS volume_year_ago,
