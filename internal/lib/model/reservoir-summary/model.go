@@ -1,13 +1,13 @@
 package reservoirsummary
 
 type ValueResponse struct {
-	Current     float64  `json:"current"`
-	Previous    float64  `json:"prev"`
-	YearAgo     *float64 `json:"year_ago"`
-	TwoYearsAgo *float64 `json:"two_years_ago"`
+	Current     float64 `json:"current"`
+	Previous    float64 `json:"prev"`
+	YearAgo     float64 `json:"year_ago"`
+	TwoYearsAgo float64 `json:"two_years_ago"`
 }
 
-type ReservoirResponseModel struct {
+type ResponseModel struct {
 	OrganizationID   *int64 `json:"organization_id"`
 	OrganizationName string `json:"organization_name"`
 
@@ -18,9 +18,4 @@ type ReservoirResponseModel struct {
 
 	IncomingVolume         float64 `json:"incoming_volume"`
 	IncomingVolumePrevYear float64 `json:"incoming_volume_prev_year"`
-}
-
-type ResponseModel struct {
-	Reservoir ReservoirResponseModel `json:"reservoir"`
-	Summary   ReservoirResponseModel `json:"summary"`
 }

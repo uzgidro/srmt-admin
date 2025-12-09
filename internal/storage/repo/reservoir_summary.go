@@ -20,78 +20,57 @@ func (r *Repo) GetReservoirSummary(ctx context.Context, date string) ([]*reservo
 	}
 	defer rows.Close()
 
-	var reservoirs []reservoirsummary.ReservoirResponseModel
-	var summaryRow *reservoirsummary.ReservoirResponseModel
-
+	var summaries []*reservoirsummary.ResponseModel
 	for rows.Next() {
 		summaryRaw, err := scanReservoirSummaryRow(rows)
 		if err != nil {
 			return nil, fmt.Errorf("%s: failed to scan reservoir summary row: %w", op, err)
 		}
 
-		reservoirModel := reservoirsummary.ReservoirResponseModel{
+		summary := &reservoirsummary.ResponseModel{
 			OrganizationID:   summaryRaw.OrganizationID,
 			OrganizationName: summaryRaw.OrganizationName,
 			Level: reservoirsummary.ValueResponse{
 				Current:     summaryRaw.LevelCurrent,
 				Previous:    summaryRaw.LevelPrev,
-				YearAgo:     &summaryRaw.LevelYearAgo,
-				TwoYearsAgo: &summaryRaw.LevelTwoYearsAgo,
+				YearAgo:     summaryRaw.LevelYearAgo,
+				TwoYearsAgo: summaryRaw.LevelTwoYearsAgo,
 			},
 			Volume: reservoirsummary.ValueResponse{
 				Current:     summaryRaw.VolumeCurrent,
 				Previous:    summaryRaw.VolumePrev,
-				YearAgo:     &summaryRaw.VolumeYearAgo,
-				TwoYearsAgo: &summaryRaw.VolumeTwoYearsAgo,
+				YearAgo:     summaryRaw.VolumeYearAgo,
+				TwoYearsAgo: summaryRaw.VolumeTwoYearsAgo,
 			},
 			Income: reservoirsummary.ValueResponse{
 				Current:     summaryRaw.IncomeCurrent,
 				Previous:    summaryRaw.IncomePrev,
-				YearAgo:     &summaryRaw.IncomeYearAgo,
-				TwoYearsAgo: &summaryRaw.IncomeTwoYearsAgo,
+				YearAgo:     summaryRaw.IncomeYearAgo,
+				TwoYearsAgo: summaryRaw.IncomeTwoYearsAgo,
 			},
 			Release: reservoirsummary.ValueResponse{
 				Current:     summaryRaw.ReleaseCurrent,
 				Previous:    summaryRaw.ReleasePrev,
-				YearAgo:     &summaryRaw.ReleaseYearAgo,
-				TwoYearsAgo: &summaryRaw.ReleaseTwoYearsAgo,
+				YearAgo:     summaryRaw.ReleaseYearAgo,
+				TwoYearsAgo: summaryRaw.ReleaseTwoYearsAgo,
 			},
 			IncomingVolume:         summaryRaw.IncomingVolumeMlnM3,
 			IncomingVolumePrevYear: summaryRaw.IncomingVolumeMlnM3PrevYear,
 		}
 
-		// Separate summary row (organization_id = NULL) from individual reservoirs
-		if summaryRaw.OrganizationID == nil {
-			summaryRow = &reservoirModel
-		} else {
-			reservoirs = append(reservoirs, reservoirModel)
-		}
+		summaries = append(summaries, summary)
 	}
 
 	if err = rows.Err(); err != nil {
 		return nil, fmt.Errorf("%s: rows iteration error: %w", op, err)
 	}
 
-	// Create response with empty summary if not found
-	if summaryRow == nil {
-		summaryRow = &reservoirsummary.ReservoirResponseModel{}
-	}
-
-	// Build result - one ResponseModel per reservoir
-	var results []*reservoirsummary.ResponseModel
-	for _, reservoir := range reservoirs {
-		results = append(results, &reservoirsummary.ResponseModel{
-			Reservoir: reservoir,
-			Summary:   *summaryRow,
-		})
-	}
-
 	// Return empty slice instead of nil for consistency
-	if results == nil {
-		results = make([]*reservoirsummary.ResponseModel, 0)
+	if summaries == nil {
+		summaries = make([]*reservoirsummary.ResponseModel, 0)
 	}
 
-	return results, nil
+	return summaries, nil
 }
 
 // scanReservoirSummaryRow scans a single row from the query result
