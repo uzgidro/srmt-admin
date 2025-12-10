@@ -2,9 +2,10 @@ package token
 
 import (
 	"errors"
-	"github.com/golang-jwt/jwt/v4"
 	"srmt-admin/internal/lib/model/user"
 	"time"
+
+	"github.com/golang-jwt/jwt/v4"
 )
 
 // Определяем кастомные ошибки, которые будет возвращать наш сервис.
@@ -22,9 +23,10 @@ type Pair struct {
 // Claims — это полезная нагрузка, которую мы храним в токене.
 type Claims struct {
 	jwt.RegisteredClaims
-	UserID int64    `json:"uid"`
-	Name   string   `json:"name"`
-	Roles  []string `json:"roles"`
+	UserID    int64    `json:"uid"`
+	ContactID int64    `json:"contact_id"`
+	Name      string   `json:"name"`
+	Roles     []string `json:"roles"`
 }
 
 // Token — это наш сервис для работы с JWT.
@@ -86,9 +88,10 @@ func (s *Token) createAccessToken(u *user.Model) (string, error) {
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(s.accessTTL)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
-		UserID: u.ID,
-		Name:   u.Name,
-		Roles:  u.Roles,
+		UserID:    u.ID,
+		ContactID: u.ContactID,
+		Name:      u.Name,
+		Roles:     u.Roles,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
