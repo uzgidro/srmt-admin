@@ -4,6 +4,8 @@ nul
 wire_gen.go
 *.exe
 
+/.claude
+
 # Config files (contain secrets)
 /config/*.yaml
 /config/*.yml

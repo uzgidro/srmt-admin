@@ -133,49 +133,49 @@ org_data AS (
 level_data AS (
     SELECT
         rd.organization_id,
-        COALESCE(MAX(rd.level_m) FILTER (WHERE rd.date::date = dp.target_date), 0) AS level_current,
-        COALESCE(MAX(rd.level_m) FILTER (WHERE rd.date::date = dp.prev_date), 0) AS level_prev,
-        COALESCE(MAX(rd.level_m) FILTER (WHERE rd.date::date = dp.year_ago_date), 0) AS level_year_ago,
-        COALESCE(MAX(rd.level_m) FILTER (WHERE rd.date::date = dp.two_years_ago_date), 0) AS level_two_years_ago
+        COALESCE(MAX(rd.level_m) FILTER (WHERE rd.date = dp.target_date), 0) AS level_current,
+        COALESCE(MAX(rd.level_m) FILTER (WHERE rd.date = dp.prev_date), 0) AS level_prev,
+        COALESCE(MAX(rd.level_m) FILTER (WHERE rd.date = dp.year_ago_date), 0) AS level_year_ago,
+        COALESCE(MAX(rd.level_m) FILTER (WHERE rd.date = dp.two_years_ago_date), 0) AS level_two_years_ago
     FROM reservoir_data rd
     CROSS JOIN date_params dp
-    WHERE rd.date::date IN (dp.target_date, dp.prev_date, dp.year_ago_date, dp.two_years_ago_date)
+    WHERE rd.date IN (dp.target_date, dp.prev_date, dp.year_ago_date, dp.two_years_ago_date)
     GROUP BY rd.organization_id
 ),
 volume_data AS (
     SELECT
         rd.organization_id,
-        COALESCE(MAX(rd.volume_mln_m3) FILTER (WHERE rd.date::date = dp.target_date), 0) AS volume_current,
-        COALESCE(MAX(rd.volume_mln_m3) FILTER (WHERE rd.date::date = dp.prev_date), 0) AS volume_prev,
-        COALESCE(MAX(rd.volume_mln_m3) FILTER (WHERE rd.date::date = dp.year_ago_date), 0) AS volume_year_ago,
-        COALESCE(MAX(rd.volume_mln_m3) FILTER (WHERE rd.date::date = dp.two_years_ago_date), 0) AS volume_two_years_ago
+        COALESCE(MAX(rd.volume_mln_m3) FILTER (WHERE rd.date = dp.target_date), 0) AS volume_current,
+        COALESCE(MAX(rd.volume_mln_m3) FILTER (WHERE rd.date = dp.prev_date), 0) AS volume_prev,
+        COALESCE(MAX(rd.volume_mln_m3) FILTER (WHERE rd.date = dp.year_ago_date), 0) AS volume_year_ago,
+        COALESCE(MAX(rd.volume_mln_m3) FILTER (WHERE rd.date = dp.two_years_ago_date), 0) AS volume_two_years_ago
     FROM reservoir_data rd
     CROSS JOIN date_params dp
-    WHERE rd.date::date IN (dp.target_date, dp.prev_date, dp.year_ago_date, dp.two_years_ago_date)
+    WHERE rd.date IN (dp.target_date, dp.prev_date, dp.year_ago_date, dp.two_years_ago_date)
     GROUP BY rd.organization_id
 ),
 income_data AS (
     SELECT
         rd.organization_id,
-        COALESCE(MAX(rd.income_m3_s) FILTER (WHERE rd.date::date = dp.target_date), 0) AS income_current,
-        COALESCE(MAX(rd.income_m3_s) FILTER (WHERE rd.date::date = dp.prev_date), 0) AS income_prev,
-        COALESCE(MAX(rd.income_m3_s) FILTER (WHERE rd.date::date = dp.year_ago_date), 0) AS income_year_ago,
-        COALESCE(MAX(rd.income_m3_s) FILTER (WHERE rd.date::date = dp.two_years_ago_date), 0) AS income_two_years_ago
+        COALESCE(MAX(rd.income_m3_s) FILTER (WHERE rd.date = dp.target_date), 0) AS income_current,
+        COALESCE(MAX(rd.income_m3_s) FILTER (WHERE rd.date = dp.prev_date), 0) AS income_prev,
+        COALESCE(MAX(rd.income_m3_s) FILTER (WHERE rd.date = dp.year_ago_date), 0) AS income_year_ago,
+        COALESCE(MAX(rd.income_m3_s) FILTER (WHERE rd.date = dp.two_years_ago_date), 0) AS income_two_years_ago
     FROM reservoir_data rd
     CROSS JOIN date_params dp
-    WHERE rd.date::date IN (dp.target_date, dp.prev_date, dp.year_ago_date, dp.two_years_ago_date)
+    WHERE rd.date IN (dp.target_date, dp.prev_date, dp.year_ago_date, dp.two_years_ago_date)
     GROUP BY rd.organization_id
 ),
 release_data AS (
     SELECT
         rd.organization_id,
-        COALESCE(MAX(rd.release_m3_s) FILTER (WHERE rd.date::date = dp.target_date), 0) AS release_current,
-        COALESCE(MAX(rd.release_m3_s) FILTER (WHERE rd.date::date = dp.prev_date), 0) AS release_prev,
-        COALESCE(MAX(rd.release_m3_s) FILTER (WHERE rd.date::date = dp.year_ago_date), 0) AS release_year_ago,
-        COALESCE(MAX(rd.release_m3_s) FILTER (WHERE rd.date::date = dp.two_years_ago_date), 0) AS release_two_years_ago
+        COALESCE(MAX(rd.release_m3_s) FILTER (WHERE rd.date = dp.target_date), 0) AS release_current,
+        COALESCE(MAX(rd.release_m3_s) FILTER (WHERE rd.date = dp.prev_date), 0) AS release_prev,
+        COALESCE(MAX(rd.release_m3_s) FILTER (WHERE rd.date = dp.year_ago_date), 0) AS release_year_ago,
+        COALESCE(MAX(rd.release_m3_s) FILTER (WHERE rd.date = dp.two_years_ago_date), 0) AS release_two_years_ago
     FROM reservoir_data rd
     CROSS JOIN date_params dp
-    WHERE rd.date::date IN (dp.target_date, dp.prev_date, dp.year_ago_date, dp.two_years_ago_date)
+    WHERE rd.date IN (dp.target_date, dp.prev_date, dp.year_ago_date, dp.two_years_ago_date)
     GROUP BY rd.organization_id
 ),
 incoming_volume AS (
@@ -186,8 +186,8 @@ incoming_volume AS (
                 (SELECT SUM(rd2.income_m3_s)
                  FROM reservoir_data rd2
                  WHERE rd2.organization_id = rd.organization_id
-                   AND rd2.date::date >= dp.year_start
-                   AND rd2.date::date < dp.target_date)
+                   AND rd2.date >= dp.year_start
+                   AND rd2.date < dp.target_date)
                 * 0.0864,
                 0
             ),
@@ -199,8 +199,8 @@ incoming_volume AS (
                 (SELECT SUM(rd2.income_m3_s)
                  FROM reservoir_data rd2
                  WHERE rd2.organization_id = rd.organization_id
-                   AND rd2.date::date >= dp.prev_year_start
-                   AND rd2.date::date < dp.year_ago_date)
+                   AND rd2.date >= dp.prev_year_start
+                   AND rd2.date < dp.year_ago_date)
                 * 0.0864,
                 0
             ),
