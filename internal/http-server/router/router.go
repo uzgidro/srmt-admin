@@ -68,6 +68,7 @@ import (
 	receptionEdit "srmt-admin/internal/http-server/handlers/reception/edit"
 	receptionGetAll "srmt-admin/internal/http-server/handlers/reception/get-all"
 	receptionGetById "srmt-admin/internal/http-server/handlers/reception/get-by-id"
+	reservoirDataUpsert "srmt-admin/internal/http-server/handlers/reservoir-data/upsert"
 	reservoirdevicesummary "srmt-admin/internal/http-server/handlers/reservoir-device-summary"
 	reservoirsummary "srmt-admin/internal/http-server/handlers/reservoir-summary"
 	resAdd "srmt-admin/internal/http-server/handlers/reservoirs/add"
@@ -269,6 +270,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Patch("/reservoir-device", reservoirdevicesummary.Patch(deps.Log, deps.PgRepo))
 
 			r.Get("/reservoir-summary", reservoirsummary.Get(deps.Log, deps.PgRepo))
+			r.Post("/reservoir-data", reservoirDataUpsert.New(deps.Log, deps.PgRepo))
 
 			r.Get("/visits", visit.Get(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
 			r.Post("/visits", visit.Add(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
