@@ -270,7 +270,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Patch("/reservoir-device", reservoirdevicesummary.Patch(deps.Log, deps.PgRepo))
 
 			r.Get("/reservoir-summary", reservoirsummary.Get(deps.Log, deps.PgRepo))
-			r.Post("/reservoir-data", reservoirDataUpsert.New(deps.Log, deps.PgRepo))
+			r.Post("/reservoir-summary", reservoirDataUpsert.New(deps.Log, deps.PgRepo))
 
 			r.Get("/visits", visit.Get(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
 			r.Post("/visits", visit.Add(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
