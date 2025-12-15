@@ -30,6 +30,10 @@ type ResponseModelRaw struct {
 	ReleaseYearAgo     float64 `json:"release_year_ago"`
 	ReleaseTwoYearsAgo float64 `json:"release_two_years_ago"`
 
+	// Modsnow data (cover)
+	ModsnowCurrent float64 `json:"modsnow_current"`
+	ModsnowYearAgo float64 `json:"modsnow_year_ago"`
+
 	// Incoming volume (million m³)
 	IncomingVolumeMlnM3         float64 `json:"incoming_volume_mln_m3"`
 	IncomingVolumeMlnM3PrevYear float64 `json:"incoming_volume_mln_m3_prev_year"`

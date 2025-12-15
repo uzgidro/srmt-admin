@@ -39,6 +39,19 @@ func (r *Repo) UpsertReservoirData(ctx context.Context, data []reservoirdata.Res
 			updated_at = NOW()
 	`
 
+	const modsnowQuery = `
+		INSERT INTO modsnow (
+			organization_id, date, cover,
+			created_by_user_id, updated_by_user_id, created_at, updated_at
+		)
+		VALUES ($1, $2, $3, $4, $4, NOW(), NOW())
+		ON CONFLICT (organization_id, date)
+		DO UPDATE SET
+			cover = EXCLUDED.cover,
+			updated_by_user_id = EXCLUDED.updated_by_user_id,
+			updated_at = NOW()
+	`
+
 	for _, item := range data {
 		_, err := tx.ExecContext(
 			ctx,
@@ -57,6 +70,53 @@ func (r *Repo) UpsertReservoirData(ctx context.Context, data []reservoirdata.Res
 			}
 			return fmt.Errorf("%s: failed to upsert reservoir data for org_id=%d, date=%s: %w",
 				op, item.OrganizationID, item.Date, err)
+		}
+
+		// Upsert modsnow current value if provided
+		if item.ModsnowCurrent != nil {
+			_, err := tx.ExecContext(
+				ctx,
+				modsnowQuery,
+				item.OrganizationID,
+				item.Date,
+				*item.ModsnowCurrent,
+				userID,
+			)
+			if err != nil {
+				if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
+					return translatedErr
+				}
+				return fmt.Errorf("%s: failed to upsert modsnow current for org_id=%d, date=%s: %w",
+					op, item.OrganizationID, item.Date, err)
+			}
+		}
+
+		// Upsert modsnow year ago value if provided
+		if item.ModsnowYearAgo != nil {
+			_, err := tx.ExecContext(
+				ctx,
+				`INSERT INTO modsnow (
+					organization_id, date, cover,
+					created_by_user_id, updated_by_user_id, created_at, updated_at
+				)
+				VALUES ($1, $2::date - INTERVAL '1 year', $3, $4, $4, NOW(), NOW())
+				ON CONFLICT (organization_id, date)
+				DO UPDATE SET
+					cover = EXCLUDED.cover,
+					updated_by_user_id = EXCLUDED.updated_by_user_id,
+					updated_at = NOW()`,
+				item.OrganizationID,
+				item.Date,
+				*item.ModsnowYearAgo,
+				userID,
+			)
+			if err != nil {
+				if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
+					return translatedErr
+				}
+				return fmt.Errorf("%s: failed to upsert modsnow year ago for org_id=%d, date=%s: %w",
+					op, item.OrganizationID, item.Date, err)
+			}
 		}
 	}
 
