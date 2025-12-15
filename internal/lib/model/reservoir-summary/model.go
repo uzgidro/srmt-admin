@@ -15,6 +15,7 @@ type ResponseModel struct {
 	Volume  ValueResponse `json:"volume"`
 	Level   ValueResponse `json:"level"`
 	Release ValueResponse `json:"release"`
+	Modsnow ValueResponse `json:"modsnow"`
 
 	IncomingVolume         float64 `json:"incoming_volume"`
 	IncomingVolumePrevYear float64 `json:"incoming_volume_prev_year"`

@@ -54,6 +54,12 @@ func (r *Repo) GetReservoirSummary(ctx context.Context, date string) ([]*reservo
 				YearAgo:     summaryRaw.ReleaseYearAgo,
 				TwoYearsAgo: summaryRaw.ReleaseTwoYearsAgo,
 			},
+			Modsnow: reservoirsummary.ValueResponse{
+				Current:     summaryRaw.ModsnowCurrent,
+				Previous:    0,
+				YearAgo:     summaryRaw.ModsnowYearAgo,
+				TwoYearsAgo: 0,
+			},
 			IncomingVolume:         summaryRaw.IncomingVolumeMlnM3,
 			IncomingVolumePrevYear: summaryRaw.IncomingVolumeMlnM3PrevYear,
 		}
@@ -99,6 +105,8 @@ func scanReservoirSummaryRow(scanner interface {
 		&m.ReleasePrev,
 		&m.ReleaseYearAgo,
 		&m.ReleaseTwoYearsAgo,
+		&m.ModsnowCurrent,
+		&m.ModsnowYearAgo,
 		&m.IncomingVolumeMlnM3,
 		&m.IncomingVolumeMlnM3PrevYear,
 	)
@@ -178,6 +186,16 @@ release_data AS (
     WHERE rd.date IN (dp.target_date, dp.prev_date, dp.year_ago_date, dp.two_years_ago_date)
     GROUP BY rd.organization_id
 ),
+modsnow_data AS (
+    SELECT
+        m.organization_id,
+        COALESCE(MAX(m.cover) FILTER (WHERE m.date = dp.target_date), 0) AS modsnow_current,
+        COALESCE(MAX(m.cover) FILTER (WHERE m.date = dp.year_ago_date), 0) AS modsnow_year_ago
+    FROM modsnow m
+    CROSS JOIN date_params dp
+    WHERE m.date IN (dp.target_date, dp.year_ago_date)
+    GROUP BY m.organization_id
+),
 incoming_volume AS (
     SELECT
         rd.organization_id,
@@ -228,6 +246,8 @@ SELECT
     COALESCE(reld.release_prev, 0) AS release_prev,
     COALESCE(reld.release_year_ago, 0) AS release_year_ago,
     COALESCE(reld.release_two_years_ago, 0) AS release_two_years_ago,
+    COALESCE(md.modsnow_current, 0) AS modsnow_current,
+    COALESCE(md.modsnow_year_ago, 0) AS modsnow_year_ago,
     COALESCE(iv.incoming_volume_mln_m3_current_year, 0) AS incoming_volume_mln_m3,
     COALESCE(iv.incoming_volume_mln_m3_prev_year, 0) AS incoming_volume_mln_m3_prev_year
 FROM org_data od
@@ -236,6 +256,7 @@ LEFT JOIN level_data ld ON od.organization_id = ld.organization_id
 LEFT JOIN volume_data vd ON od.organization_id = vd.organization_id
 LEFT JOIN income_data id ON od.organization_id = id.organization_id
 LEFT JOIN release_data reld ON od.organization_id = reld.organization_id
+LEFT JOIN modsnow_data md ON od.organization_id = md.organization_id
 LEFT JOIN incoming_volume iv ON od.organization_id = iv.organization_id
 
 UNION ALL
@@ -259,6 +280,8 @@ SELECT
     COALESCE(SUM(COALESCE(reld.release_prev, 0)), 0) AS release_prev,
     COALESCE(SUM(COALESCE(reld.release_year_ago, 0)), 0) AS release_year_ago,
     COALESCE(SUM(COALESCE(reld.release_two_years_ago, 0)), 0) AS release_two_years_ago,
+    COALESCE(SUM(COALESCE(md.modsnow_current, 0)), 0) AS modsnow_current,
+    COALESCE(SUM(COALESCE(md.modsnow_year_ago, 0)), 0) AS modsnow_year_ago,
     COALESCE(SUM(COALESCE(iv.incoming_volume_mln_m3_current_year, 0)), 0) AS incoming_volume_mln_m3,
     COALESCE(SUM(COALESCE(iv.incoming_volume_mln_m3_prev_year, 0)), 0) AS incoming_volume_mln_m3_prev_year
 FROM org_data od
@@ -266,6 +289,7 @@ LEFT JOIN level_data ld ON od.organization_id = ld.organization_id
 LEFT JOIN volume_data vd ON od.organization_id = vd.organization_id
 LEFT JOIN income_data id ON od.organization_id = id.organization_id
 LEFT JOIN release_data reld ON od.organization_id = reld.organization_id
+LEFT JOIN modsnow_data md ON od.organization_id = md.organization_id
 LEFT JOIN incoming_volume iv ON od.organization_id = iv.organization_id
 
 ORDER BY organization_id NULLS LAST
