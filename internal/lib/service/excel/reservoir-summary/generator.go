@@ -34,14 +34,48 @@ func (g *Generator) GenerateExcel(date string) (*excelize.File, error) {
 		return nil, fmt.Errorf("failed to parse date: %w", err)
 	}
 
-	// Format date as dd.MM.yyyy (e.g., "16.12.2025")
-	formattedDate := parsedDate.Format("02.01.2006")
-
 	// Set date in cell L2
 	sheet := f.GetSheetName(0) // Get first sheet name
-	if err := f.SetCellValue(sheet, "L2", formattedDate); err != nil {
+	if err := f.SetCellValue(sheet, "L2", parsedDate); err != nil {
 		f.Close()
 		return nil, fmt.Errorf("failed to set date in cell L2: %w", err)
+	}
+
+	// Calculate and set year values in cells that contain formulas based on L2
+	// The formulas extract year from the date, so we calculate those values here
+	currentYear := parsedDate.Year()
+	previousYear := currentYear - 1
+	twoYearsAgo := currentYear - 2
+
+	// D5, G5, J5, M5, O5: Previous year (formulas calculate year-1 from L2)
+	prevYearCells := []string{"D5", "G5", "J5", "M5", "O5"}
+	for _, cell := range prevYearCells {
+		if err := f.SetCellValue(sheet, cell, previousYear); err != nil {
+			f.Close()
+			return nil, fmt.Errorf("failed to set previous year in cell %s: %w", cell, err)
+		}
+	}
+
+	// E5, H5, K5: Two years ago (formulas calculate year-2 from L2)
+	twoYearsAgoCells := []string{"E5", "H5", "K5"}
+	for _, cell := range twoYearsAgoCells {
+		if err := f.SetCellValue(sheet, cell, twoYearsAgo); err != nil {
+			f.Close()
+			return nil, fmt.Errorf("failed to set two years ago in cell %s: %w", cell, err)
+		}
+	}
+
+	// L5, N5: Current year (formulas extract year from L2)
+	currentYearCells := []string{"L5", "N5"}
+	for _, cell := range currentYearCells {
+		if err := f.SetCellValue(sheet, cell, currentYear); err != nil {
+			f.Close()
+			return nil, fmt.Errorf("failed to set current year in cell %s: %w", cell, err)
+		}
+	}
+
+	if err := f.UpdateLinkedValue(); err != nil {
+		return nil, fmt.Errorf("failed to calculate formulas: %w", err)
 	}
 
 	return f, nil
