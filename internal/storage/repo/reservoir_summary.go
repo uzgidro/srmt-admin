@@ -248,8 +248,23 @@ SELECT
     COALESCE(reld.release_two_years_ago, 0) AS release_two_years_ago,
     COALESCE(md.modsnow_current, 0) AS modsnow_current,
     COALESCE(md.modsnow_year_ago, 0) AS modsnow_year_ago,
-    COALESCE(iv.incoming_volume_mln_m3_current_year, 0) AS incoming_volume_mln_m3,
-    COALESCE(iv.incoming_volume_mln_m3_prev_year, 0) AS incoming_volume_mln_m3_prev_year
+    -- Set incoming_volume to 0 for non-reservoir organizations (not linked to organization_type 8)
+    CASE
+        WHEN EXISTS (
+            SELECT 1 FROM organization_type_links otl
+            WHERE otl.organization_id = od.organization_id
+            AND otl.type_id = 8
+        ) THEN COALESCE(iv.incoming_volume_mln_m3_current_year, 0)
+        ELSE 0
+    END AS incoming_volume_mln_m3,
+    CASE
+        WHEN EXISTS (
+            SELECT 1 FROM organization_type_links otl
+            WHERE otl.organization_id = od.organization_id
+            AND otl.type_id = 8
+        ) THEN COALESCE(iv.incoming_volume_mln_m3_prev_year, 0)
+        ELSE 0
+    END AS incoming_volume_mln_m3_prev_year
 FROM org_data od
 LEFT JOIN organizations o ON od.organization_id = o.id
 LEFT JOIN level_data ld ON od.organization_id = ld.organization_id
@@ -261,6 +276,7 @@ LEFT JOIN incoming_volume iv ON od.organization_id = iv.organization_id
 
 UNION ALL
 
+-- ИТОГО row: only sum values from reservoir organizations (linked to organization_type 8)
 SELECT
     NULL AS organization_id,
     'ИТОГО' AS organization_name,
@@ -268,23 +284,88 @@ SELECT
     0 AS level_prev,
     0 AS level_year_ago,
     0 AS level_two_years_ago,
-    COALESCE(SUM(COALESCE(vd.volume_current, 0)), 0) AS volume_current,
-    COALESCE(SUM(COALESCE(vd.volume_prev, 0)), 0) AS volume_prev,
-    COALESCE(SUM(COALESCE(vd.volume_year_ago, 0)), 0) AS volume_year_ago,
-    COALESCE(SUM(COALESCE(vd.volume_two_years_ago, 0)), 0) AS volume_two_years_ago,
-    COALESCE(SUM(COALESCE(id.income_current, 0)), 0) AS income_current,
-    COALESCE(SUM(COALESCE(id.income_prev, 0)), 0) AS income_prev,
-    COALESCE(SUM(COALESCE(id.income_year_ago, 0)), 0) AS income_year_ago,
-    COALESCE(SUM(COALESCE(id.income_two_years_ago, 0)), 0) AS income_two_years_ago,
-    COALESCE(SUM(COALESCE(reld.release_current, 0)), 0) AS release_current,
-    COALESCE(SUM(COALESCE(reld.release_prev, 0)), 0) AS release_prev,
-    COALESCE(SUM(COALESCE(reld.release_year_ago, 0)), 0) AS release_year_ago,
-    COALESCE(SUM(COALESCE(reld.release_two_years_ago, 0)), 0) AS release_two_years_ago,
-    COALESCE(SUM(COALESCE(md.modsnow_current, 0)), 0) AS modsnow_current,
-    COALESCE(SUM(COALESCE(md.modsnow_year_ago, 0)), 0) AS modsnow_year_ago,
-    COALESCE(SUM(COALESCE(iv.incoming_volume_mln_m3_current_year, 0)), 0) AS incoming_volume_mln_m3,
-    COALESCE(SUM(COALESCE(iv.incoming_volume_mln_m3_prev_year, 0)), 0) AS incoming_volume_mln_m3_prev_year
+    COALESCE(SUM(CASE WHEN EXISTS (
+        SELECT 1 FROM organization_type_links otl
+        WHERE otl.organization_id = od.organization_id
+        AND otl.type_id = 8
+    ) THEN COALESCE(vd.volume_current, 0) ELSE 0 END), 0) AS volume_current,
+    COALESCE(SUM(CASE WHEN EXISTS (
+        SELECT 1 FROM organization_type_links otl
+        WHERE otl.organization_id = od.organization_id
+        AND otl.type_id = 8
+    ) THEN COALESCE(vd.volume_prev, 0) ELSE 0 END), 0) AS volume_prev,
+    COALESCE(SUM(CASE WHEN EXISTS (
+        SELECT 1 FROM organization_type_links otl
+        WHERE otl.organization_id = od.organization_id
+        AND otl.type_id = 8
+    ) THEN COALESCE(vd.volume_year_ago, 0) ELSE 0 END), 0) AS volume_year_ago,
+    COALESCE(SUM(CASE WHEN EXISTS (
+        SELECT 1 FROM organization_type_links otl
+        WHERE otl.organization_id = od.organization_id
+        AND otl.type_id = 8
+    ) THEN COALESCE(vd.volume_two_years_ago, 0) ELSE 0 END), 0) AS volume_two_years_ago,
+    COALESCE(SUM(CASE WHEN EXISTS (
+        SELECT 1 FROM organization_type_links otl
+        WHERE otl.organization_id = od.organization_id
+        AND otl.type_id = 8
+    ) THEN COALESCE(id.income_current, 0) ELSE 0 END), 0) AS income_current,
+    COALESCE(SUM(CASE WHEN EXISTS (
+        SELECT 1 FROM organization_type_links otl
+        WHERE otl.organization_id = od.organization_id
+        AND otl.type_id = 8
+    ) THEN COALESCE(id.income_prev, 0) ELSE 0 END), 0) AS income_prev,
+    COALESCE(SUM(CASE WHEN EXISTS (
+        SELECT 1 FROM organization_type_links otl
+        WHERE otl.organization_id = od.organization_id
+        AND otl.type_id = 8
+    ) THEN COALESCE(id.income_year_ago, 0) ELSE 0 END), 0) AS income_year_ago,
+    COALESCE(SUM(CASE WHEN EXISTS (
+        SELECT 1 FROM organization_type_links otl
+        WHERE otl.organization_id = od.organization_id
+        AND otl.type_id = 8
+    ) THEN COALESCE(id.income_two_years_ago, 0) ELSE 0 END), 0) AS income_two_years_ago,
+    COALESCE(SUM(CASE WHEN EXISTS (
+        SELECT 1 FROM organization_type_links otl
+        WHERE otl.organization_id = od.organization_id
+        AND otl.type_id = 8
+    ) THEN COALESCE(reld.release_current, 0) ELSE 0 END), 0) AS release_current,
+    COALESCE(SUM(CASE WHEN EXISTS (
+        SELECT 1 FROM organization_type_links otl
+        WHERE otl.organization_id = od.organization_id
+        AND otl.type_id = 8
+    ) THEN COALESCE(reld.release_prev, 0) ELSE 0 END), 0) AS release_prev,
+    COALESCE(SUM(CASE WHEN EXISTS (
+        SELECT 1 FROM organization_type_links otl
+        WHERE otl.organization_id = od.organization_id
+        AND otl.type_id = 8
+    ) THEN COALESCE(reld.release_year_ago, 0) ELSE 0 END), 0) AS release_year_ago,
+    COALESCE(SUM(CASE WHEN EXISTS (
+        SELECT 1 FROM organization_type_links otl
+        WHERE otl.organization_id = od.organization_id
+        AND otl.type_id = 8
+    ) THEN COALESCE(reld.release_two_years_ago, 0) ELSE 0 END), 0) AS release_two_years_ago,
+    COALESCE(SUM(CASE WHEN EXISTS (
+        SELECT 1 FROM organization_type_links otl
+        WHERE otl.organization_id = od.organization_id
+        AND otl.type_id = 8
+    ) THEN COALESCE(md.modsnow_current, 0) ELSE 0 END), 0) AS modsnow_current,
+    COALESCE(SUM(CASE WHEN EXISTS (
+        SELECT 1 FROM organization_type_links otl
+        WHERE otl.organization_id = od.organization_id
+        AND otl.type_id = 8
+    ) THEN COALESCE(md.modsnow_year_ago, 0) ELSE 0 END), 0) AS modsnow_year_ago,
+    COALESCE(SUM(CASE WHEN EXISTS (
+        SELECT 1 FROM organization_type_links otl
+        WHERE otl.organization_id = od.organization_id
+        AND otl.type_id = 8
+    ) THEN COALESCE(iv.incoming_volume_mln_m3_current_year, 0) ELSE 0 END), 0) AS incoming_volume_mln_m3,
+    COALESCE(SUM(CASE WHEN EXISTS (
+        SELECT 1 FROM organization_type_links otl
+        WHERE otl.organization_id = od.organization_id
+        AND otl.type_id = 8
+    ) THEN COALESCE(iv.incoming_volume_mln_m3_prev_year, 0) ELSE 0 END), 0) AS incoming_volume_mln_m3_prev_year
 FROM org_data od
+LEFT JOIN organizations o ON od.organization_id = o.id
 LEFT JOIN level_data ld ON od.organization_id = ld.organization_id
 LEFT JOIN volume_data vd ON od.organization_id = vd.organization_id
 LEFT JOIN income_data id ON od.organization_id = id.organization_id

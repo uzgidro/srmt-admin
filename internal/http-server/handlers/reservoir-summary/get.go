@@ -69,6 +69,7 @@ func Get(log *slog.Logger, getter reservoirSummaryGetter) http.HandlerFunc {
 			"Хисорак сув омбори":   4,
 			"Топаланг сув омбори":  5,
 			"Чорвок сув омбори":    6,
+			"ИТОГО":                7,
 		}
 
 		sort.Slice(summaries, func(i, j int) bool {
