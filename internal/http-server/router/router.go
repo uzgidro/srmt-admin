@@ -96,6 +96,7 @@ import (
 	mwapikey "srmt-admin/internal/http-server/middleware/api-key"
 	mwauth "srmt-admin/internal/http-server/middleware/auth"
 	"srmt-admin/internal/lib/service/ascue"
+	excelgen "srmt-admin/internal/lib/service/excel/reservoir-summary"
 	"srmt-admin/internal/lib/service/reservoir"
 	"srmt-admin/internal/storage/minio"
 	"srmt-admin/internal/storage/mongo"
@@ -108,16 +109,17 @@ import (
 
 // AppDependencies contains all dependencies needed for route setup
 type AppDependencies struct {
-	Log              *slog.Logger
-	Token            *token.Token
-	PgRepo           *repo.Repo
-	MongoRepo        *mongo.Repo
-	MinioRepo        *minio.Repo
-	Config           config.Config
-	Location         *time.Location
-	ASCUEFetcher     *ascue.Fetcher
-	ReservoirFetcher *reservoir.Fetcher
-	HTTPClient       *http.Client
+	Log               *slog.Logger
+	Token             *token.Token
+	PgRepo            *repo.Repo
+	MongoRepo         *mongo.Repo
+	MinioRepo         *minio.Repo
+	Config            config.Config
+	Location          *time.Location
+	ASCUEFetcher      *ascue.Fetcher
+	ReservoirFetcher  *reservoir.Fetcher
+	HTTPClient        *http.Client
+	ExcelTemplatePath string
 }
 
 func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
@@ -127,6 +129,11 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 	router.Post("/auth/sign-in", signIn.New(deps.Log, deps.PgRepo, deps.Token))
 	router.Post("/auth/refresh", refresh.New(deps.Log, deps.PgRepo, deps.Token))
 	router.Post("/auth/sign-out", signOut.New(deps.Log))
+
+	router.Get("/reservoir-summary/excel", reservoirsummary.GetExcel(
+		deps.Log,
+		excelgen.New(deps.ExcelTemplatePath),
+	))
 
 	router.Route("/api/v3", func(r chi.Router) {
 		r.Get("/modsnow", table.Get(deps.Log, deps.MongoRepo))
@@ -270,6 +277,10 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Patch("/reservoir-device", reservoirdevicesummary.Patch(deps.Log, deps.PgRepo))
 
 			r.Get("/reservoir-summary", reservoirsummary.Get(deps.Log, deps.PgRepo))
+			//r.Get("/reservoir-summary/excel", reservoirsummary.GetExcel(
+			//	deps.Log,
+			//	excelgen.New(deps.ExcelTemplatePath),
+			//))
 			r.Post("/reservoir-summary", reservoirDataUpsert.New(deps.Log, deps.PgRepo))
 
 			r.Get("/visits", visit.Get(deps.Log, deps.PgRepo, deps.MinioRepo, loc))

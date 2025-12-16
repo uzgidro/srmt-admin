@@ -12,6 +12,7 @@ type Config struct {
 	StoragePath string `yaml:"storage_path" env-required:"true"`
 	//LogPath     string `yaml:"log_path" env-required:"false"` TODO(): add service -> send logs to mongo
 	MigrationsPath string `yaml:"migrations_path" env-required:"true"`
+	TemplatePath   string `yaml:"template_path" env-default:"./template"`
 	ApiKey         string `yaml:"callback_api_key" env-required:"true"`
 	Bucket         string `yaml:"bucket" env-required:"true"`
 	Timezone       string `yaml:"timezone" env-default:"Asia/Tashkent"` // UTC+5

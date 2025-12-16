@@ -99,16 +99,17 @@ func ProvideRouter(
 
 	// Setup routes with new container pattern
 	deps := &router.AppDependencies{
-		Log:              log,
-		Token:            tkn,
-		PgRepo:           pg,
-		MongoRepo:        mng,
-		MinioRepo:        minioRepo,
-		Config:           *cfg,
-		Location:         loc,
-		ASCUEFetcher:     ascueFetcher,
-		ReservoirFetcher: reservoirFetcher,
-		HTTPClient:       httpClient,
+		Log:               log,
+		Token:             tkn,
+		PgRepo:            pg,
+		MongoRepo:         mng,
+		MinioRepo:         minioRepo,
+		Config:            *cfg,
+		Location:          loc,
+		ASCUEFetcher:      ascueFetcher,
+		ReservoirFetcher:  reservoirFetcher,
+		HTTPClient:        httpClient,
+		ExcelTemplatePath: cfg.TemplatePath + "/res-summary.xlsx",
 	}
 
 	router.SetupRoutes(r, deps)

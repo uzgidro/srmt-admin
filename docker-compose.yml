@@ -14,6 +14,7 @@ services:
       - CONFIG_PATH=/app/config/prod.yaml
     volumes:
       - ./config:/app/config:ro
+      - ./template:/app/template:ro
     depends_on:
       postgres:
         condition: service_healthy
