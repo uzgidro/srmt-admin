@@ -68,7 +68,6 @@ import (
 	receptionEdit "srmt-admin/internal/http-server/handlers/reception/edit"
 	receptionGetAll "srmt-admin/internal/http-server/handlers/reception/get-all"
 	receptionGetById "srmt-admin/internal/http-server/handlers/reception/get-by-id"
-	reservoirDataUpsert "srmt-admin/internal/http-server/handlers/reservoir-data/upsert"
 	reservoirdevicesummary "srmt-admin/internal/http-server/handlers/reservoir-device-summary"
 	reservoirsummary "srmt-admin/internal/http-server/handlers/reservoir-summary"
 	resAdd "srmt-admin/internal/http-server/handlers/reservoirs/add"
@@ -96,6 +95,7 @@ import (
 	mwapikey "srmt-admin/internal/http-server/middleware/api-key"
 	mwauth "srmt-admin/internal/http-server/middleware/auth"
 	"srmt-admin/internal/lib/service/ascue"
+	excelgen "srmt-admin/internal/lib/service/excel/reservoir-summary"
 	"srmt-admin/internal/lib/service/reservoir"
 	"srmt-admin/internal/storage/minio"
 	"srmt-admin/internal/storage/mongo"
@@ -108,16 +108,17 @@ import (
 
 // AppDependencies contains all dependencies needed for route setup
 type AppDependencies struct {
-	Log              *slog.Logger
-	Token            *token.Token
-	PgRepo           *repo.Repo
-	MongoRepo        *mongo.Repo
-	MinioRepo        *minio.Repo
-	Config           config.Config
-	Location         *time.Location
-	ASCUEFetcher     *ascue.Fetcher
-	ReservoirFetcher *reservoir.Fetcher
-	HTTPClient       *http.Client
+	Log               *slog.Logger
+	Token             *token.Token
+	PgRepo            *repo.Repo
+	MongoRepo         *mongo.Repo
+	MinioRepo         *minio.Repo
+	Config            config.Config
+	Location          *time.Location
+	ASCUEFetcher      *ascue.Fetcher
+	ReservoirFetcher  *reservoir.Fetcher
+	HTTPClient        *http.Client
+	ExcelTemplatePath string
 }
 
 func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
@@ -270,7 +271,12 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Patch("/reservoir-device", reservoirdevicesummary.Patch(deps.Log, deps.PgRepo))
 
 			r.Get("/reservoir-summary", reservoirsummary.Get(deps.Log, deps.PgRepo))
-			r.Post("/reservoir-summary", reservoirDataUpsert.New(deps.Log, deps.PgRepo))
+			router.Get("/reservoir-summary/export", reservoirsummary.GetExport(
+				deps.Log,
+				deps.PgRepo,
+				excelgen.New(deps.ExcelTemplatePath),
+			))
+			r.Post("/reservoir-summary", reservoirsummary.New(deps.Log, deps.PgRepo))
 
 			r.Get("/visits", visit.Get(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
 			r.Post("/visits", visit.Add(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))

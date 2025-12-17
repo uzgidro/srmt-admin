@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
-	"sort"
 	"time"
 
 	resp "srmt-admin/internal/lib/api/response"
@@ -60,36 +59,6 @@ func Get(log *slog.Logger, getter reservoirSummaryGetter) http.HandlerFunc {
 			slog.Int("count", len(summaries)),
 			slog.String("date", dateStr),
 		)
-
-		// Sort summaries according to specified order
-		sortOrder := map[string]int{
-			"Андижон сув омбори":   1,
-			"Охангарон сув омбори": 2,
-			"Сардоба сув омбори":   3,
-			"Хисорак сув омбори":   4,
-			"Топаланг сув омбори":  5,
-			"Чорвок сув омбори":    6,
-		}
-
-		sort.Slice(summaries, func(i, j int) bool {
-			orderI, okI := sortOrder[summaries[i].OrganizationName]
-			orderJ, okJ := sortOrder[summaries[j].OrganizationName]
-
-			// If both have defined order, sort by order
-			if okI && okJ {
-				return orderI < orderJ
-			}
-			// If only i has defined order, i comes first
-			if okI {
-				return true
-			}
-			// If only j has defined order, j comes first
-			if okJ {
-				return false
-			}
-			// If neither has defined order, maintain original order
-			return i < j
-		})
 
 		render.JSON(w, r, summaries)
 	}
