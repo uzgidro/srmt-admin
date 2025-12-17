@@ -3,7 +3,11 @@
 FROM golang:1.24.4-alpine
 
 # Install development dependencies
-RUN apk add --no-cache git make libreoffice
+RUN apk add --no-cache git make libreoffice \
+    font-dejavu font-liberation font-noto \
+    msttcorefonts-installer fontconfig && \
+    update-ms-fonts && \
+    fc-cache -f
 
 # Install Air for live reload (optional)
 RUN go install github.com/air-verse/air@latest

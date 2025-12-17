@@ -38,7 +38,13 @@ FROM alpine:latest
 # ca-certificates - для HTTPS соединений
 # tzdata - для поддержки временных зон
 # libreoffice - для конвертации Excel в PDF
-RUN apk --no-cache add ca-certificates tzdata libreoffice
+# font-dejavu font-liberation font-noto - шрифты с поддержкой кириллицы
+# msttcorefonts-installer - Arial, Times New Roman и другие MS шрифты
+RUN apk --no-cache add ca-certificates tzdata libreoffice \
+    font-dejavu font-liberation font-noto \
+    msttcorefonts-installer fontconfig && \
+    update-ms-fonts && \
+    fc-cache -f
 
 # Создаем непривилегированного пользователя для безопасности
 RUN addgroup -g 1000 appuser && \
