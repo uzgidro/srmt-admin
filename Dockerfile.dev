@@ -3,7 +3,7 @@
 FROM golang:1.24.4-alpine
 
 # Install development dependencies
-RUN apk add --no-cache git make
+RUN apk add --no-cache git make libreoffice
 
 # Install Air for live reload (optional)
 RUN go install github.com/air-verse/air@latest
