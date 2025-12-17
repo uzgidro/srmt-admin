@@ -12,3 +12,5 @@ wire_gen.go
 
 # Keep example configs (no secrets)
 !/config/*.example.yaml
+/template/
+srmt-admin

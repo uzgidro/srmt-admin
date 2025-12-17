@@ -52,9 +52,6 @@ COPY --from=builder /build/srmt-admin .
 # Копируем директорию с миграциями (необходимы для работы)
 COPY --from=builder /build/migrations ./migrations
 
-# Копируем директорию с шаблонами (необходимы для Excel экспорта)
-COPY --from=builder /build/template ./template
-
 # Создаем директорию для конфигов (будут монтироваться через volume)
 RUN mkdir -p /app/config && chown -R appuser:appuser /app
 
