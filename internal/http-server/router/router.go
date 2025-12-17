@@ -68,7 +68,6 @@ import (
 	receptionEdit "srmt-admin/internal/http-server/handlers/reception/edit"
 	receptionGetAll "srmt-admin/internal/http-server/handlers/reception/get-all"
 	receptionGetById "srmt-admin/internal/http-server/handlers/reception/get-by-id"
-	reservoirDataUpsert "srmt-admin/internal/http-server/handlers/reservoir-data/upsert"
 	reservoirdevicesummary "srmt-admin/internal/http-server/handlers/reservoir-device-summary"
 	reservoirsummary "srmt-admin/internal/http-server/handlers/reservoir-summary"
 	resAdd "srmt-admin/internal/http-server/handlers/reservoirs/add"
@@ -129,12 +128,6 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 	router.Post("/auth/sign-in", signIn.New(deps.Log, deps.PgRepo, deps.Token))
 	router.Post("/auth/refresh", refresh.New(deps.Log, deps.PgRepo, deps.Token))
 	router.Post("/auth/sign-out", signOut.New(deps.Log))
-
-	router.Get("/reservoir-summary/excel", reservoirsummary.GetExcel(
-		deps.Log,
-		deps.PgRepo,
-		excelgen.New(deps.ExcelTemplatePath),
-	))
 
 	router.Route("/api/v3", func(r chi.Router) {
 		r.Get("/modsnow", table.Get(deps.Log, deps.MongoRepo))
@@ -278,11 +271,12 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Patch("/reservoir-device", reservoirdevicesummary.Patch(deps.Log, deps.PgRepo))
 
 			r.Get("/reservoir-summary", reservoirsummary.Get(deps.Log, deps.PgRepo))
-			//r.Get("/reservoir-summary/excel", reservoirsummary.GetExcel(
-			//	deps.Log,
-			//	excelgen.New(deps.ExcelTemplatePath),
-			//))
-			r.Post("/reservoir-summary", reservoirDataUpsert.New(deps.Log, deps.PgRepo))
+			router.Get("/reservoir-summary/export", reservoirsummary.GetExport(
+				deps.Log,
+				deps.PgRepo,
+				excelgen.New(deps.ExcelTemplatePath),
+			))
+			r.Post("/reservoir-summary", reservoirsummary.New(deps.Log, deps.PgRepo))
 
 			r.Get("/visits", visit.Get(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
 			r.Post("/visits", visit.Add(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))

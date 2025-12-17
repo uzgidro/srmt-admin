@@ -1,4 +1,4 @@
-package upsert
+package reservoirsummary
 
 import (
 	"context"
