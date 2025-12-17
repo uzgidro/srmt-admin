@@ -10,13 +10,14 @@ import (
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
 	excelgen "srmt-admin/internal/lib/service/excel/reservoir-summary"
+	"srmt-admin/internal/storage/repo"
 
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
 )
 
 // GetExcel returns an HTTP handler for Excel export
-func GetExcel(log *slog.Logger, generator *excelgen.Generator) http.HandlerFunc {
+func GetExcel(log *slog.Logger, pgRepo *repo.Repo, generator *excelgen.Generator) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.reservoirsummary.GetExcel"
 		log := log.With(
@@ -42,8 +43,17 @@ func GetExcel(log *slog.Logger, generator *excelgen.Generator) http.HandlerFunc 
 			return
 		}
 
+		// Fetch reservoir summary data
+		data, err := pgRepo.GetReservoirSummary(r.Context(), dateStr)
+		if err != nil {
+			log.Error("failed to fetch reservoir summary data", sl.Err(err))
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, resp.InternalServerError("Failed to fetch reservoir data"))
+			return
+		}
+
 		// Generate Excel file
-		excelFile, err := generator.GenerateExcel(dateStr)
+		excelFile, err := generator.GenerateExcel(dateStr, data)
 		if err != nil {
 			log.Error("failed to generate Excel file", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)

@@ -132,6 +132,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 
 	router.Get("/reservoir-summary/excel", reservoirsummary.GetExcel(
 		deps.Log,
+		deps.PgRepo,
 		excelgen.New(deps.ExcelTemplatePath),
 	))
 

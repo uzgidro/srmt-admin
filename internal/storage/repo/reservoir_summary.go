@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sort"
 	reservoirsummary "srmt-admin/internal/lib/model/reservoir-summary"
 )
 
@@ -75,6 +76,36 @@ func (r *Repo) GetReservoirSummary(ctx context.Context, date string) ([]*reservo
 	if summaries == nil {
 		summaries = make([]*reservoirsummary.ResponseModel, 0)
 	}
+
+	sortOrder := map[string]int{
+		"Андижон сув омбори":   1,
+		"Охангарон сув омбори": 2,
+		"Сардоба сув омбори":   3,
+		"Хисорак сув омбори":   4,
+		"Топаланг сув омбори":  5,
+		"Чорвок сув омбори":    6,
+		"ИТОГО":                7,
+	}
+
+	sort.Slice(summaries, func(i, j int) bool {
+		orderI, okI := sortOrder[summaries[i].OrganizationName]
+		orderJ, okJ := sortOrder[summaries[j].OrganizationName]
+
+		// If both have defined order, sort by order
+		if okI && okJ {
+			return orderI < orderJ
+		}
+		// If only i has defined order, i comes first
+		if okI {
+			return true
+		}
+		// If only j has defined order, j comes first
+		if okJ {
+			return false
+		}
+		// If neither has defined order, maintain original order
+		return i < j
+	})
 
 	return summaries, nil
 }
