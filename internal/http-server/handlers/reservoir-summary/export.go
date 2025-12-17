@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -16,7 +17,7 @@ import (
 
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
-	"github.com/user0608/excel2pdf"
+	"github.com/xuri/excelize/v2"
 )
 
 // GetExport returns an HTTP handler for Excel/PDF export
@@ -117,7 +118,32 @@ func GetExport(log *slog.Logger, pgRepo *repo.Repo, generator *excelgen.Generato
 			}
 			defer os.RemoveAll(tempDir)
 
-			// Save Excel file temporarily
+			// Add page margins to Excel file for PDF conversion
+			sheet := excelFile.GetSheetName(0)
+			marginTop := 0.75
+			marginBottom := 0.75
+			marginLeft := 0.7
+			marginRight := 0.7
+			marginHeader := 0.3
+			marginFooter := 0.3
+
+			if err := excelFile.SetPageMargins(sheet,
+				&excelize.PageLayoutMarginsOptions{
+					Top:    &marginTop,
+					Bottom: &marginBottom,
+					Left:   &marginLeft,
+					Right:  &marginRight,
+					Header: &marginHeader,
+					Footer: &marginFooter,
+				},
+			); err != nil {
+				log.Error("failed to set page margins", sl.Err(err))
+				render.Status(r, http.StatusInternalServerError)
+				render.JSON(w, r, resp.InternalServerError("Failed to prepare PDF conversion"))
+				return
+			}
+
+			// Save Excel file temporarily with margins
 			excelPath := filepath.Join(tempDir, "reservoir-summary.xlsx")
 			if err := excelFile.SaveAs(excelPath); err != nil {
 				log.Error("failed to save Excel file", sl.Err(err))
@@ -126,10 +152,27 @@ func GetExport(log *slog.Logger, pgRepo *repo.Repo, generator *excelgen.Generato
 				return
 			}
 
-			// Convert Excel to PDF
-			pdfPath, err := excel2pdf.ConvertExcelToPdf(excelPath)
+			// Convert Excel to PDF using LibreOffice with custom page settings
+			pdfPath := filepath.Join(tempDir, "reservoir-summary.pdf")
+
+			// LibreOffice command with PDF export filter options
+			// --headless: run without GUI
+			// --convert-to pdf: convert to PDF format
+			// --outdir: output directory
+			cmd := exec.Command(
+				"soffice",
+				"--headless",
+				"--convert-to", "pdf",
+				"--outdir", tempDir,
+				excelPath,
+			)
+
+			output, err := cmd.CombinedOutput()
 			if err != nil {
-				log.Error("failed to convert Excel to PDF", sl.Err(err))
+				log.Error("failed to convert Excel to PDF",
+					sl.Err(err),
+					slog.String("output", string(output)),
+				)
 				render.Status(r, http.StatusInternalServerError)
 				render.JSON(w, r, resp.InternalServerError("Failed to convert to PDF"))
 				return
