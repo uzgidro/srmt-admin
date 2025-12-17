@@ -37,7 +37,8 @@ FROM alpine:latest
 # Устанавливаем необходимые runtime зависимости
 # ca-certificates - для HTTPS соединений
 # tzdata - для поддержки временных зон
-RUN apk --no-cache add ca-certificates tzdata
+# libreoffice - для конвертации Excel в PDF
+RUN apk --no-cache add ca-certificates tzdata libreoffice
 
 # Создаем непривилегированного пользователя для безопасности
 RUN addgroup -g 1000 appuser && \
