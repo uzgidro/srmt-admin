@@ -121,11 +121,10 @@ func GetExport(log *slog.Logger, pgRepo *repo.Repo, generator *excelgen.Generato
 			// Add page margins to Excel file for PDF conversion
 			sheet := excelFile.GetSheetName(0)
 			marginTop := 0.75
-			marginBottom := 0.75
+			marginBottom := 0.5
 			marginLeft := 0.7
 			marginRight := 0.7
 			marginHeader := 0.3
-			marginFooter := 0.3
 
 			if err := excelFile.SetPageMargins(sheet,
 				&excelize.PageLayoutMarginsOptions{
@@ -134,7 +133,6 @@ func GetExport(log *slog.Logger, pgRepo *repo.Repo, generator *excelgen.Generato
 					Left:   &marginLeft,
 					Right:  &marginRight,
 					Header: &marginHeader,
-					Footer: &marginFooter,
 				},
 			); err != nil {
 				log.Error("failed to set page margins", sl.Err(err))
