@@ -3,6 +3,7 @@ package dto
 import (
 	"context"
 	"srmt-admin/internal/lib/model/contact"
+	"time"
 )
 
 // ReservoirFetcher interface for fetching reservoir metrics
@@ -19,10 +20,12 @@ type ReservoirMetrics struct {
 
 // ReservoirData represents reservoir water data at a specific point in time
 type ReservoirData struct {
-	Income  *float64 `json:"income,omitempty"`  // Water intake (приход)
-	Release *float64 `json:"release,omitempty"` // Water release (расход)
-	Level   *float64 `json:"level,omitempty"`   // Water level (уровень)
-	Volume  *float64 `json:"volume,omitempty"`  // Water volume (объем)
+	Income  *float64   `json:"income,omitempty"`  // Water intake (приход)
+	Release *float64   `json:"release,omitempty"` // Water release (расход)
+	Level   *float64   `json:"level,omitempty"`   // Water level (уровень)
+	Volume  *float64   `json:"volume,omitempty"`  // Water volume (объем)
+	Time    *time.Time `json:"time,omitempty"`    // Timestamp (combined date+time)
+	Weather *string    `json:"weather,omitempty"` // Weather condition
 }
 
 // OrganizationWithReservoir represents an organization with reservoir metrics (flat structure)
