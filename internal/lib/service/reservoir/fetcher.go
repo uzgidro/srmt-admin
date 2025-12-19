@@ -321,9 +321,25 @@ func (f *Fetcher) extractDataWithTimestamp(item *APIResponseItem) *dto.Reservoir
 // calculateMetrics calculates current and diff metrics from the API response
 // For today: Current is taken from the last (newest) element, Diff is calculated as (current - element at time==6)
 // For historical dates: Current is taken from element with time==6 (or last if 6 doesn't exist), Diff is not calculated
+// Returns ReservoirMetrics with 0 values if data is empty or nil
 func (f *Fetcher) calculateMetrics(data *APIResponse, isToday bool) *dto.ReservoirMetrics {
 	if data == nil || len(data.Items) == 0 {
-		return nil
+		// Return metrics with 0 values
+		zero := 0.0
+		return &dto.ReservoirMetrics{
+			Current: &dto.ReservoirData{
+				Income:  &zero,
+				Release: &zero,
+				Level:   &zero,
+				Volume:  &zero,
+			},
+			Diff: &dto.ReservoirData{
+				Income:  &zero,
+				Release: &zero,
+				Level:   &zero,
+				Volume:  &zero,
+			},
+		}
 	}
 
 	metrics := &dto.ReservoirMetrics{}
