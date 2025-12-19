@@ -51,6 +51,7 @@ import (
 	"srmt-admin/internal/http-server/handlers/file/upload"
 	incidents_handler "srmt-admin/internal/http-server/handlers/incidents-handler"
 	setIndicator "srmt-admin/internal/http-server/handlers/indicators/set"
+	levelVolumeGet "srmt-admin/internal/http-server/handlers/level-volume/get"
 	orgTypeAdd "srmt-admin/internal/http-server/handlers/organization-types/add"
 	orgTypeDelete "srmt-admin/internal/http-server/handlers/organization-types/delete"
 	orgTypeGet "srmt-admin/internal/http-server/handlers/organization-types/get"
@@ -268,6 +269,9 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Delete("/shutdowns/{id}", shutdowns.Delete(deps.Log, deps.PgRepo))
 
 			r.Get("/past-events", past_events_handler.Get(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
+
+			// Level Volume
+			r.Get("/level-volume", levelVolumeGet.New(deps.Log, deps.PgRepo))
 
 			r.Get("/reservoir-device", reservoirdevicesummary.Get(deps.Log, deps.PgRepo))
 			r.Patch("/reservoir-device", reservoirdevicesummary.Patch(deps.Log, deps.PgRepo))
