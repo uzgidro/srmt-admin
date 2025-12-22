@@ -8,12 +8,13 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/render"
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/lib/model/file"
 	"srmt-admin/internal/storage"
+
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/render"
 )
 
 type FileGetter interface {
@@ -87,7 +88,7 @@ func New(log *slog.Logger, fileGetter FileGetter, urlGenerator PresignedURLGener
 		}
 
 		// 4. Generate presigned URL for the file
-		expires := 5 * time.Minute
+		expires := 5 * time.Hour
 		presignedURL, err := urlGenerator.GetPresignedURL(r.Context(), fileMeta.ObjectKey, expires)
 		if err != nil {
 			log.Error("failed to generate presigned URL", sl.Err(err), slog.String("object_key", fileMeta.ObjectKey))
