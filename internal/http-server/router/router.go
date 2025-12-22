@@ -47,6 +47,7 @@ import (
 	catGet "srmt-admin/internal/http-server/handlers/file/category/list"
 	fileDelete "srmt-admin/internal/http-server/handlers/file/delete"
 	"srmt-admin/internal/http-server/handlers/file/download"
+	getbycategory "srmt-admin/internal/http-server/handlers/file/get-by-category"
 	"srmt-admin/internal/http-server/handlers/file/latest"
 	"srmt-admin/internal/http-server/handlers/file/upload"
 	incidents_handler "srmt-admin/internal/http-server/handlers/incidents-handler"
@@ -249,6 +250,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 
 			r.Get("/files/latest", latest.New(deps.Log, deps.PgRepo, deps.MinioRepo))
 			r.Get("/files/{fileID}/download", download.New(deps.Log, deps.PgRepo, deps.MinioRepo))
+			r.Get("/files", getbycategory.New(deps.Log, deps.PgRepo, deps.MinioRepo))
 
 			// Discharges (Сбросы)
 			r.Get("/discharges", dischargeGet.New(deps.Log, deps.PgRepo, deps.MinioRepo, loc))

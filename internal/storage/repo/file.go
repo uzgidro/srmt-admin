@@ -12,8 +12,8 @@ import (
 func (r *Repo) AddFile(ctx context.Context, fileData file.Model) (int64, error) {
 	const op = "repo.file.AddFile"
 	const query = `
-		INSERT INTO files(file_name, object_key, category_id, mime_type, size_bytes, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO files(file_name, object_key, category_id, mime_type, size_bytes, created_at, target_date)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id
 	`
 	var id int64
@@ -24,6 +24,7 @@ func (r *Repo) AddFile(ctx context.Context, fileData file.Model) (int64, error) 
 		fileData.MimeType,
 		fileData.SizeBytes,
 		fileData.CreatedAt,
+		fileData.TargetDate,
 	).Scan(&id)
 	if err != nil {
 		return 0, r.translator.Translate(err, op)
@@ -79,7 +80,7 @@ func (r *Repo) GetFileByID(ctx context.Context, id int64) (file.Model, error) {
 	const op = "repo.file.GetFileByID"
 
 	const query = `
-		SELECT id, file_name, object_key, category_id, mime_type, size_bytes, created_at
+		SELECT id, file_name, object_key, category_id, mime_type, size_bytes, created_at, target_date
 		FROM files
 		WHERE id = $1
 	`
@@ -93,6 +94,7 @@ func (r *Repo) GetFileByID(ctx context.Context, id int64) (file.Model, error) {
 		&f.MimeType,
 		&f.SizeBytes,
 		&f.CreatedAt,
+		&f.TargetDate,
 	)
 
 	if err != nil {
@@ -124,4 +126,39 @@ func (r *Repo) DeleteFile(ctx context.Context, id int64) error {
 	}
 
 	return nil
+}
+
+// GetLatestFileByCategoryAndDate retrieves the latest file for a given category name and target date
+func (r *Repo) GetLatestFileByCategoryAndDate(ctx context.Context, categoryName string, targetDate string) (file.Model, error) {
+	const op = "repo.file.GetLatestFileByCategoryAndDate"
+
+	const query = `
+		SELECT f.id, f.file_name, f.object_key, f.category_id, f.mime_type, f.size_bytes, f.created_at, f.target_date
+		FROM files f
+		JOIN categories c ON f.category_id = c.id
+		WHERE c.name = $1 AND f.target_date = $2
+		ORDER BY f.created_at DESC
+		LIMIT 1
+	`
+
+	var f file.Model
+	err := r.db.QueryRowContext(ctx, query, categoryName, targetDate).Scan(
+		&f.ID,
+		&f.FileName,
+		&f.ObjectKey,
+		&f.CategoryID,
+		&f.MimeType,
+		&f.SizeBytes,
+		&f.CreatedAt,
+		&f.TargetDate,
+	)
+
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return file.Model{}, storage.ErrNotFound
+		}
+		return file.Model{}, fmt.Errorf("%s: failed to scan row: %w", op, err)
+	}
+
+	return f, nil
 }

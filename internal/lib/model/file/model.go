@@ -10,4 +10,5 @@ type Model struct {
 	MimeType   string    `json:"mime_type"`
 	SizeBytes  int64     `json:"size_bytes"`
 	CreatedAt  time.Time `json:"created_at"`
+	TargetDate time.Time `json:"target_date"`
 }
