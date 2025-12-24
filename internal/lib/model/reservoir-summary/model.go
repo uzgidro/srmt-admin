@@ -5,6 +5,7 @@ type ValueResponse struct {
 	Previous    float64 `json:"prev"`
 	YearAgo     float64 `json:"year_ago"`
 	TwoYearsAgo float64 `json:"two_years_ago"`
+	IsEdited    *bool   `json:"is_edited,omitempty"`
 }
 
 type ResponseModel struct {

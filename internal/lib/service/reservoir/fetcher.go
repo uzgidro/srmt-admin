@@ -94,6 +94,51 @@ func (f *Fetcher) FetchAll(ctx context.Context, date string) (map[int64]*dto.Res
 	return result, nil
 }
 
+// FetchDataAtDayBegin - Data at 06:00
+func (f *Fetcher) FetchDataAtDayBegin(ctx context.Context, date string) (map[int64]*dto.OrganizationWithData, error) {
+	const op = "reservoir.fetcher.FetchAll"
+
+	result := make(map[int64]*dto.OrganizationWithData)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
+	// Fetch data from each source in parallel
+	for _, source := range f.config.Sources {
+		wg.Add(1)
+		go func(src config.ReservoirSource) {
+			defer wg.Done()
+
+			rawData, err := f.fetchSource(ctx, src.APIID, date)
+			if err != nil {
+				f.log.Error("failed to fetch reservoir data", slog.String("op", op), slog.Int("api_id", src.APIID), slog.Any("error", err))
+				return
+			}
+
+			convertedData := f.convertRawData(rawData)
+
+			dataAtDayBegin := &dto.ReservoirData{}
+			for _, item := range convertedData {
+				if item.Time.Hour() == 6 {
+					dataAtDayBegin = item
+				}
+			}
+
+			finalData := &dto.OrganizationWithData{
+				OrganizationID: src.OrganizationID,
+				ReservoirAPIID: int64(src.APIID),
+				Data:           dataAtDayBegin,
+			}
+
+			mu.Lock()
+			result[finalData.OrganizationID] = finalData
+			mu.Unlock()
+		}(source)
+	}
+
+	wg.Wait()
+	return result, nil
+}
+
 // FetchHourly fetches hourly reservoir data from all configured sources and returns the last 6 hourly data points for each
 func (f *Fetcher) FetchHourly(ctx context.Context, date string) (map[int64][]*dto.ReservoirData, error) {
 	const op = "reservoir.fetcher.FetchHourly"
@@ -198,6 +243,15 @@ func (f *Fetcher) fetchSourceRange(ctx context.Context, apiID int, date string) 
 	return &data, nil
 }
 
+func (f *Fetcher) convertRawData(data *APIResponse) []*dto.ReservoirData {
+	result := make([]*dto.ReservoirData, 0)
+	for _, res := range data.Items {
+		result = append(result, f.extractDataWithTimestamp(&res))
+	}
+
+	return result
+}
+
 // filterHourlyData filters API response data and returns the last 6 hourly data points
 func (f *Fetcher) filterHourlyData(data *APIResponse, givenDate string) []*dto.ReservoirData {
 	if data == nil || len(data.Items) == 0 {
@@ -286,6 +340,9 @@ func (f *Fetcher) extractDataWithTimestamp(item *APIResponseItem) *dto.Reservoir
 			data.Income = &income
 		}
 	}
+
+	reservoirAPIID := int64(item.IDWater)
+	data.ReservoirAPIID = &reservoirAPIID
 
 	// Release (to_out)
 	release := item.ToOut
