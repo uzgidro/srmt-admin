@@ -278,7 +278,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Get("/reservoir-device", reservoirdevicesummary.Get(deps.Log, deps.PgRepo))
 			r.Patch("/reservoir-device", reservoirdevicesummary.Patch(deps.Log, deps.PgRepo))
 
-			r.Get("/reservoir-summary", reservoirsummary.Get(deps.Log, deps.PgRepo))
+			r.Get("/reservoir-summary", reservoirsummary.Get(deps.Log, deps.PgRepo, deps.ReservoirFetcher))
 			router.Get("/reservoir-summary/export", reservoirsummary.GetExport(
 				deps.Log,
 				deps.PgRepo,

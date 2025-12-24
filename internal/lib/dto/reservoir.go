@@ -20,12 +20,13 @@ type ReservoirMetrics struct {
 
 // ReservoirData represents reservoir water data at a specific point in time
 type ReservoirData struct {
-	Income  *float64   `json:"income,omitempty"`  // Water intake (приход)
-	Release *float64   `json:"release,omitempty"` // Water release (расход)
-	Level   *float64   `json:"level,omitempty"`   // Water level (уровень)
-	Volume  *float64   `json:"volume,omitempty"`  // Water volume (объем)
-	Time    *time.Time `json:"time,omitempty"`    // Timestamp (combined date+time)
-	Weather *string    `json:"weather,omitempty"` // Weather condition
+	ReservoirAPIID *int64     `json:"reservoir_api_id,omitempty"`
+	Income         *float64   `json:"income,omitempty"`  // Water intake (приход)
+	Release        *float64   `json:"release,omitempty"` // Water release (расход)
+	Level          *float64   `json:"level,omitempty"`   // Water level (уровень)
+	Volume         *float64   `json:"volume,omitempty"`  // Water volume (объем)
+	Time           *time.Time `json:"time,omitempty"`    // Timestamp (combined date+time)
+	Weather        *string    `json:"weather,omitempty"` // Weather condition
 }
 
 // OrganizationWithReservoir represents an organization with reservoir metrics (flat structure)
@@ -35,4 +36,10 @@ type OrganizationWithReservoir struct {
 	Contacts         []*contact.Model  `json:"contacts"`
 	CurrentDischarge float64           `json:"current_discharge"` // Current water discharge in m³/s (ongoing or end_date > now), 0 if none
 	ReservoirMetrics *ReservoirMetrics `json:"reservoir_metrics,omitempty"`
+}
+
+type OrganizationWithData struct {
+	OrganizationID int64          `json:"organization_id"`
+	ReservoirAPIID int64          `json:"reservoir_api_id"`
+	Data           *ReservoirData `json:"data,omitempty"`
 }
