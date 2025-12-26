@@ -26,15 +26,18 @@ func (r *Repo) UpsertReservoirData(ctx context.Context, data []reservoirdata.Res
 	const query = `
 		INSERT INTO reservoir_data (
 			organization_id, date, income_m3_s, release_m3_s, level_m, volume_mln_m3,
+			total_income_volume_mln_m3, total_income_volume_prev_year_mln_m3,
 			created_by_user_id, updated_by_user_id, created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $7, NOW(), NOW())
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9, NOW(), NOW())
 		ON CONFLICT (organization_id, date)
 		DO UPDATE SET
 			income_m3_s = EXCLUDED.income_m3_s,
 			release_m3_s = EXCLUDED.release_m3_s,
 			level_m = EXCLUDED.level_m,
 			volume_mln_m3 = EXCLUDED.volume_mln_m3,
+			total_income_volume_mln_m3 = EXCLUDED.total_income_volume_mln_m3,
+			total_income_volume_prev_year_mln_m3 = EXCLUDED.total_income_volume_prev_year_mln_m3,
 			updated_by_user_id = EXCLUDED.updated_by_user_id,
 			updated_at = NOW()
 	`
@@ -62,6 +65,8 @@ func (r *Repo) UpsertReservoirData(ctx context.Context, data []reservoirdata.Res
 			item.Release,
 			item.Level,
 			item.Volume,
+			item.TotalIncomeVolume,
+			item.TotalIncomeVolumePrevYear,
 			userID,
 		)
 		if err != nil {
