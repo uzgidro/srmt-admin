@@ -18,6 +18,8 @@ type ResponseModel struct {
 	Release ValueResponse `json:"release"`
 	Modsnow ValueResponse `json:"modsnow"`
 
-	IncomingVolume         float64 `json:"incoming_volume"`
-	IncomingVolumePrevYear float64 `json:"incoming_volume_prev_year"`
+	IncomingVolume                     float64 `json:"incoming_volume"`
+	IncomingVolumePrevYear             float64 `json:"incoming_volume_prev_year"`
+	IncomingVolumeIsCalculated         bool    `json:"incoming_volume_is_calculated"`
+	IncomingVolumePrevYearIsCalculated bool    `json:"incoming_volume_prev_year_is_calculated"`
 }

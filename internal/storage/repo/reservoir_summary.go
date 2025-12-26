@@ -28,6 +28,30 @@ func (r *Repo) GetReservoirSummary(ctx context.Context, date string) ([]*reservo
 			return nil, fmt.Errorf("%s: failed to scan reservoir summary row: %w", op, err)
 		}
 
+		// Determine final incoming volume values and IsCalculated flags
+		var incomingVolume float64
+		var incomingVolumeIsCalculated bool
+		var incomingVolumePrevYear float64
+		var incomingVolumePrevYearIsCalculated bool
+
+		// Current year logic: use stored value only if not nil AND not 0
+		if summaryRaw.StoredIncomingVolume != nil && *summaryRaw.StoredIncomingVolume != 0 {
+			incomingVolume = *summaryRaw.StoredIncomingVolume
+			incomingVolumeIsCalculated = false
+		} else {
+			incomingVolume = summaryRaw.IncomingVolumeMlnM3
+			incomingVolumeIsCalculated = true
+		}
+
+		// Previous year logic: use stored value only if not nil AND not 0
+		if summaryRaw.StoredIncomingVolumePrevYear != nil && *summaryRaw.StoredIncomingVolumePrevYear != 0 {
+			incomingVolumePrevYear = *summaryRaw.StoredIncomingVolumePrevYear
+			incomingVolumePrevYearIsCalculated = false
+		} else {
+			incomingVolumePrevYear = summaryRaw.IncomingVolumeMlnM3PrevYear
+			incomingVolumePrevYearIsCalculated = true
+		}
+
 		summary := &reservoirsummary.ResponseModel{
 			OrganizationID:   summaryRaw.OrganizationID,
 			OrganizationName: summaryRaw.OrganizationName,
@@ -61,8 +85,10 @@ func (r *Repo) GetReservoirSummary(ctx context.Context, date string) ([]*reservo
 				YearAgo:     summaryRaw.ModsnowYearAgo,
 				TwoYearsAgo: 0,
 			},
-			IncomingVolume:         summaryRaw.IncomingVolumeMlnM3,
-			IncomingVolumePrevYear: summaryRaw.IncomingVolumeMlnM3PrevYear,
+			IncomingVolume:                     incomingVolume,
+			IncomingVolumePrevYear:             incomingVolumePrevYear,
+			IncomingVolumeIsCalculated:         incomingVolumeIsCalculated,
+			IncomingVolumePrevYearIsCalculated: incomingVolumePrevYearIsCalculated,
 		}
 
 		summaries = append(summaries, summary)
@@ -116,6 +142,8 @@ func scanReservoirSummaryRow(scanner interface {
 }) (*reservoirsummary.ResponseModelRaw, error) {
 	var m reservoirsummary.ResponseModelRaw
 	var orgID sql.NullInt64
+	var storedIncomingVolume sql.NullFloat64
+	var storedIncomingVolumePrevYear sql.NullFloat64
 
 	err := scanner.Scan(
 		&orgID,
@@ -138,6 +166,8 @@ func scanReservoirSummaryRow(scanner interface {
 		&m.ReleaseTwoYearsAgo,
 		&m.ModsnowCurrent,
 		&m.ModsnowYearAgo,
+		&storedIncomingVolume,
+		&storedIncomingVolumePrevYear,
 		&m.IncomingVolumeMlnM3,
 		&m.IncomingVolumeMlnM3PrevYear,
 	)
@@ -148,6 +178,14 @@ func scanReservoirSummaryRow(scanner interface {
 	// Handle nullable organization_id (NULL for summary row)
 	if orgID.Valid {
 		m.OrganizationID = &orgID.Int64
+	}
+
+	// Handle stored values (convert sql.NullFloat64 to *float64)
+	if storedIncomingVolume.Valid {
+		m.StoredIncomingVolume = &storedIncomingVolume.Float64
+	}
+	if storedIncomingVolumePrevYear.Valid {
+		m.StoredIncomingVolumePrevYear = &storedIncomingVolumePrevYear.Float64
 	}
 
 	return &m, nil
@@ -257,6 +295,16 @@ incoming_volume AS (
         ) AS incoming_volume_mln_m3_prev_year
     FROM org_data rd
     CROSS JOIN date_params dp
+),
+stored_income_volume AS (
+    SELECT
+        rd.organization_id,
+        MAX(rd.total_income_volume_mln_m3) FILTER (WHERE rd.date = dp.target_date) AS stored_total_income_volume,
+        MAX(rd.total_income_volume_prev_year_mln_m3) FILTER (WHERE rd.date = dp.year_ago_date) AS stored_total_income_volume_prev_year
+    FROM reservoir_data rd
+    CROSS JOIN date_params dp
+    WHERE rd.date IN (dp.target_date, dp.year_ago_date)
+    GROUP BY rd.organization_id
 )
 SELECT
     od.organization_id,
@@ -279,6 +327,23 @@ SELECT
     COALESCE(reld.release_two_years_ago, 0) AS release_two_years_ago,
     COALESCE(md.modsnow_current, 0) AS modsnow_current,
     COALESCE(md.modsnow_year_ago, 0) AS modsnow_year_ago,
+    -- Stored values (NULL if not set or not a reservoir organization)
+    CASE
+        WHEN EXISTS (
+            SELECT 1 FROM organization_type_links otl
+            WHERE otl.organization_id = od.organization_id
+            AND otl.type_id = 8
+        ) THEN siv.stored_total_income_volume
+        ELSE NULL
+    END AS stored_incoming_volume,
+    CASE
+        WHEN EXISTS (
+            SELECT 1 FROM organization_type_links otl
+            WHERE otl.organization_id = od.organization_id
+            AND otl.type_id = 8
+        ) THEN siv.stored_total_income_volume_prev_year
+        ELSE NULL
+    END AS stored_incoming_volume_prev_year,
     -- Set incoming_volume to 0 for non-reservoir organizations (not linked to organization_type 8)
     CASE
         WHEN EXISTS (
@@ -304,6 +369,7 @@ LEFT JOIN income_data id ON od.organization_id = id.organization_id
 LEFT JOIN release_data reld ON od.organization_id = reld.organization_id
 LEFT JOIN modsnow_data md ON od.organization_id = md.organization_id
 LEFT JOIN incoming_volume iv ON od.organization_id = iv.organization_id
+LEFT JOIN stored_income_volume siv ON od.organization_id = siv.organization_id
 
 UNION ALL
 
@@ -385,6 +451,8 @@ SELECT
         WHERE otl.organization_id = od.organization_id
         AND otl.type_id = 8
     ) THEN COALESCE(md.modsnow_year_ago, 0) ELSE 0 END), 0) AS modsnow_year_ago,
+    NULL AS stored_incoming_volume,
+    NULL AS stored_incoming_volume_prev_year,
     COALESCE(SUM(CASE WHEN EXISTS (
         SELECT 1 FROM organization_type_links otl
         WHERE otl.organization_id = od.organization_id
