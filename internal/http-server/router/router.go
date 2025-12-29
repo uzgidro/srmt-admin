@@ -52,6 +52,7 @@ import (
 	"srmt-admin/internal/http-server/handlers/file/upload"
 	incidents_handler "srmt-admin/internal/http-server/handlers/incidents-handler"
 	setIndicator "srmt-admin/internal/http-server/handlers/indicators/set"
+	"srmt-admin/internal/http-server/handlers/investments"
 	levelVolumeGet "srmt-admin/internal/http-server/handlers/level-volume/get"
 	orgTypeAdd "srmt-admin/internal/http-server/handlers/organization-types/add"
 	orgTypeDelete "srmt-admin/internal/http-server/handlers/organization-types/delete"
@@ -290,6 +291,18 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Post("/visits", visit.Add(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
 			r.Patch("/visits/{id}", visit.Edit(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
 			r.Delete("/visits/{id}", visit.Delete(deps.Log, deps.PgRepo))
+		})
+
+		r.Group(func(r chi.Router) {
+			r.Use(mwauth.RequireAnyRole("invest", "rais"))
+
+			// Investment routes
+			r.Get("/investments", investments.GetAll(deps.Log, deps.PgRepo, deps.MinioRepo))
+			r.Get("/investments/statuses", investments.GetStatuses(deps.Log, deps.PgRepo))
+			r.Get("/investments/{id}", investments.GetByID(deps.Log, deps.PgRepo, deps.MinioRepo))
+			r.Post("/investments", investments.Add(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
+			r.Patch("/investments/{id}", investments.Edit(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
+			r.Delete("/investments/{id}", investments.Delete(deps.Log, deps.PgRepo))
 		})
 
 		r.Group(func(r chi.Router) {
