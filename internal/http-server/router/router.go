@@ -294,7 +294,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 		})
 
 		r.Group(func(r chi.Router) {
-			r.Use(mwauth.RequireAnyRole("invest", "rais"))
+			r.Use(mwauth.RequireAnyRole("investment", "rais"))
 
 			// Investment routes
 			r.Get("/investments", investments.GetAll(deps.Log, deps.PgRepo, deps.MinioRepo))
