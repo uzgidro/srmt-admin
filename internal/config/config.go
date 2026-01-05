@@ -22,6 +22,7 @@ type Config struct {
 	Minio          `yaml:"minio"`
 	Upload         `yaml:"upload"`
 	Weather        `yaml:"weather"`
+	NewsRetriever  `yaml:"news_retriever"`
 }
 
 type HttpServer struct {
@@ -61,6 +62,10 @@ type Upload struct {
 type Weather struct {
 	BaseURL string `yaml:"base_url" env-required:"true"`
 	APIKey  string `yaml:"api_key" env-required:"true"`
+}
+
+type NewsRetriever struct {
+	BaseURL string `yaml:"base_url" env-required:"true"`
 }
 
 func MustLoad() *Config {

@@ -50,10 +50,11 @@ import (
 	getbycategory "srmt-admin/internal/http-server/handlers/file/get-by-category"
 	"srmt-admin/internal/http-server/handlers/file/latest"
 	"srmt-admin/internal/http-server/handlers/file/upload"
-	incidents_handler "srmt-admin/internal/http-server/handlers/incidents-handler"
+	incidentsHandler "srmt-admin/internal/http-server/handlers/incidents-handler"
 	setIndicator "srmt-admin/internal/http-server/handlers/indicators/set"
 	"srmt-admin/internal/http-server/handlers/investments"
 	levelVolumeGet "srmt-admin/internal/http-server/handlers/level-volume/get"
+	"srmt-admin/internal/http-server/handlers/news"
 	orgTypeAdd "srmt-admin/internal/http-server/handlers/organization-types/add"
 	orgTypeDelete "srmt-admin/internal/http-server/handlers/organization-types/delete"
 	orgTypeGet "srmt-admin/internal/http-server/handlers/organization-types/get"
@@ -62,7 +63,7 @@ import (
 	orgPatch "srmt-admin/internal/http-server/handlers/organizations/edit"
 	orgGet "srmt-admin/internal/http-server/handlers/organizations/get"
 	orgGetFlat "srmt-admin/internal/http-server/handlers/organizations/get-flat"
-	past_events_handler "srmt-admin/internal/http-server/handlers/past-events-handler"
+	pastEventsHandler "srmt-admin/internal/http-server/handlers/past-events-handler"
 	positionsAdd "srmt-admin/internal/http-server/handlers/positions/add"
 	positionsDelete "srmt-admin/internal/http-server/handlers/positions/delete"
 	positionsGet "srmt-admin/internal/http-server/handlers/positions/get"
@@ -167,6 +168,9 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 
 		r.Get("/auth/me", me.New(deps.Log))
 
+		// News
+		r.Get("/news", news.New(deps.Log, deps.HTTPClient, deps.Config.NewsRetriever.BaseURL))
+
 		r.Get("/organization-type", orgTypeGet.New(deps.Log, deps.PgRepo))
 		r.Post("/organization-type", orgTypeAdd.New(deps.Log, deps.PgRepo))
 		r.Delete("/organization-type/{id}", orgTypeDelete.New(deps.Log, deps.PgRepo))
@@ -261,17 +265,17 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Patch("/discharges/{id}", dischargePatch.New(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
 			r.Delete("/discharges/{id}", dischargeDelete.New(deps.Log, deps.PgRepo))
 
-			r.Get("/incidents", incidents_handler.Get(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
-			r.Post("/incidents", incidents_handler.Add(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
-			r.Patch("/incidents/{id}", incidents_handler.Edit(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
-			r.Delete("/incidents/{id}", incidents_handler.Delete(deps.Log, deps.PgRepo))
+			r.Get("/incidents", incidentsHandler.Get(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
+			r.Post("/incidents", incidentsHandler.Add(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
+			r.Patch("/incidents/{id}", incidentsHandler.Edit(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
+			r.Delete("/incidents/{id}", incidentsHandler.Delete(deps.Log, deps.PgRepo))
 
 			r.Get("/shutdowns", shutdowns.Get(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
 			r.Post("/shutdowns", shutdowns.Add(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
 			r.Patch("/shutdowns/{id}", shutdowns.Edit(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
 			r.Delete("/shutdowns/{id}", shutdowns.Delete(deps.Log, deps.PgRepo))
 
-			r.Get("/past-events", past_events_handler.Get(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
+			r.Get("/past-events", pastEventsHandler.Get(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
 
 			// Level Volume
 			r.Get("/level-volume", levelVolumeGet.New(deps.Log, deps.PgRepo))
