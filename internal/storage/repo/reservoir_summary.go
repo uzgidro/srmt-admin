@@ -274,7 +274,7 @@ incoming_volume AS (
                  FROM reservoir_data rd2
                  WHERE rd2.organization_id = rd.organization_id
                    AND rd2.date >= dp.year_start
-                   AND rd2.date < dp.target_date)
+                   AND rd2.date <= dp.target_date)
                 * 0.0864,
                 0
             ),
@@ -287,7 +287,7 @@ incoming_volume AS (
                  FROM reservoir_data rd2
                  WHERE rd2.organization_id = rd.organization_id
                    AND rd2.date >= dp.prev_year_start
-                   AND rd2.date < dp.year_ago_date)
+                   AND rd2.date <= dp.year_ago_date)
                 * 0.0864,
                 0
             ),
