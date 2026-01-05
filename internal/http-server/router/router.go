@@ -337,6 +337,5 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Patch("/fast-calls/{id}", fastCallEdit.New(deps.Log, deps.PgRepo))
 			r.Delete("/fast-calls/{id}", fastCallDelete.New(deps.Log, deps.PgRepo))
 		})
-
 	})
 }
