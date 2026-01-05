@@ -127,7 +127,6 @@ type AppDependencies struct {
 }
 
 func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
-	// Get the configured timezone location
 	loc := deps.Location
 
 	router.Post("/auth/sign-in", signIn.New(deps.Log, deps.PgRepo, deps.Token))
