@@ -502,18 +502,18 @@ func (r *Repo) GetCascadesWithDetails(ctx context.Context, ascueFetcher dto.ASCU
 		}
 	}
 
-	// Get current discharges for all organizations
+	// Get current discharges for all organizations (only last added active discharge)
 	const dischargeQuery = `
-		SELECT
+		SELECT DISTINCT ON (d.organization_id)
 			d.organization_id,
-			SUM(d.flow_rate_m3_s) as total_flow_rate
+			d.flow_rate_m3_s as total_flow_rate
 		FROM
 			idle_water_discharges d
 		WHERE
 			d.organization_id = ANY($1)
 			AND d.start_time <= NOW()
 			AND (d.end_time > NOW() OR d.end_time IS NULL)
-		GROUP BY d.organization_id;
+		ORDER BY d.organization_id, d.id DESC;
 	`
 
 	if len(orgIDs) > 0 {
@@ -749,18 +749,18 @@ func (r *Repo) GetOrganizationsWithReservoir(ctx context.Context, orgIDs []int64
 		return nil, fmt.Errorf("%s: contact rows iteration error: %w", op, err)
 	}
 
-	// Get current discharges for all organizations (for the specified date)
+	// Get current discharges for all organizations (for the specified date - only last added active discharge)
 	const dischargeQuery = `
-		SELECT
+		SELECT DISTINCT ON (d.organization_id)
 			d.organization_id,
-			SUM(d.flow_rate_m3_s) as total_flow_rate
+			d.flow_rate_m3_s as total_flow_rate
 		FROM
 			idle_water_discharges d
 		WHERE
 			d.organization_id = ANY($1)
 			AND d.start_time <= $2::date
 			AND (d.end_time > $2::date OR d.end_time IS NULL)
-		GROUP BY d.organization_id;
+		ORDER BY d.organization_id, d.id DESC;
 	`
 
 	if len(orgIDs) > 0 {
