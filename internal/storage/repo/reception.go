@@ -21,14 +21,14 @@ func (r *Repo) AddReception(ctx context.Context, req dto.AddReceptionRequest) (i
 
 	const query = `
 		INSERT INTO receptions (
-			name, date, description, visitor, created_by_user_id
+			name, date, description, visitor, together, created_by_user_id
 		)
-		VALUES ($1, $2, $3, $4, $5)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id`
 
 	var id int64
 	err := r.db.QueryRowContext(ctx, query,
-		req.Name, req.Date, req.Description, req.Visitor, req.CreatedByID,
+		req.Name, req.Date, req.Description, req.Visitor, req.Together, req.CreatedByID,
 	).Scan(&id)
 
 	if err != nil {
@@ -46,7 +46,7 @@ func (r *Repo) AddReception(ctx context.Context, req dto.AddReceptionRequest) (i
 const (
 	selectReceptionFields = `
 		SELECT
-			r.id, r.name, r.date, r.description, r.visitor, r.status, r.status_change_reason,
+			r.id, r.name, r.date, r.description, r.visitor, r.together, r.status, r.status_change_reason,
 			r.informed, r.informed_by_user_id,
 			r.created_at, r.updated_at, r.created_by_user_id, r.updated_by_user_id,
 
@@ -80,6 +80,7 @@ func scanReceptionRow(scanner interface {
 	var rec reception.Model
 	var (
 		description        sql.NullString
+		together           sql.NullString
 		statusChangeReason sql.NullString
 		updatedAt          sql.NullTime
 		updatedByUserID    sql.NullInt64
@@ -111,7 +112,7 @@ func scanReceptionRow(scanner interface {
 	)
 
 	err := scanner.Scan(
-		&rec.ID, &rec.Name, &rec.Date, &description, &rec.Visitor, &rec.Status, &statusChangeReason,
+		&rec.ID, &rec.Name, &rec.Date, &description, &rec.Visitor, &together, &rec.Status, &statusChangeReason,
 		&rec.Informed, &informedByUserID,
 		&rec.CreatedAt, &updatedAt, &rec.CreatedByID, &updatedByUserID,
 
@@ -132,6 +133,9 @@ func scanReceptionRow(scanner interface {
 	// Handle nullable fields
 	if description.Valid {
 		rec.Description = &description.String
+	}
+	if together.Valid {
+		rec.Together = &together.String
 	}
 	if statusChangeReason.Valid {
 		rec.StatusChangeReason = &statusChangeReason.String
@@ -314,6 +318,12 @@ func (r *Repo) EditReception(ctx context.Context, receptionID int64, req dto.Edi
 	if req.Visitor != nil {
 		updates = append(updates, fmt.Sprintf("visitor = $%d", argID))
 		args = append(args, *req.Visitor)
+		argID++
+	}
+
+	if req.Together != nil {
+		updates = append(updates, fmt.Sprintf("together = $%d", argID))
+		args = append(args, *req.Together)
 		argID++
 	}
 

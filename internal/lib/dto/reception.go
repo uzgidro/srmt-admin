@@ -14,6 +14,7 @@ type GetAllReceptionsFilters struct {
 // AddReceptionRequest - DTO for creating a reception
 type AddReceptionRequest struct {
 	Name        string
+	Together    *string
 	Date        time.Time
 	Description *string
 	Visitor     string
@@ -23,6 +24,7 @@ type AddReceptionRequest struct {
 // EditReceptionRequest - DTO for updating a reception
 type EditReceptionRequest struct {
 	Name               *string
+	Together           *string
 	Date               *time.Time
 	Description        *string
 	Visitor            *string

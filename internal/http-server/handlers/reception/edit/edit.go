@@ -20,8 +20,10 @@ import (
 )
 
 // Request - JSON DTO for editing a reception
+
 type editRequest struct {
 	Name               *string    `json:"name,omitempty"`
+	Together           *string    `json:"together,omitempty"`
 	Date               *time.Time `json:"date,omitempty"`
 	Description        *string    `json:"description,omitempty"`
 	Visitor            *string    `json:"visitor,omitempty"`
@@ -102,6 +104,7 @@ func New(log *slog.Logger, editor receptionEditor) http.HandlerFunc {
 		// Build storage request
 		storageReq := dto.EditReceptionRequest{
 			Name:               req.Name,
+			Together:           req.Together,
 			Date:               req.Date,
 			Description:        req.Description,
 			Visitor:            req.Visitor,
@@ -124,55 +127,6 @@ func New(log *slog.Logger, editor receptionEditor) http.HandlerFunc {
 				render.JSON(w, r, resp.BadRequest("Reception must be processed (approved/rejected) before being marked as informed"))
 				return
 			}
-
-			// Do not update the 'informed' boolean itself based on user input,
-			// just set the user ID. The repository update logic or business logic implies
-			// setting it to true if we pass it, but the instruction says "don't change informed".
-			// Wait, the instruction says: "if informed=true comes from front - take this user's id from token, do not change informed"
-			// This likely means "do not change the 'informed' boolean field in the database solely based on the request body if it was already true, OR simply force it to be true/false based on logic?"
-			// Re-reading: "если с фронта приходит informed=true - бери id этого пользователя из токена, не меняй informed"
-			// This is slightly ambiguous. "Don't change informed" could mean:
-			// 1. Don't let the user manually set the boolean value (it's a side effect of the action).
-			// 2. Or, literally don't update the `informed` column. But that defeats the purpose of the flag.
-			//
-			// Context: "Informed" usually means "User X has read/acknowledged this".
-			// If front sends `informed: true`, it means the current user is acknowledging it.
-			// So we SHOULD set `informed = true` and `informed_by_user_id = userID`.
-			// The "don't change informed" might mean "don't let the frontend dictate the value arbitrarily" or "don't toggle it off if it's on".
-			// Given the instruction "if informed=true ... take id from token", I will assume we are setting the acknowledgment.
-			// If the instruction "ne menyay informed" means "do not update the 'informed' column", then we only update the ID.
-			// However, usually `informed` boolean and `informed_by` go together.
-			// Let's look at the migration: `informed BOOLEAN DEFAULT FALSE`.
-			// If I only set `informed_by_user_id`, `informed` stays false? That seems wrong.
-			//
-			// Interpretation: "if front sends informed=true, set informed_by_user_id = current_user.id. Also set informed=true (implied by the action)."
-			// BUT the strict instruction "не меняй informed" (don't change informed).
-			// Maybe it means "don't allow changing it to false"? Or maybe "only update the ID"?
-			// Let's assume the safest path: If `informed=true` is sent, we update `InformedByUserID` to the current user.
-			// And we likely SHOULD update `Informed` to true as well to match the state.
-			//
-			// Wait, "не меняй informed" might be a typo for "меняй informed" (change informed) or it refers to something else.
-			// Let's look at the context: "if informed=true -> take ID from token".
-			// If I strictly follow "don't change informed", I will not include `Informed: true` in the repo request.
-			// But that would leave `informed` as false in DB.
-			//
-			// Let's re-read carefully: "если с фронта приходит informed=true - бери id этого пользователя из токена, не меняй informed"
-			// Use case: Admin reviews (Status -> True/False). Then User sees it and clicks "OK" (Informed -> True).
-			// If "ne menyay informed" means "don't let the payload override it directly", but we handle it via logic.
-			//
-			// PROPOSED LOGIC:
-			// If req.Informed == true:
-			//    Set storageReq.Informed = true
-			//    Set storageReq.InformedByUserID = userID
-			//
-			// IF "ne menyay informed" means "do not allow the user to set 'informed' to false if it's true", or "ignore the boolean value from payload for direct assignment".
-			//
-			// Let's assume the standard "Ack" pattern:
-			// Frontend sends `informed: true`.
-			// Backend checks logic (status != default).
-			// Backend sets `informed = true` and `informed_by = user`.
-			//
-			// I will proceed with updating both, as `informed_by` without `informed=true` is inconsistent.
 
 			valTrue := true
 			storageReq.Informed = &valTrue
