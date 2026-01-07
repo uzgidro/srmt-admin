@@ -52,6 +52,7 @@ import (
 	"srmt-admin/internal/http-server/handlers/file/upload"
 	incidentsHandler "srmt-admin/internal/http-server/handlers/incidents-handler"
 	setIndicator "srmt-admin/internal/http-server/handlers/indicators/set"
+	investActiveProjects "srmt-admin/internal/http-server/handlers/invest-active-projects"
 	"srmt-admin/internal/http-server/handlers/investments"
 	levelVolumeGet "srmt-admin/internal/http-server/handlers/level-volume/get"
 	"srmt-admin/internal/http-server/handlers/news"
@@ -306,6 +307,13 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Post("/investments", investments.Add(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
 			r.Patch("/investments/{id}", investments.Edit(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
 			r.Delete("/investments/{id}", investments.Delete(deps.Log, deps.PgRepo))
+
+			// Invest Active Projects
+			r.Get("/invest-active-projects", investActiveProjects.GetAll(deps.Log, deps.PgRepo))
+			r.Get("/invest-active-projects/{id}", investActiveProjects.GetByID(deps.Log, deps.PgRepo))
+			r.Post("/invest-active-projects", investActiveProjects.Add(deps.Log, deps.PgRepo))
+			r.Patch("/invest-active-projects/{id}", investActiveProjects.Edit(deps.Log, deps.PgRepo))
+			r.Delete("/invest-active-projects/{id}", investActiveProjects.Delete(deps.Log, deps.PgRepo))
 		})
 
 		r.Group(func(r chi.Router) {
