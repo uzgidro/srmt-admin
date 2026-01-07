@@ -339,8 +339,8 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 				r.Get("/receptions/{id}", receptionGetById.New(deps.Log, deps.PgRepo))
 				r.Post("/receptions", receptionAdd.New(deps.Log, deps.PgRepo))
 				r.Patch("/receptions/{id}", receptionEdit.New(deps.Log, deps.PgRepo))
+				r.Delete("/receptions/{id}", receptionDelete.New(deps.Log, deps.PgRepo))
 			})
-			r.Delete("/receptions/{id}", receptionDelete.New(deps.Log, deps.PgRepo))
 
 			// Fast Calls
 			r.Get("/fast-calls", fastCallGetAll.New(deps.Log, deps.PgRepo))
