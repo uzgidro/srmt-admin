@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"srmt-admin/internal/lib/dto"
+	"srmt-admin/internal/lib/model/contact"
 	"srmt-admin/internal/lib/model/reception"
 	"srmt-admin/internal/lib/model/user"
 	"srmt-admin/internal/storage"
@@ -45,12 +46,21 @@ func (r *Repo) AddReception(ctx context.Context, req dto.AddReceptionRequest) (i
 const (
 	selectReceptionFields = `
 		SELECT
-			r.id, r.name, r.date, r.description, r.visitor, r.status,
+			r.id, r.name, r.date, r.description, r.visitor, r.status, r.status_change_reason,
+			r.informed, r.informed_by_user_id,
 			r.created_at, r.updated_at, r.created_by_user_id, r.updated_by_user_id,
 
-			cu.id as created_user_id, cu_contact.fio as created_username,
+			cu.id as created_user_id, cu.login as created_login,
+			cu_contact.id as created_contact_id, cu_contact.fio as created_contact_fio,
+			cu_contact.phone as created_contact_phone, cu_contact.email as created_contact_email,
 
-			uu.id as updated_user_id, uu_contact.fio as updated_username
+			uu.id as updated_user_id, uu.login as updated_login,
+			uu_contact.id as updated_contact_id, uu_contact.fio as updated_contact_fio,
+			uu_contact.phone as updated_contact_phone, uu_contact.email as updated_contact_email,
+
+			iu.id as informed_user_id, iu.login as informed_login,
+			iu_contact.id as informed_contact_id, iu_contact.fio as informed_contact_fio,
+			iu_contact.phone as informed_contact_phone, iu_contact.email as informed_contact_email
 	`
 	fromReceptionJoins = `
 		FROM receptions r
@@ -58,6 +68,8 @@ const (
 		LEFT JOIN contacts cu_contact ON cu.contact_id = cu_contact.id
 		LEFT JOIN users uu ON r.updated_by_user_id = uu.id
 		LEFT JOIN contacts uu_contact ON uu.contact_id = uu_contact.id
+		LEFT JOIN users iu ON r.informed_by_user_id = iu.id
+		LEFT JOIN contacts iu_contact ON iu.contact_id = iu_contact.id
 	`
 )
 
@@ -67,20 +79,50 @@ func scanReceptionRow(scanner interface {
 }) (*reception.Model, error) {
 	var rec reception.Model
 	var (
-		description     sql.NullString
-		updatedAt       sql.NullTime
-		updatedByUserID sql.NullInt64
-		createdUserID   sql.NullInt64
-		createdUsername sql.NullString
-		updatedUserID   sql.NullInt64
-		updatedUsername sql.NullString
+		description        sql.NullString
+		statusChangeReason sql.NullString
+		updatedAt          sql.NullTime
+		updatedByUserID    sql.NullInt64
+		informedByUserID   sql.NullInt64
+
+		// Created User fields
+		createdUserID       sql.NullInt64
+		createdLogin        sql.NullString
+		createdContactID    sql.NullInt64
+		createdContactFIO   sql.NullString
+		createdContactPhone sql.NullString
+		createdContactEmail sql.NullString
+
+		// Updated User fields
+		updatedUserID       sql.NullInt64
+		updatedLogin        sql.NullString
+		updatedContactID    sql.NullInt64
+		updatedContactFIO   sql.NullString
+		updatedContactPhone sql.NullString
+		updatedContactEmail sql.NullString
+
+		// Informed User fields
+		informedUserID       sql.NullInt64
+		informedLogin        sql.NullString
+		informedContactID    sql.NullInt64
+		informedContactFIO   sql.NullString
+		informedContactPhone sql.NullString
+		informedContactEmail sql.NullString
 	)
 
 	err := scanner.Scan(
-		&rec.ID, &rec.Name, &rec.Date, &description, &rec.Visitor, &rec.Status,
+		&rec.ID, &rec.Name, &rec.Date, &description, &rec.Visitor, &rec.Status, &statusChangeReason,
+		&rec.Informed, &informedByUserID,
 		&rec.CreatedAt, &updatedAt, &rec.CreatedByID, &updatedByUserID,
-		&createdUserID, &createdUsername,
-		&updatedUserID, &updatedUsername,
+
+		&createdUserID, &createdLogin,
+		&createdContactID, &createdContactFIO, &createdContactPhone, &createdContactEmail,
+
+		&updatedUserID, &updatedLogin,
+		&updatedContactID, &updatedContactFIO, &updatedContactPhone, &updatedContactEmail,
+
+		&informedUserID, &informedLogin,
+		&informedContactID, &informedContactFIO, &informedContactPhone, &informedContactEmail,
 	)
 
 	if err != nil {
@@ -91,26 +133,72 @@ func scanReceptionRow(scanner interface {
 	if description.Valid {
 		rec.Description = &description.String
 	}
+	if statusChangeReason.Valid {
+		rec.StatusChangeReason = &statusChangeReason.String
+	}
 	if updatedAt.Valid {
 		rec.UpdatedAt = &updatedAt.Time
 	}
 	if updatedByUserID.Valid {
 		rec.UpdatedByID = &updatedByUserID.Int64
 	}
-
-	// Build nested user models
-	if createdUserID.Valid && createdUsername.Valid {
-		rec.CreatedBy = &user.Model{
-			ID:    createdUserID.Int64,
-			Login: createdUsername.String,
-		}
+	if informedByUserID.Valid {
+		rec.InformedByUserID = &informedByUserID.Int64
 	}
 
-	if updatedUserID.Valid && updatedUsername.Valid {
-		rec.UpdatedBy = &user.Model{
-			ID:    updatedUserID.Int64,
-			Login: updatedUsername.String,
+	// Helper to build user model with contact
+	buildUser := func(id int64, login, contactFIO, contactPhone, contactEmail string, contactID int64) *user.Model {
+		u := &user.Model{
+			ID:    id,
+			Login: login,
 		}
+		if contactID != 0 {
+			u.Contact = &contact.Model{
+				ID:   contactID,
+				Name: contactFIO,
+			}
+			if contactPhone != "" {
+				u.Contact.Phone = &contactPhone
+			}
+			if contactEmail != "" {
+				u.Contact.Email = &contactEmail
+			}
+		}
+		return u
+	}
+
+	// Build nested user models
+	if createdUserID.Valid {
+		rec.CreatedBy = buildUser(
+			createdUserID.Int64,
+			createdLogin.String,
+			createdContactFIO.String,
+			createdContactPhone.String,
+			createdContactEmail.String,
+			createdContactID.Int64,
+		)
+	}
+
+	if updatedUserID.Valid {
+		rec.UpdatedBy = buildUser(
+			updatedUserID.Int64,
+			updatedLogin.String,
+			updatedContactFIO.String,
+			updatedContactPhone.String,
+			updatedContactEmail.String,
+			updatedContactID.Int64,
+		)
+	}
+
+	if informedUserID.Valid {
+		rec.InformedBy = buildUser(
+			informedUserID.Int64,
+			informedLogin.String,
+			informedContactFIO.String,
+			informedContactPhone.String,
+			informedContactEmail.String,
+			informedContactID.Int64,
+		)
 	}
 
 	return &rec, nil
@@ -232,6 +320,24 @@ func (r *Repo) EditReception(ctx context.Context, receptionID int64, req dto.Edi
 	if req.Status != nil {
 		updates = append(updates, fmt.Sprintf("status = $%d", argID))
 		args = append(args, *req.Status)
+		argID++
+	}
+
+	if req.StatusChangeReason != nil {
+		updates = append(updates, fmt.Sprintf("status_change_reason = $%d", argID))
+		args = append(args, *req.StatusChangeReason)
+		argID++
+	}
+
+	if req.Informed != nil {
+		updates = append(updates, fmt.Sprintf("informed = $%d", argID))
+		args = append(args, *req.Informed)
+		argID++
+	}
+
+	if req.InformedByUserID != nil {
+		updates = append(updates, fmt.Sprintf("informed_by_user_id = $%d", argID))
+		args = append(args, *req.InformedByUserID)
 		argID++
 	}
 
