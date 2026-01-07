@@ -22,10 +22,13 @@ type AddReceptionRequest struct {
 
 // EditReceptionRequest - DTO for updating a reception
 type EditReceptionRequest struct {
-	Name        *string
-	Date        *time.Time
-	Description *string
-	Visitor     *string
-	Status      *string // "default", "true", or "false"
-	UpdatedByID int64   // Required: who is making this update
+	Name               *string
+	Date               *time.Time
+	Description        *string
+	Visitor            *string
+	Status             *string // "default", "true", or "false"
+	StatusChangeReason *string
+	Informed           *bool
+	InformedByUserID   *int64
+	UpdatedByID        int64 // Required: who is making this update
 }

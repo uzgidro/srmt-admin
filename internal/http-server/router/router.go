@@ -332,10 +332,14 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Delete("/events/{id}", eventDelete.New(deps.Log, deps.PgRepo))
 
 			// Receptions
-			r.Get("/receptions", receptionGetAll.New(deps.Log, deps.PgRepo, loc))
-			r.Get("/receptions/{id}", receptionGetById.New(deps.Log, deps.PgRepo))
-			r.Post("/receptions", receptionAdd.New(deps.Log, deps.PgRepo))
-			r.Patch("/receptions/{id}", receptionEdit.New(deps.Log, deps.PgRepo))
+			r.Group(func(r chi.Router) {
+				r.Use(mwauth.RequireAnyRole("sc"))
+
+				r.Get("/receptions", receptionGetAll.New(deps.Log, deps.PgRepo, loc))
+				r.Get("/receptions/{id}", receptionGetById.New(deps.Log, deps.PgRepo))
+				r.Post("/receptions", receptionAdd.New(deps.Log, deps.PgRepo))
+				r.Patch("/receptions/{id}", receptionEdit.New(deps.Log, deps.PgRepo))
+			})
 			r.Delete("/receptions/{id}", receptionDelete.New(deps.Log, deps.PgRepo))
 
 			// Fast Calls
