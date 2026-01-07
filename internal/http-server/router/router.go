@@ -333,7 +333,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 
 			// Receptions
 			r.Group(func(r chi.Router) {
-				r.Use(mwauth.RequireAnyRole("sc"))
+				r.Use(mwauth.RequireAnyRole("sc", "assistant", "rais"))
 
 				r.Get("/receptions", receptionGetAll.New(deps.Log, deps.PgRepo, loc))
 				r.Get("/receptions/{id}", receptionGetById.New(deps.Log, deps.PgRepo))

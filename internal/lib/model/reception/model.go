@@ -11,10 +11,11 @@ type Model struct {
 	Date               time.Time `json:"date"`
 	Description        *string   `json:"description,omitempty"`
 	Visitor            string    `json:"visitor"`
+	Together           *string   `json:"together,omitempty"`
 	Status             string    `json:"status"` // "default", "true", "false"
 	StatusChangeReason *string   `json:"status_change_reason,omitempty"`
 	Informed           bool      `json:"informed"`
-	InformedByUserID   *int64    `json:"informed_by_user_id,omitempty"`
+	InformedByUserID   *int64    `json:"informed_by_id,omitempty"`
 
 	// Audit fields
 	CreatedAt   time.Time  `json:"created_at"`

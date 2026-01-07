@@ -19,6 +19,7 @@ import (
 // Request (JSON DTO)
 type addRequest struct {
 	Name        string    `json:"name" validate:"required"`
+	Together    *string   `json:"together,omitempty"`
 	Date        time.Time `json:"date" validate:"required"`
 	Description *string   `json:"description,omitempty"`
 	Visitor     string    `json:"visitor" validate:"required"`
@@ -67,6 +68,7 @@ func New(log *slog.Logger, adder receptionAdder) http.HandlerFunc {
 		// Create reception
 		receptionReq := dto.AddReceptionRequest{
 			Name:        req.Name,
+			Together:    req.Together,
 			Date:        req.Date,
 			Description: req.Description,
 			Visitor:     req.Visitor,
