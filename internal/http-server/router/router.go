@@ -331,23 +331,23 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Patch("/events/{id}", eventEdit.New(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
 			r.Delete("/events/{id}", eventDelete.New(deps.Log, deps.PgRepo))
 
-			// Receptions
-			r.Group(func(r chi.Router) {
-				r.Use(mwauth.RequireAnyRole("sc", "assistant", "rais"))
-
-				r.Get("/receptions", receptionGetAll.New(deps.Log, deps.PgRepo, loc))
-				r.Get("/receptions/{id}", receptionGetById.New(deps.Log, deps.PgRepo))
-				r.Post("/receptions", receptionAdd.New(deps.Log, deps.PgRepo))
-				r.Patch("/receptions/{id}", receptionEdit.New(deps.Log, deps.PgRepo))
-				r.Delete("/receptions/{id}", receptionDelete.New(deps.Log, deps.PgRepo))
-			})
-
 			// Fast Calls
 			r.Get("/fast-calls", fastCallGetAll.New(deps.Log, deps.PgRepo))
 			r.Get("/fast-calls/{id}", fastCallGetById.New(deps.Log, deps.PgRepo))
 			r.Post("/fast-calls", fastCallAdd.New(deps.Log, deps.PgRepo))
 			r.Patch("/fast-calls/{id}", fastCallEdit.New(deps.Log, deps.PgRepo))
 			r.Delete("/fast-calls/{id}", fastCallDelete.New(deps.Log, deps.PgRepo))
+		})
+
+		// Receptions
+		r.Group(func(r chi.Router) {
+			r.Use(mwauth.RequireAnyRole("sc", "assistant", "rais"))
+
+			r.Get("/receptions", receptionGetAll.New(deps.Log, deps.PgRepo, loc))
+			r.Get("/receptions/{id}", receptionGetById.New(deps.Log, deps.PgRepo))
+			r.Post("/receptions", receptionAdd.New(deps.Log, deps.PgRepo))
+			r.Patch("/receptions/{id}", receptionEdit.New(deps.Log, deps.PgRepo))
+			r.Delete("/receptions/{id}", receptionDelete.New(deps.Log, deps.PgRepo))
 		})
 	})
 }
