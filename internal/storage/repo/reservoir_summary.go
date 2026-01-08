@@ -89,6 +89,10 @@ func (r *Repo) GetReservoirSummary(ctx context.Context, date string) ([]*reservo
 			IncomingVolumePrevYear:             incomingVolumePrevYear,
 			IncomingVolumeIsCalculated:         incomingVolumeIsCalculated,
 			IncomingVolumePrevYearIsCalculated: incomingVolumePrevYearIsCalculated,
+			IncomingVolumeBaseDate:             summaryRaw.IncomingVolumeBaseDate,
+			IncomingVolumeBaseValue:            summaryRaw.IncomingVolumeBaseValue,
+			IncomingVolumePrevYearBaseDate:     summaryRaw.IncomingVolumePrevYearBaseDate,
+			IncomingVolumePrevYearBaseValue:    summaryRaw.IncomingVolumePrevYearBaseValue,
 		}
 
 		summaries = append(summaries, summary)
@@ -170,6 +174,10 @@ func scanReservoirSummaryRow(scanner interface {
 		&storedIncomingVolumePrevYear,
 		&m.IncomingVolumeMlnM3,
 		&m.IncomingVolumeMlnM3PrevYear,
+		&m.IncomingVolumeBaseDate,
+		&m.IncomingVolumeBaseValue,
+		&m.IncomingVolumePrevYearBaseDate,
+		&m.IncomingVolumePrevYearBaseValue,
 	)
 	if err != nil {
 		return nil, err
@@ -268,33 +276,75 @@ modsnow_data AS (
 incoming_volume AS (
     SELECT
         rd.organization_id,
-        ROUND(
-            COALESCE(
-                (SELECT SUM(rd2.income_m3_s)
-                 FROM reservoir_data rd2
-                 WHERE rd2.organization_id = rd.organization_id
-                   AND rd2.date >= dp.year_start
-                   AND rd2.date <= dp.target_date)
-                * 0.0864,
-                0
-            ),
-            2
-        ) AS incoming_volume_mln_m3_current_year,
 
+        -- Current Year Calculation
+        base_curr.date::text AS base_date_curr,
+        base_curr.total_income_volume_mln_m3 AS base_val_curr,
         ROUND(
-            COALESCE(
-                (SELECT SUM(rd2.income_m3_s)
-                 FROM reservoir_data rd2
-                 WHERE rd2.organization_id = rd.organization_id
-                   AND rd2.date >= dp.prev_year_start
-                   AND rd2.date <= dp.year_ago_date)
-                * 0.0864,
-                0
-            ),
-            2
-        ) AS incoming_volume_mln_m3_prev_year
+            CASE
+                WHEN base_curr.date IS NOT NULL THEN
+                    base_curr.total_income_volume_mln_m3 +
+                    (SELECT COALESCE(SUM(inc.income_m3_s), 0) * 0.0864
+                     FROM reservoir_data inc
+                     WHERE inc.organization_id = rd.organization_id
+                       AND inc.date > base_curr.date
+                       AND inc.date <= dp.target_date)
+                ELSE
+                    (SELECT COALESCE(SUM(inc.income_m3_s), 0) * 0.0864
+                     FROM reservoir_data inc
+                     WHERE inc.organization_id = rd.organization_id
+                       AND inc.date >= dp.year_start
+                       AND inc.date <= dp.target_date)
+            END,
+        2) AS incoming_volume_mln_m3_current_year,
+
+        -- Previous Year Calculation
+        base_prev.date::text AS base_date_prev,
+        base_prev.total_income_volume_mln_m3 AS base_val_prev,
+        ROUND(
+            CASE
+                WHEN base_prev.date IS NOT NULL THEN
+                    base_prev.total_income_volume_mln_m3 +
+                    (SELECT COALESCE(SUM(inc.income_m3_s), 0) * 0.0864
+                     FROM reservoir_data inc
+                     WHERE inc.organization_id = rd.organization_id
+                       AND inc.date > base_prev.date
+                       AND inc.date <= dp.year_ago_date)
+                ELSE
+                    (SELECT COALESCE(SUM(inc.income_m3_s), 0) * 0.0864
+                     FROM reservoir_data inc
+                     WHERE inc.organization_id = rd.organization_id
+                       AND inc.date >= dp.prev_year_start
+                       AND inc.date <= dp.year_ago_date)
+            END,
+        2) AS incoming_volume_mln_m3_prev_year
+
     FROM org_data rd
     CROSS JOIN date_params dp
+    -- Find latest stored value for current year
+    LEFT JOIN LATERAL (
+        SELECT date, total_income_volume_mln_m3
+        FROM reservoir_data b
+        WHERE b.organization_id = rd.organization_id
+          AND b.date >= dp.year_start
+          AND b.date <= dp.target_date
+          AND b.total_income_volume_mln_m3 IS NOT NULL
+          AND b.total_income_volume_mln_m3 > 0
+        ORDER BY b.date DESC
+        LIMIT 1
+    ) base_curr ON TRUE
+    -- Find latest stored value for previous year
+    LEFT JOIN LATERAL (
+        SELECT date, total_income_volume_mln_m3
+        FROM reservoir_data b
+        WHERE b.organization_id = rd.organization_id
+          AND b.date >= dp.prev_year_start
+          AND b.date <= dp.year_ago_date
+          AND b.total_income_volume_mln_m3 IS NOT NULL
+          AND b.total_income_volume_mln_m3 > 0
+        ORDER BY b.date DESC
+        LIMIT 1
+    ) base_prev ON TRUE
 ),
 stored_income_volume AS (
     SELECT
@@ -344,7 +394,7 @@ SELECT
         ) THEN siv.stored_total_income_volume_prev_year
         ELSE NULL
     END AS stored_incoming_volume_prev_year,
-    -- Set incoming_volume to 0 for non-reservoir organizations (not linked to organization_type 8)
+    -- Set incoming_volume to 0 for non-reservoir organizations
     CASE
         WHEN EXISTS (
             SELECT 1 FROM organization_type_links otl
@@ -360,7 +410,41 @@ SELECT
             AND otl.type_id = 8
         ) THEN COALESCE(iv.incoming_volume_mln_m3_prev_year, 0)
         ELSE 0
-    END AS incoming_volume_mln_m3_prev_year
+    END AS incoming_volume_mln_m3_prev_year,
+    -- Calculation Base Details (New Fields)
+    CASE
+        WHEN EXISTS (
+            SELECT 1 FROM organization_type_links otl
+            WHERE otl.organization_id = od.organization_id
+            AND otl.type_id = 8
+        ) THEN iv.base_date_curr
+        ELSE NULL
+    END AS base_date_curr,
+    CASE
+        WHEN EXISTS (
+            SELECT 1 FROM organization_type_links otl
+            WHERE otl.organization_id = od.organization_id
+            AND otl.type_id = 8
+        ) THEN iv.base_val_curr
+        ELSE NULL
+    END AS base_val_curr,
+    CASE
+        WHEN EXISTS (
+            SELECT 1 FROM organization_type_links otl
+            WHERE otl.organization_id = od.organization_id
+            AND otl.type_id = 8
+        ) THEN iv.base_date_prev
+        ELSE NULL
+    END AS base_date_prev,
+    CASE
+        WHEN EXISTS (
+            SELECT 1 FROM organization_type_links otl
+            WHERE otl.organization_id = od.organization_id
+            AND otl.type_id = 8
+        ) THEN iv.base_val_prev
+        ELSE NULL
+    END AS base_val_prev
+
 FROM org_data od
 LEFT JOIN organizations o ON od.organization_id = o.id
 LEFT JOIN level_data ld ON od.organization_id = ld.organization_id
@@ -462,7 +546,11 @@ SELECT
         SELECT 1 FROM organization_type_links otl
         WHERE otl.organization_id = od.organization_id
         AND otl.type_id = 8
-    ) THEN COALESCE(iv.incoming_volume_mln_m3_prev_year, 0) ELSE 0 END), 0) AS incoming_volume_mln_m3_prev_year
+    ) THEN COALESCE(iv.incoming_volume_mln_m3_prev_year, 0) ELSE 0 END), 0) AS incoming_volume_mln_m3_prev_year,
+    NULL AS base_date_curr,
+    NULL AS base_val_curr,
+    NULL AS base_date_prev,
+    NULL AS base_val_prev
 FROM org_data od
 LEFT JOIN organizations o ON od.organization_id = o.id
 LEFT JOIN level_data ld ON od.organization_id = ld.organization_id

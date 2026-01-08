@@ -22,4 +22,10 @@ type ResponseModel struct {
 	IncomingVolumePrevYear             float64 `json:"incoming_volume_prev_year"`
 	IncomingVolumeIsCalculated         bool    `json:"incoming_volume_is_calculated"`
 	IncomingVolumePrevYearIsCalculated bool    `json:"incoming_volume_prev_year_is_calculated"`
+
+	// Details about incremental calculation base (if used)
+	IncomingVolumeBaseDate          *string  `json:"incoming_volume_base_date,omitempty"`
+	IncomingVolumeBaseValue         *float64 `json:"incoming_volume_base_value,omitempty"`
+	IncomingVolumePrevYearBaseDate  *string  `json:"incoming_volume_prev_year_base_date,omitempty"`
+	IncomingVolumePrevYearBaseValue *float64 `json:"incoming_volume_prev_year_base_value,omitempty"`
 }
