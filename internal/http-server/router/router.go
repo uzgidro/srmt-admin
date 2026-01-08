@@ -17,6 +17,7 @@ import (
 	orgGetCascades "srmt-admin/internal/http-server/handlers/dashboard/get-cascades"
 	dashboardGetReservoir "srmt-admin/internal/http-server/handlers/dashboard/get-reservoir"
 	dashboardGetReservoirHourly "srmt-admin/internal/http-server/handlers/dashboard/get-reservoir-hourly"
+	"srmt-admin/internal/http-server/handlers/dashboard/production"
 	"srmt-admin/internal/http-server/handlers/data/analytics"
 	dataSet "srmt-admin/internal/http-server/handlers/data/set"
 	departmentAdd "srmt-admin/internal/http-server/handlers/department/add"
@@ -81,6 +82,7 @@ import (
 	roleDelete "srmt-admin/internal/http-server/handlers/role/delete"
 	roleEdit "srmt-admin/internal/http-server/handlers/role/edit"
 	roleGet "srmt-admin/internal/http-server/handlers/role/get"
+	gessummary "srmt-admin/internal/http-server/handlers/sc/callback/ges-summary"
 	callbackModsnow "srmt-admin/internal/http-server/handlers/sc/callback/modsnow"
 	callbackStock "srmt-admin/internal/http-server/handlers/sc/callback/stock"
 	"srmt-admin/internal/http-server/handlers/sc/dc"
@@ -159,6 +161,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 
 		r.Post("/sc/stock", callbackStock.New(deps.Log, deps.MongoRepo))
 		r.Post("/sc/modsnow", callbackModsnow.New(deps.Log, deps.MongoRepo))
+		r.Post("/sc/ges/summary", gessummary.New(deps.Log, deps.PgRepo))
 		r.Post("/data/{id}", dataSet.New(deps.Log, deps.PgRepo))
 	})
 
@@ -199,6 +202,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 		r.Get("/dashboard/reservoir", dashboardGetReservoir.New(deps.Log, deps.PgRepo, deps.ReservoirFetcher))
 		r.Get("/dashboard/reservoir-hourly", dashboardGetReservoirHourly.New(deps.Log, deps.ReservoirFetcher))
 		r.Get("/dashboard/cascades", orgGetCascades.New(deps.Log, deps.PgRepo, deps.ASCUEFetcher))
+		r.Get("/dashboard/production", production.New(deps.Log, deps.PgRepo))
 
 		// Admin routes
 		r.Group(func(r chi.Router) {
@@ -237,7 +241,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Post("/upload/stock", stock.Upload(deps.Log, deps.HTTPClient, deps.Config.Upload.Stock))
 			r.Post("/upload/modsnow", table.Upload(deps.Log, deps.HTTPClient, deps.Config.Upload.Modsnow))
 			r.Post("/upload/archive", modsnowImg.Upload(deps.Log, deps.HTTPClient, deps.Config.Upload.Archive))
-			r.Post("/upload/files", upload.New(deps.Log, deps.MinioRepo, deps.PgRepo))
+			r.Post("/upload/files", upload.New(deps.Log, deps.MinioRepo, deps.PgRepo, deps.Config.PrimeParser.URL, deps.Config.ApiKey))
 
 			// Reservoirs
 			r.Post("/reservoirs", resAdd.New(deps.Log, deps.PgRepo))
