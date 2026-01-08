@@ -36,8 +36,8 @@ func (r *Repo) UpsertReservoirData(ctx context.Context, data []reservoirdata.Res
 			release_m3_s = EXCLUDED.release_m3_s,
 			level_m = EXCLUDED.level_m,
 			volume_mln_m3 = EXCLUDED.volume_mln_m3,
-			total_income_volume_mln_m3 = EXCLUDED.total_income_volume_mln_m3,
-			total_income_volume_prev_year_mln_m3 = EXCLUDED.total_income_volume_prev_year_mln_m3,
+			total_income_volume_mln_m3 = CASE WHEN $10::boolean THEN EXCLUDED.total_income_volume_mln_m3 ELSE reservoir_data.total_income_volume_mln_m3 END,
+			total_income_volume_prev_year_mln_m3 = CASE WHEN $11::boolean THEN EXCLUDED.total_income_volume_prev_year_mln_m3 ELSE reservoir_data.total_income_volume_prev_year_mln_m3 END,
 			updated_by_user_id = EXCLUDED.updated_by_user_id,
 			updated_at = NOW()
 	`
@@ -65,9 +65,11 @@ func (r *Repo) UpsertReservoirData(ctx context.Context, data []reservoirdata.Res
 			item.Release,
 			item.Level,
 			item.Volume,
-			item.TotalIncomeVolume,
-			item.TotalIncomeVolumePrevYear,
+			item.TotalIncomeVolume.Value,
+			item.TotalIncomeVolumePrevYear.Value,
 			userID,
+			item.TotalIncomeVolume.Set,
+			item.TotalIncomeVolumePrevYear.Set,
 		)
 		if err != nil {
 			if translatedErr := r.translator.Translate(err, op); translatedErr != nil {

@@ -38,6 +38,12 @@ type ResponseModelRaw struct {
 	IncomingVolumeMlnM3         float64 `json:"incoming_volume_mln_m3"`
 	IncomingVolumeMlnM3PrevYear float64 `json:"incoming_volume_mln_m3_prev_year"`
 
+	// Calculation base details (from SQL)
+	IncomingVolumeBaseDate          *string  `json:"-"`
+	IncomingVolumeBaseValue         *float64 `json:"-"`
+	IncomingVolumePrevYearBaseDate  *string  `json:"-"`
+	IncomingVolumePrevYearBaseValue *float64 `json:"-"`
+
 	// Stored manual values from DB (NULL in DB will be scanned as nil via sql.NullFloat64)
 	StoredIncomingVolume         *float64 `json:"stored_incoming_volume,omitempty"`
 	StoredIncomingVolumePrevYear *float64 `json:"stored_incoming_volume_prev_year,omitempty"`
