@@ -1,13 +1,12 @@
 package upload
 
 import (
+	"bytes"
 	"context"
 	"fmt"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/render"
-	"github.com/google/uuid"
 	"io"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"path/filepath"
 	resp "srmt-admin/internal/lib/api/response"
@@ -16,6 +15,10 @@ import (
 	"srmt-admin/internal/lib/model/file"
 	"strconv"
 	"time"
+
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/render"
+	"github.com/google/uuid"
 )
 
 type FileUploader interface {
@@ -31,7 +34,7 @@ type FileMetaSaver interface {
 
 // New создает новый HTTP-хендлер для загрузки файлов.
 // bucketName - это название бакета в MinIO, куда будут загружаться файлы.
-func New(log *slog.Logger, uploader FileUploader, saver FileMetaSaver) http.HandlerFunc {
+func New(log *slog.Logger, uploader FileUploader, saver FileMetaSaver, parserURL, apiKey string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.file.upload.New"
 		log := log.With(
@@ -145,6 +148,51 @@ func New(log *slog.Logger, uploader FileUploader, saver FileMetaSaver) http.Hand
 		}
 
 		log.Info("file uploaded successfully", slog.Int64("id", fileID), slog.String("object_key", objectKey))
+
+		// 7. Если категория "production", отправляем файл в prime-parser
+		if cat.Name == "production" {
+			// Сбрасываем указатель чтения в начало, так как файл уже был прочитан при загрузке в MinIO
+			if _, err := formFile.Seek(0, 0); err != nil {
+				log.Error("failed to seek file for parser upload", sl.Err(err))
+			} else {
+				body := &bytes.Buffer{}
+				writer := multipart.NewWriter(body)
+				part, err := writer.CreateFormFile("file", handler.Filename)
+				if err != nil {
+					log.Error("failed to create multipart writer", sl.Err(err))
+				} else {
+					if _, err := io.Copy(part, formFile); err != nil {
+						log.Error("failed to copy file to multipart writer", sl.Err(err))
+					} else {
+						writer.Close()
+
+						req, err := http.NewRequestWithContext(r.Context(), "POST", parserURL, body)
+						if err != nil {
+							log.Error("failed to create request for parser", sl.Err(err))
+						} else {
+							req.Header.Set("Content-Type", writer.FormDataContentType())
+							req.Header.Set("X-API-Key", apiKey)
+
+							client := &http.Client{Timeout: 30 * time.Second}
+							respParser, err := client.Do(req)
+							if err != nil {
+								log.Error("failed to send file to parser", sl.Err(err))
+							} else {
+								defer respParser.Body.Close()
+								if respParser.StatusCode != http.StatusAccepted {
+									log.Warn("parser returned unexpected status",
+										slog.Int("status", respParser.StatusCode),
+										slog.String("parser_url", parserURL),
+									)
+								} else {
+									log.Info("file successfully sent to parser", slog.String("parser_url", parserURL))
+								}
+							}
+						}
+					}
+				}
+			}
+		}
 
 		render.JSON(w, r, resp.Created())
 	}
