@@ -22,6 +22,7 @@ import (
 
 type addRequest struct {
 	Name     string  `json:"name" validate:"required"`
+	TypeID   int     `json:"type_id" validate:"required,min=1"`
 	StatusID int     `json:"status_id" validate:"required,min=1"`
 	Cost     float64 `json:"cost" validate:"gte=0"`
 	Comments *string `json:"comments,omitempty"`
@@ -106,6 +107,7 @@ func Add(log *slog.Logger, adder investmentAdder, uploader fileupload.FileUpload
 		// Create DTO for storage
 		storageReq := dto.AddInvestmentRequest{
 			Name:     req.Name,
+			TypeID:   req.TypeID,
 			StatusID: req.StatusID,
 			Cost:     req.Cost,
 			Comments: req.Comments,
@@ -179,6 +181,13 @@ func parseMultipartAddRequest(
 		return addRequest{}, nil, err
 	}
 
+	// Parse type_id (required)
+	typeIDInt64, err := formparser.GetFormInt64Required(r, "type_id")
+	if err != nil {
+		return addRequest{}, nil, fmt.Errorf("invalid or missing type_id: %w", err)
+	}
+	typeID := int(typeIDInt64)
+
 	// Parse status_id (required)
 	statusIDInt64, err := formparser.GetFormInt64Required(r, "status_id")
 	if err != nil {
@@ -202,6 +211,7 @@ func parseMultipartAddRequest(
 	// Create request object
 	req := addRequest{
 		Name:     name,
+		TypeID:   typeID,
 		StatusID: statusID,
 		Cost:     *cost,
 		Comments: comments,
