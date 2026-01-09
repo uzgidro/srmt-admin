@@ -4,7 +4,7 @@
 -- Step 1: Create investment_type table
 CREATE TABLE IF NOT EXISTS investment_type (
     id SERIAL PRIMARY KEY,
-    name VARCHAR(100) NOT NULL UNIQUE,
+    name TEXT NOT NULL UNIQUE,
     description TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -20,6 +20,7 @@ ON CONFLICT (name) DO NOTHING;
 ALTER TABLE investment_status ADD COLUMN IF NOT EXISTS type_id INTEGER;
 ALTER TABLE investment_status ADD COLUMN IF NOT EXISTS display_order INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE investment_status ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE investment_status ALTER COLUMN name TYPE TEXT;
 
 -- Step 3: Add foreign key constraint
 ALTER TABLE investment_status ADD CONSTRAINT fk_investment_status_type
