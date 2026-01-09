@@ -1,6 +1,7 @@
 package dto
 
 type GetAllInvestmentsFilters struct {
+	TypeID          *int     `json:"type_id,omitempty"`
 	StatusID        *int     `json:"status_id,omitempty"`
 	MinCost         *float64 `json:"min_cost,omitempty"`
 	MaxCost         *float64 `json:"max_cost,omitempty"`
@@ -11,6 +12,7 @@ type GetAllInvestmentsFilters struct {
 // AddInvestmentRequest is the DTO for creating an investment
 type AddInvestmentRequest struct {
 	Name     string  `json:"name"`
+	TypeID   int     `json:"type_id"`
 	StatusID int     `json:"status_id"`
 	Cost     float64 `json:"cost"`
 	Comments *string `json:"comments,omitempty"`
@@ -21,6 +23,7 @@ type AddInvestmentRequest struct {
 // All fields are pointers (optional) - only provided fields will be updated
 type EditInvestmentRequest struct {
 	Name     *string  `json:"name,omitempty"`
+	TypeID   *int     `json:"type_id,omitempty"`
 	StatusID *int     `json:"status_id,omitempty"`
 	Cost     *float64 `json:"cost,omitempty"`
 	Comments *string  `json:"comments,omitempty"`

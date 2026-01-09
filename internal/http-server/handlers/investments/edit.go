@@ -22,6 +22,7 @@ import (
 
 type editRequest struct {
 	Name     *string  `json:"name,omitempty"`
+	TypeID   *int     `json:"type_id,omitempty"`
 	StatusID *int     `json:"status_id,omitempty"`
 	Cost     *float64 `json:"cost,omitempty"`
 	Comments *string  `json:"comments,omitempty"`
@@ -101,6 +102,7 @@ func Edit(log *slog.Logger, editor investmentEditor, uploader fileupload.FileUpl
 		// Build storage request
 		storageReq := dto.EditInvestmentRequest{
 			Name:     req.Name,
+			TypeID:   req.TypeID,
 			StatusID: req.StatusID,
 			Cost:     req.Cost,
 			Comments: req.Comments,
@@ -178,6 +180,16 @@ func parseMultipartEditRequest(
 	// Parse optional fields
 	name := formparser.GetFormString(r, "name")
 
+	var typeID *int
+	typeIDInt64, err := formparser.GetFormInt64(r, "type_id")
+	if err != nil {
+		return editRequest{}, nil, fmt.Errorf("invalid type_id: %w", err)
+	}
+	if typeIDInt64 != nil {
+		typeIDInt := int(*typeIDInt64)
+		typeID = &typeIDInt
+	}
+
 	var statusID *int
 	statusIDInt64, err := formparser.GetFormInt64(r, "status_id")
 	if err != nil {
@@ -198,6 +210,7 @@ func parseMultipartEditRequest(
 	// Create request object
 	req := editRequest{
 		Name:     name,
+		TypeID:   typeID,
 		StatusID: statusID,
 		Cost:     cost,
 		Comments: comments,

@@ -4,6 +4,7 @@ import (
 	"srmt-admin/internal/lib/dto"
 	"srmt-admin/internal/lib/model/file"
 	investment_status "srmt-admin/internal/lib/model/investment-status"
+	investment_type "srmt-admin/internal/lib/model/investment-type"
 	"srmt-admin/internal/lib/model/user"
 	"time"
 )
@@ -12,6 +13,7 @@ import (
 type Model struct {
 	ID              int64      `json:"id"`
 	Name            string     `json:"name"`
+	TypeID          int        `json:"type_id"`
 	StatusID        int        `json:"status_id"`
 	Cost            float64    `json:"cost"`
 	Comments        *string    `json:"comments,omitempty"`
@@ -24,6 +26,7 @@ type Model struct {
 type ResponseModel struct {
 	ID            int64                   `json:"id"`
 	Name          string                  `json:"name"`
+	Type          investment_type.Model   `json:"type"`
 	Status        investment_status.Model `json:"status"`
 	Cost          float64                 `json:"cost"`
 	Comments      *string                 `json:"comments,omitempty"`
@@ -37,6 +40,7 @@ type ResponseModel struct {
 type ResponseWithURLs struct {
 	ID            int64                   `json:"id"`
 	Name          string                  `json:"name"`
+	Type          investment_type.Model   `json:"type"`
 	Status        investment_status.Model `json:"status"`
 	Cost          float64                 `json:"cost"`
 	Comments      *string                 `json:"comments,omitempty"`

@@ -306,11 +306,22 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 
 			// Investment routes
 			r.Get("/investments", investments.GetAll(deps.Log, deps.PgRepo, deps.MinioRepo))
-			r.Get("/investments/statuses", investments.GetStatuses(deps.Log, deps.PgRepo))
 			r.Get("/investments/{id}", investments.GetByID(deps.Log, deps.PgRepo, deps.MinioRepo))
 			r.Post("/investments", investments.Add(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
 			r.Patch("/investments/{id}", investments.Edit(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
 			r.Delete("/investments/{id}", investments.Delete(deps.Log, deps.PgRepo))
+
+			// Investment types routes
+			r.Get("/investments/types", investments.GetTypes(deps.Log, deps.PgRepo))
+			r.Post("/investments/types", investments.AddType(deps.Log, deps.PgRepo))
+			r.Patch("/investments/types/{id}", investments.EditType(deps.Log, deps.PgRepo))
+			r.Delete("/investments/types/{id}", investments.DeleteType(deps.Log, deps.PgRepo))
+
+			// Investment statuses routes
+			r.Get("/investments/statuses", investments.GetStatuses(deps.Log, deps.PgRepo))
+			r.Post("/investments/statuses", investments.AddStatus(deps.Log, deps.PgRepo))
+			r.Patch("/investments/statuses/{id}", investments.EditStatus(deps.Log, deps.PgRepo))
+			r.Delete("/investments/statuses/{id}", investments.DeleteStatus(deps.Log, deps.PgRepo))
 
 			// Invest Active Projects
 			r.Get("/invest-active-projects", investActiveProjects.GetAll(deps.Log, deps.PgRepo))

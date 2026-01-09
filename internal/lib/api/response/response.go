@@ -65,6 +65,12 @@ func BadGateway(msg string) Response {
 	}
 }
 
+func Delete() Response {
+	return Response{
+		Status: http.StatusNoContent,
+	}
+}
+
 func ValidationErrors(errs validator.ValidationErrors) Response {
 	var errMessages []string
 
