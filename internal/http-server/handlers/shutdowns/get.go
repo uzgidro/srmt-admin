@@ -30,17 +30,21 @@ func Get(log *slog.Logger, getter shutdownGetter, minioRepo helpers.MinioURLGene
 		dateStr := r.URL.Query().Get("date")
 
 		if dateStr == "" {
-			day = time.Now().In(loc)
+			now := time.Now().In(loc)
+			// День начинается в 07:00 местного времени
+			day = time.Date(now.Year(), now.Month(), now.Day(), 7, 0, 0, 0, loc)
 		} else {
 			var err error
 			// Parse the date in the configured timezone
-			day, err = time.ParseInLocation(layout, dateStr, loc)
+			t, err := time.ParseInLocation(layout, dateStr, loc)
 			if err != nil {
 				log.Warn("invalid 'date' parameter", sl.Err(err))
 				render.Status(r, http.StatusBadRequest)
 				render.JSON(w, r, resp.BadRequest("Invalid 'date' format, use YYYY-MM-DD"))
 				return
 			}
+			// День начинается в 07:00 местного времени
+			day = time.Date(t.Year(), t.Month(), t.Day(), 7, 0, 0, 0, loc)
 		}
 
 		shutdowns, err := getter.GetShutdowns(r.Context(), day)

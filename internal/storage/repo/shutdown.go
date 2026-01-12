@@ -88,7 +88,8 @@ func (r *Repo) GetShutdowns(ctx context.Context, day time.Time) ([]*shutdown.Res
 
 	// Create date range for the full day in the provided timezone
 	// This handles timezone conversion properly
-	startOfDay := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, day.Location())
+	// День начинается в 07:00 местного времени
+	startOfDay := time.Date(day.Year(), day.Month(), day.Day(), 7, 0, 0, 0, day.Location())
 	endOfDay := startOfDay.Add(24 * time.Hour)
 
 	query := selectShutdownFields + fromShutdownJoins +
