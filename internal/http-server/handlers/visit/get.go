@@ -29,18 +29,22 @@ func Get(log *slog.Logger, getter visitGetter, minioRepo helpers.MinioURLGenerat
 		dateStr := r.URL.Query().Get("date")
 
 		if dateStr == "" {
-			day = time.Now().In(loc)
+			now := time.Now().In(loc)
+			// День начинается в 07:00 местного времени
+			day = time.Date(now.Year(), now.Month(), now.Day(), 7, 0, 0, 0, loc)
 			log.Info("no 'date' parameter provided, using today", "date", day.Format(dateLayout))
 		} else {
 			var err error
 			// Parse the date in the configured timezone
-			day, err = time.ParseInLocation(dateLayout, dateStr, loc)
+			t, err := time.ParseInLocation(dateLayout, dateStr, loc)
 			if err != nil {
 				log.Warn("invalid 'date' parameter", sl.Err(err))
 				render.Status(r, http.StatusBadRequest)
 				render.JSON(w, r, resp.BadRequest("Invalid 'date' format, use YYYY-MM-DD"))
 				return
 			}
+			// День начинается в 07:00 местного времени
+			day = time.Date(t.Year(), t.Month(), t.Day(), 7, 0, 0, 0, loc)
 			log.Info("using provided 'date' parameter", "date", dateStr)
 		}
 

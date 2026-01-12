@@ -47,8 +47,8 @@ func New(log *slog.Logger, getter DischargeGetter, minioRepo helpers.MinioURLGen
 				render.JSON(w, r, resp.BadRequest("Invalid 'start_date' format, use YYYY-MM-DD"))
 				return
 			}
-			// День начинается в 09:00 местного времени
-			t = time.Date(t.Year(), t.Month(), t.Day(), 9, 0, 0, 0, loc)
+			// День начинается в 07:00 местного времени
+			t = time.Date(t.Year(), t.Month(), t.Day(), 7, 0, 0, 0, loc)
 			startDate = &t
 		}
 
@@ -60,8 +60,8 @@ func New(log *slog.Logger, getter DischargeGetter, minioRepo helpers.MinioURLGen
 				render.JSON(w, r, resp.BadRequest("Invalid 'end_date' format, use YYYY-MM-DD"))
 				return
 			}
-			// День заканчивается в 09:00 местного времени следующего дня
-			t = time.Date(t.Year(), t.Month(), t.Day(), 9, 0, 0, 0, loc).Add(24 * time.Hour)
+			// День заканчивается в 07:00 местного времени следующего дня
+			t = time.Date(t.Year(), t.Month(), t.Day(), 7, 0, 0, 0, loc).Add(24 * time.Hour)
 			endDate = &t
 		}
 
