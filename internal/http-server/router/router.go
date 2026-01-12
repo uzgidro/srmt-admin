@@ -8,6 +8,7 @@ import (
 	"srmt-admin/internal/http-server/handlers/auth/refresh"
 	signIn "srmt-admin/internal/http-server/handlers/auth/sign-in"
 	signOut "srmt-admin/internal/http-server/handlers/auth/sign-out"
+	"srmt-admin/internal/http-server/handlers/calendar"
 	contactAdd "srmt-admin/internal/http-server/handlers/contacts/add"
 	contactDelete "srmt-admin/internal/http-server/handlers/contacts/delete"
 	contactEdit "srmt-admin/internal/http-server/handlers/contacts/edit"
@@ -280,6 +281,10 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Delete("/shutdowns/{id}", shutdowns.Delete(deps.Log, deps.PgRepo))
 
 			r.Get("/past-events", pastEventsHandler.Get(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
+			r.Get("/past-events/by-type", pastEventsHandler.GetByType(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
+
+			// Calendar
+			r.Get("/calendar/events", calendar.Get(deps.Log, deps.PgRepo, loc))
 
 			// Level Volume
 			r.Get("/level-volume", levelVolumeGet.New(deps.Log, deps.PgRepo))

@@ -315,3 +315,80 @@ func (r *Repo) getIncidentsHelper(ctx context.Context, start, end time.Time) ([]
 
 	return result, nil
 }
+
+// GetPastEventsByDateAndType retrieves past events for a specific date and event type
+func (r *Repo) GetPastEventsByDateAndType(ctx context.Context, date time.Time, eventType string, timezone *time.Location) ([]past_events.Event, error) {
+	const op = "storage.repo.GetPastEventsByDateAndType"
+
+	// Set start of day and end of day in the specified timezone (00:00:00 to 23:59:59)
+	startOfDay := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, timezone)
+	endOfDay := time.Date(date.Year(), date.Month(), date.Day(), 23, 59, 59, 999999999, timezone)
+
+	var events []past_events.Event
+	var err error
+
+	switch eventType {
+	case "incident":
+		events, err = r.getIncidentsHelper(ctx, startOfDay, endOfDay)
+		if err != nil {
+			return nil, fmt.Errorf("%s: incidents: %w", op, err)
+		}
+
+	case "shutdown":
+		shutdownsQuery := r.buildExactIntervalQuery("shutdowns")
+		events, err = r.getIntervalEvents(ctx, shutdownsQuery, "shutdown", startOfDay, endOfDay)
+		if err != nil {
+			return nil, fmt.Errorf("%s: shutdowns: %w", op, err)
+		}
+
+	case "discharge":
+		dischargesQuery := r.buildExactIntervalQuery("idle_water_discharges")
+		events, err = r.getIntervalEvents(ctx, dischargesQuery, "discharge", startOfDay, endOfDay)
+		if err != nil {
+			return nil, fmt.Errorf("%s: discharges: %w", op, err)
+		}
+
+	case "visit":
+		// Get visits using the existing method
+		visits, err := r.GetVisits(ctx, date)
+		if err != nil {
+			return nil, fmt.Errorf("%s: visits: %w", op, err)
+		}
+
+		// Convert visits to past_events.Event format
+		for _, v := range visits {
+			orgID := v.OrganizationID
+			orgName := v.OrganizationName
+
+			events = append(events, past_events.Event{
+				Type:             past_events.EventTypeInfo,
+				Date:             v.VisitDate,
+				OrganizationID:   &orgID,
+				OrganizationName: &orgName,
+				Description:      v.Description,
+				EntityType:       "visit",
+				EntityID:         v.ID,
+				Files:            v.Files,
+			})
+		}
+
+	default:
+		return nil, fmt.Errorf("%s: invalid event type: %s", op, eventType)
+	}
+
+	// Enrich events with files (except visits, which already have files)
+	if eventType != "visit" {
+		r.enrichWithFiles(ctx, events)
+	}
+
+	// Sort events by date descending
+	sort.Slice(events, func(i, j int) bool {
+		return events[i].Date.After(events[j].Date)
+	})
+
+	if events == nil {
+		return []past_events.Event{}, nil
+	}
+
+	return events, nil
+}
