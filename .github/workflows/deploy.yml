@@ -41,3 +41,38 @@ jobs:
         run: |
           curl -H "Authorization: Bearer ${{ secrets.WATCHTOWER_SECRET }}" \
           https://${{ secrets.WATCHTOWER_HOST }}/v1/update
+
+      - name: Update Kubernetes manifest
+        # Используем SSH агент для работы с приватным ключом
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+            ssh-private-key: ${{ secrets.GITOPS_SSH_KEY }}
+
+      - name: Modify and Push Manifest
+        run: |
+          # 1. Настройка Git
+          git config --global user.email "ci-bot@example.com"
+          git config --global user.name "CI Bot"
+          
+          # 2. Добавляем хост github в known_hosts (чтобы не ругался при первом подключении)
+          mkdir -p ~/.ssh
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+
+          # 3. Клонируем репозиторий ИСПОЛЬЗУЯ SSH ссылку (git@github.com:...)
+          # ЗАМЕНИТЕ your-user/my-infra на ваш реальный репозиторий
+          git clone git@github.com:uzgidro/GitOps-Repo.git temp-repo
+          
+          cd temp-repo
+          
+          # 4. Меняем версию (sed команда остается той же)
+          # Убедитесь, что путь к файлу deployment.yaml правильный!
+          sed -i "s|image: ${{ secrets.DOCKERHUB_USERNAME }}/srmt-prime:.*|image: ${{ secrets.DOCKERHUB_USERNAME }}/srmt-prime:${{ steps.slug.outputs.sha8 }}|g" apps/prime/deployment.yaml
+          
+          # 5. Проверка и пуш
+          if [[ -n $(git status --porcelain) ]]; then
+            git add apps/srmt-prime/deployment.yaml
+            git commit -m "Update image to version ${{ steps.slug.outputs.sha8 }}"
+            git push origin main
+          else
+            echo "No changes in manifest"
+          fi
