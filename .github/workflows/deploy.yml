@@ -70,7 +70,7 @@ jobs:
           
           # 5. Проверка и пуш
           if [[ -n $(git status --porcelain) ]]; then
-            git add apps/srmt-prime/deployment.yaml
+            git add apps/prime/deployment.yaml
             git commit -m "Update image to version ${{ steps.slug.outputs.sha8 }}"
             git push origin main
           else
