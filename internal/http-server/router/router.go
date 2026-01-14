@@ -56,6 +56,7 @@ import (
 	setIndicator "srmt-admin/internal/http-server/handlers/indicators/set"
 	investActiveProjects "srmt-admin/internal/http-server/handlers/invest-active-projects"
 	"srmt-admin/internal/http-server/handlers/investments"
+	legaldocuments "srmt-admin/internal/http-server/handlers/legal-documents"
 	levelVolumeGet "srmt-admin/internal/http-server/handlers/level-volume/get"
 	"srmt-admin/internal/http-server/handlers/news"
 	orgTypeAdd "srmt-admin/internal/http-server/handlers/organization-types/add"
@@ -334,6 +335,18 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Post("/invest-active-projects", investActiveProjects.Add(deps.Log, deps.PgRepo))
 			r.Patch("/invest-active-projects/{id}", investActiveProjects.Edit(deps.Log, deps.PgRepo))
 			r.Delete("/invest-active-projects/{id}", investActiveProjects.Delete(deps.Log, deps.PgRepo))
+		})
+
+		// Legal Documents (Chancellery - Normative-Legal Library)
+		r.Group(func(r chi.Router) {
+			r.Use(mwauth.RequireAnyRole("chancellery", "rais"))
+
+			r.Get("/legal-documents", legaldocuments.GetAll(deps.Log, deps.PgRepo, deps.MinioRepo))
+			r.Get("/legal-documents/types", legaldocuments.GetTypes(deps.Log, deps.PgRepo))
+			r.Get("/legal-documents/{id}", legaldocuments.GetByID(deps.Log, deps.PgRepo, deps.MinioRepo))
+			r.Post("/legal-documents", legaldocuments.Add(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
+			r.Patch("/legal-documents/{id}", legaldocuments.Edit(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
+			r.Delete("/legal-documents/{id}", legaldocuments.Delete(deps.Log, deps.PgRepo))
 		})
 
 		r.Group(func(r chi.Router) {
