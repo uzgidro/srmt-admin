@@ -6,3 +6,20 @@ docker push suxa/srmt-prime:1.8.6
 
 
 migrate -path migrations/postgres -database "postgresql://postgres:postgres@192.168.40.225:5432/srmt?sslmode=disable" down 2
+
+kubectl create secret generic app-full-config --from-file=config.yaml=config.yaml --dry-run=client -o yaml > secret-plain.yaml
+
+
+
+
+kubeseal.exe --kubeconfig my-k8s.yaml \
+  --controller-namespace kube-system \
+  --controller-name sealed-secrets-controller \
+  --fetch-cert > my-pub-key.pem
+
+kubectl create secret generic app-full-config \
+  --from-file=config.yaml=config.yaml \
+  --dry-run=client -o yaml > secret-plain.yaml
+
+
+kubeseal.exe --cert my-pub-key.pem < secret-plain.yaml > sealed-config.yaml

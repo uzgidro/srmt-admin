@@ -14,3 +14,7 @@ wire_gen.go
 !/config/*.example.yaml
 /template/
 srmt-admin
+
+/k8s-config/
+
+*.pem
