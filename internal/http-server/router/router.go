@@ -21,6 +21,7 @@ import (
 	"srmt-admin/internal/http-server/handlers/dashboard/production"
 	"srmt-admin/internal/http-server/handlers/data/analytics"
 	dataSet "srmt-admin/internal/http-server/handlers/data/set"
+	"srmt-admin/internal/http-server/handlers/decrees"
 	departmentAdd "srmt-admin/internal/http-server/handlers/department/add"
 	departmentDelete "srmt-admin/internal/http-server/handlers/department/delete"
 	departmentEdit "srmt-admin/internal/http-server/handlers/department/edit"
@@ -32,6 +33,7 @@ import (
 	dischargeGet "srmt-admin/internal/http-server/handlers/discharge/get"
 	dischargeGetCurrent "srmt-admin/internal/http-server/handlers/discharge/get-current"
 	dischargeGetFlat "srmt-admin/internal/http-server/handlers/discharge/get-flat"
+	docstatuses "srmt-admin/internal/http-server/handlers/document-statuses"
 	eventAdd "srmt-admin/internal/http-server/handlers/events/add"
 	eventDelete "srmt-admin/internal/http-server/handlers/events/delete"
 	eventEdit "srmt-admin/internal/http-server/handlers/events/edit"
@@ -54,9 +56,11 @@ import (
 	"srmt-admin/internal/http-server/handlers/file/upload"
 	incidentsHandler "srmt-admin/internal/http-server/handlers/incidents-handler"
 	setIndicator "srmt-admin/internal/http-server/handlers/indicators/set"
+	"srmt-admin/internal/http-server/handlers/instructions"
 	investActiveProjects "srmt-admin/internal/http-server/handlers/invest-active-projects"
 	"srmt-admin/internal/http-server/handlers/investments"
 	legaldocuments "srmt-admin/internal/http-server/handlers/legal-documents"
+	"srmt-admin/internal/http-server/handlers/letters"
 	levelVolumeGet "srmt-admin/internal/http-server/handlers/level-volume/get"
 	"srmt-admin/internal/http-server/handlers/news"
 	orgTypeAdd "srmt-admin/internal/http-server/handlers/organization-types/add"
@@ -77,6 +81,7 @@ import (
 	receptionEdit "srmt-admin/internal/http-server/handlers/reception/edit"
 	receptionGetAll "srmt-admin/internal/http-server/handlers/reception/get-all"
 	receptionGetById "srmt-admin/internal/http-server/handlers/reception/get-by-id"
+	"srmt-admin/internal/http-server/handlers/reports"
 	reservoirdevicesummary "srmt-admin/internal/http-server/handlers/reservoir-device-summary"
 	reservoirsummary "srmt-admin/internal/http-server/handlers/reservoir-summary"
 	resAdd "srmt-admin/internal/http-server/handlers/reservoirs/add"
@@ -347,6 +352,54 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Post("/legal-documents", legaldocuments.Add(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
 			r.Patch("/legal-documents/{id}", legaldocuments.Edit(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
 			r.Delete("/legal-documents/{id}", legaldocuments.Delete(deps.Log, deps.PgRepo))
+		})
+
+		// Document Workflow (Chancellery - Document Management)
+		r.Group(func(r chi.Router) {
+			r.Use(mwauth.RequireAnyRole("chancellery", "rais"))
+
+			// Document Statuses (shared reference)
+			r.Get("/document-statuses", docstatuses.GetAll(deps.Log, deps.PgRepo))
+
+			// Decrees (Приказы)
+			r.Get("/decrees", decrees.GetAll(deps.Log, deps.PgRepo, deps.MinioRepo))
+			r.Get("/decrees/types", decrees.GetTypes(deps.Log, deps.PgRepo))
+			r.Get("/decrees/{id}", decrees.GetByID(deps.Log, deps.PgRepo, deps.MinioRepo))
+			r.Get("/decrees/{id}/history", decrees.GetStatusHistory(deps.Log, deps.PgRepo))
+			r.Post("/decrees", decrees.Add(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
+			r.Patch("/decrees/{id}", decrees.Edit(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
+			r.Patch("/decrees/{id}/status", decrees.ChangeStatus(deps.Log, deps.PgRepo))
+			r.Delete("/decrees/{id}", decrees.Delete(deps.Log, deps.PgRepo))
+
+			// Reports (Рапорты)
+			r.Get("/reports", reports.GetAll(deps.Log, deps.PgRepo, deps.MinioRepo))
+			r.Get("/reports/types", reports.GetTypes(deps.Log, deps.PgRepo))
+			r.Get("/reports/{id}", reports.GetByID(deps.Log, deps.PgRepo, deps.MinioRepo))
+			r.Get("/reports/{id}/history", reports.GetStatusHistory(deps.Log, deps.PgRepo))
+			r.Post("/reports", reports.Add(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
+			r.Patch("/reports/{id}", reports.Edit(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
+			r.Patch("/reports/{id}/status", reports.ChangeStatus(deps.Log, deps.PgRepo))
+			r.Delete("/reports/{id}", reports.Delete(deps.Log, deps.PgRepo))
+
+			// Letters (Письма)
+			r.Get("/letters", letters.GetAll(deps.Log, deps.PgRepo, deps.MinioRepo))
+			r.Get("/letters/types", letters.GetTypes(deps.Log, deps.PgRepo))
+			r.Get("/letters/{id}", letters.GetByID(deps.Log, deps.PgRepo, deps.MinioRepo))
+			r.Get("/letters/{id}/history", letters.GetStatusHistory(deps.Log, deps.PgRepo))
+			r.Post("/letters", letters.Add(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
+			r.Patch("/letters/{id}", letters.Edit(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
+			r.Patch("/letters/{id}/status", letters.ChangeStatus(deps.Log, deps.PgRepo))
+			r.Delete("/letters/{id}", letters.Delete(deps.Log, deps.PgRepo))
+
+			// Instructions (Инструкции)
+			r.Get("/instructions", instructions.GetAll(deps.Log, deps.PgRepo, deps.MinioRepo))
+			r.Get("/instructions/types", instructions.GetTypes(deps.Log, deps.PgRepo))
+			r.Get("/instructions/{id}", instructions.GetByID(deps.Log, deps.PgRepo, deps.MinioRepo))
+			r.Get("/instructions/{id}/history", instructions.GetStatusHistory(deps.Log, deps.PgRepo))
+			r.Post("/instructions", instructions.Add(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
+			r.Patch("/instructions/{id}", instructions.Edit(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
+			r.Patch("/instructions/{id}/status", instructions.ChangeStatus(deps.Log, deps.PgRepo))
+			r.Delete("/instructions/{id}", instructions.Delete(deps.Log, deps.PgRepo))
 		})
 
 		r.Group(func(r chi.Router) {
