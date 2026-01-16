@@ -29,5 +29,6 @@ var (
 
 	ErrUniqueViolation = errors.New("unique violation")
 
-	ErrNotFound = errors.New("not found")
+	ErrNotFound      = errors.New("not found")
+	ErrInvalidStatus = errors.New("invalid status for operation")
 )

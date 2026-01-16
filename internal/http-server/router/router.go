@@ -97,6 +97,7 @@ import (
 	"srmt-admin/internal/http-server/handlers/sc/modsnow/table"
 	"srmt-admin/internal/http-server/handlers/sc/stock"
 	"srmt-admin/internal/http-server/handlers/shutdowns"
+	"srmt-admin/internal/http-server/handlers/signatures"
 	"srmt-admin/internal/http-server/handlers/telegram/gidro/test"
 	usersAdd "srmt-admin/internal/http-server/handlers/users/add"
 	assignRole "srmt-admin/internal/http-server/handlers/users/assign-role"
@@ -400,6 +401,30 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Patch("/instructions/{id}", instructions.Edit(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
 			r.Patch("/instructions/{id}/status", instructions.ChangeStatus(deps.Log, deps.PgRepo))
 			r.Delete("/instructions/{id}", instructions.Delete(deps.Log, deps.PgRepo))
+
+			// Document Signatures (Подписание документов)
+			// Unified list of documents pending signature
+			r.Get("/documents/pending-signature", signatures.GetPending(deps.Log, deps.PgRepo))
+
+			// Decrees signatures
+			r.Post("/decrees/{id}/sign", signatures.Sign(deps.Log, deps.PgRepo, "decree"))
+			r.Post("/decrees/{id}/reject-signature", signatures.Reject(deps.Log, deps.PgRepo, "decree"))
+			r.Get("/decrees/{id}/signatures", signatures.GetSignatures(deps.Log, deps.PgRepo, "decree"))
+
+			// Reports signatures
+			r.Post("/reports/{id}/sign", signatures.Sign(deps.Log, deps.PgRepo, "report"))
+			r.Post("/reports/{id}/reject-signature", signatures.Reject(deps.Log, deps.PgRepo, "report"))
+			r.Get("/reports/{id}/signatures", signatures.GetSignatures(deps.Log, deps.PgRepo, "report"))
+
+			// Letters signatures
+			r.Post("/letters/{id}/sign", signatures.Sign(deps.Log, deps.PgRepo, "letter"))
+			r.Post("/letters/{id}/reject-signature", signatures.Reject(deps.Log, deps.PgRepo, "letter"))
+			r.Get("/letters/{id}/signatures", signatures.GetSignatures(deps.Log, deps.PgRepo, "letter"))
+
+			// Instructions signatures
+			r.Post("/instructions/{id}/sign", signatures.Sign(deps.Log, deps.PgRepo, "instruction"))
+			r.Post("/instructions/{id}/reject-signature", signatures.Reject(deps.Log, deps.PgRepo, "instruction"))
+			r.Get("/instructions/{id}/signatures", signatures.GetSignatures(deps.Log, deps.PgRepo, "instruction"))
 		})
 
 		r.Group(func(r chi.Router) {
