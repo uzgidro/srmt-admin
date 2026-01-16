@@ -382,11 +382,10 @@ func (r *Repo) EditDischarge(ctx context.Context, id, approvedByID int64, startT
 		args = append(args, *startTime)
 		argID++
 	}
-	if endTime != nil {
-		setClauses = append(setClauses, fmt.Sprintf("end_time = $%d", argID))
-		args = append(args, *endTime)
-		argID++
-	}
+	// end_time is always updated: nil = NULL, value = value
+	setClauses = append(setClauses, fmt.Sprintf("end_time = $%d", argID))
+	args = append(args, endTime)
+	argID++
 	if flowRate != nil {
 		setClauses = append(setClauses, fmt.Sprintf("flow_rate_m3_s = $%d", argID))
 		args = append(args, *flowRate)

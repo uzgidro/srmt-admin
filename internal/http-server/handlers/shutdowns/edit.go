@@ -22,12 +22,12 @@ import (
 
 // Request (JSON DTO)
 type editRequest struct {
-	OrganizationID      *int64      `json:"organization_id,omitempty"`
-	StartTime           *time.Time  `json:"start_time,omitempty"`
-	EndTime             **time.Time `json:"end_time,omitempty"`
-	Reason              *string     `json:"reason,omitempty"`
-	GenerationLossMwh   *float64    `json:"generation_loss,omitempty"`
-	ReportedByContactID *int64      `json:"reported_by_contact_id,omitempty"`
+	OrganizationID      *int64     `json:"organization_id,omitempty"`
+	StartTime           *time.Time `json:"start_time,omitempty"`
+	EndTime             *time.Time `json:"end_time,omitempty"`
+	Reason              *string    `json:"reason,omitempty"`
+	GenerationLossMwh   *float64   `json:"generation_loss,omitempty"`
+	ReportedByContactID *int64     `json:"reported_by_contact_id,omitempty"`
 
 	IdleDischargeVolume *float64 `json:"idle_discharge_volume,omitempty"`
 	FileIDs             []int64  `json:"file_ids,omitempty"`
@@ -229,7 +229,7 @@ func parseMultipartEditRequest(
 	req := editRequest{
 		OrganizationID:      orgID,
 		StartTime:           startTime,
-		EndTime:             convertToDoublePointer(endTime),
+		EndTime:             endTime,
 		Reason:              reason,
 		GenerationLossMwh:   generationLoss,
 		ReportedByContactID: reportedByContactID,
@@ -257,12 +257,4 @@ func parseMultipartEditRequest(
 	)
 
 	return req, uploadResult, nil
-}
-
-// convertToDoublePointer converts *time.Time to **time.Time for nullable nullable fields
-func convertToDoublePointer(t *time.Time) **time.Time {
-	if t == nil {
-		return nil
-	}
-	return &t
 }

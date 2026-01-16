@@ -18,7 +18,7 @@ type AddShutdownRequest struct {
 type EditShutdownRequest struct {
 	OrganizationID      *int64
 	StartTime           *time.Time
-	EndTime             **time.Time
+	EndTime             *time.Time
 	Reason              *string
 	GenerationLossMwh   *float64
 	ReportedByContactID *int64
