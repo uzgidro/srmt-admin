@@ -180,9 +180,9 @@ func (r *Repo) EditShutdown(ctx context.Context, id int64, req dto.EditShutdownR
 		// (Определяем End)
 		var end time.Time
 		var hasEndTime bool
-		if req.EndTime != nil && *req.EndTime != nil {
+		if req.EndTime != nil {
 			// Пользователь передал новый EndTime
-			end = **req.EndTime
+			end = *req.EndTime
 			hasEndTime = true
 		} else if currentEnd.Valid {
 			// Используем существующий EndTime
@@ -257,11 +257,10 @@ func (r *Repo) EditShutdown(ctx context.Context, id int64, req dto.EditShutdownR
 		args = append(args, *req.StartTime)
 		argID++
 	}
-	if req.EndTime != nil {
-		updates = append(updates, fmt.Sprintf("end_time = $%d", argID))
-		args = append(args, *req.EndTime)
-		argID++
-	}
+	// end_time is always updated: nil = NULL, value = value
+	updates = append(updates, fmt.Sprintf("end_time = $%d", argID))
+	args = append(args, req.EndTime)
+	argID++
 	if req.Reason != nil {
 		updates = append(updates, fmt.Sprintf("reason = $%d", argID))
 		args = append(args, *req.Reason)
