@@ -16,3 +16,14 @@ type DashboardResponse struct {
 	ChangePercent   float64 `json:"change_percent"`
 	ChangeDirection string  `json:"change_direction"` // "up", "down", "flat"
 }
+
+type StatsResponse struct {
+	Current    *CurrentValue `json:"current"`
+	MonthTotal float64       `json:"month_total"`
+	YearTotal  float64       `json:"year_total"`
+}
+
+type CurrentValue struct {
+	Date  string  `json:"date"`
+	Value float64 `json:"value"`
+}

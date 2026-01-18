@@ -19,6 +19,7 @@ import (
 	dashboardGetReservoir "srmt-admin/internal/http-server/handlers/dashboard/get-reservoir"
 	dashboardGetReservoirHourly "srmt-admin/internal/http-server/handlers/dashboard/get-reservoir-hourly"
 	"srmt-admin/internal/http-server/handlers/dashboard/production"
+	productionstats "srmt-admin/internal/http-server/handlers/dashboard/production-stats"
 	"srmt-admin/internal/http-server/handlers/data/analytics"
 	dataSet "srmt-admin/internal/http-server/handlers/data/set"
 	"srmt-admin/internal/http-server/handlers/decrees"
@@ -211,6 +212,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 		r.Get("/dashboard/reservoir-hourly", dashboardGetReservoirHourly.New(deps.Log, deps.ReservoirFetcher))
 		r.Get("/dashboard/cascades", orgGetCascades.New(deps.Log, deps.PgRepo, deps.ASCUEFetcher))
 		r.Get("/dashboard/production", production.New(deps.Log, deps.PgRepo))
+		r.Get("/dashboard/production-stats", productionstats.New(deps.Log, deps.PgRepo))
 
 		// Admin routes
 		r.Group(func(r chi.Router) {
