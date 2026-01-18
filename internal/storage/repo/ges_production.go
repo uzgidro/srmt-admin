@@ -90,3 +90,59 @@ func (r *Repo) GetGesProductionDashboard(ctx context.Context) (*gesproduction.Da
 		ChangeDirection: direction,
 	}, nil
 }
+
+// GetGesProductionStats returns current value, month total, and year total
+func (r *Repo) GetGesProductionStats(ctx context.Context) (*gesproduction.StatsResponse, error) {
+	const op = "storage.repo.GetGesProductionStats"
+
+	// 1. Get the latest record (current value)
+	var latestDate time.Time
+	var latestVal float64
+
+	err := r.db.QueryRowContext(ctx, `
+		SELECT date, total_energy_production
+		FROM ges_production
+		ORDER BY date DESC
+		LIMIT 1
+	`).Scan(&latestDate, &latestVal)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("%s: failed to get latest record: %w", op, err)
+	}
+
+	// 2. Get month total
+	var monthTotal float64
+	err = r.db.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(total_energy_production), 0)
+		FROM ges_production
+		WHERE date >= DATE_TRUNC('month', CURRENT_DATE)
+	`).Scan(&monthTotal)
+
+	if err != nil {
+		return nil, fmt.Errorf("%s: failed to get month total: %w", op, err)
+	}
+
+	// 3. Get year total
+	var yearTotal float64
+	err = r.db.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(total_energy_production), 0)
+		FROM ges_production
+		WHERE date >= DATE_TRUNC('year', CURRENT_DATE)
+	`).Scan(&yearTotal)
+
+	if err != nil {
+		return nil, fmt.Errorf("%s: failed to get year total: %w", op, err)
+	}
+
+	return &gesproduction.StatsResponse{
+		Current: &gesproduction.CurrentValue{
+			Date:  latestDate.Format("2006-01-02"),
+			Value: latestVal,
+		},
+		MonthTotal: monthTotal,
+		YearTotal:  yearTotal,
+	}, nil
+}
