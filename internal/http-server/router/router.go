@@ -214,6 +214,9 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 		r.Get("/dashboard/production", production.New(deps.Log, deps.PgRepo))
 		r.Get("/dashboard/production-stats", productionstats.New(deps.Log, deps.PgRepo))
 
+		// Open routes (available to all authenticated users)
+		r.Get("/shutdowns", shutdowns.Get(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
+
 		// Admin routes
 		r.Group(func(r chi.Router) {
 			r.Use(mwauth.AdminOnly)
@@ -284,7 +287,6 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Patch("/incidents/{id}", incidentsHandler.Edit(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
 			r.Delete("/incidents/{id}", incidentsHandler.Delete(deps.Log, deps.PgRepo))
 
-			r.Get("/shutdowns", shutdowns.Get(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
 			r.Post("/shutdowns", shutdowns.Add(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
 			r.Patch("/shutdowns/{id}", shutdowns.Edit(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
 			r.Delete("/shutdowns/{id}", shutdowns.Delete(deps.Log, deps.PgRepo))
