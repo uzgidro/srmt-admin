@@ -24,6 +24,7 @@ type Config struct {
 	Weather        `yaml:"weather"`
 	NewsRetriever  `yaml:"news_retriever"`
 	PrimeParser    `yaml:"prime_parser"`
+	LexParser      `yaml:"lex_parser"`
 }
 
 type HttpServer struct {
@@ -71,6 +72,10 @@ type NewsRetriever struct {
 
 type PrimeParser struct {
 	URL string `yaml:"url" env-required:"true"`
+}
+
+type LexParser struct {
+	BaseURL string `yaml:"base_url" env-required:"true"`
 }
 
 func MustLoad() *Config {
