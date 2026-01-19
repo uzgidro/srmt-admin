@@ -216,6 +216,9 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 
 		// Open routes (available to all authenticated users)
 		r.Get("/shutdowns", shutdowns.Get(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
+		r.Get("/legal-documents", legaldocuments.GetAll(deps.Log, deps.PgRepo, deps.MinioRepo))
+		r.Get("/legal-documents/types", legaldocuments.GetTypes(deps.Log, deps.PgRepo))
+		r.Get("/legal-documents/{id}", legaldocuments.GetByID(deps.Log, deps.PgRepo, deps.MinioRepo))
 
 		// Admin routes
 		r.Group(func(r chi.Router) {
@@ -351,9 +354,6 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 		r.Group(func(r chi.Router) {
 			r.Use(mwauth.RequireAnyRole("chancellery", "rais"))
 
-			r.Get("/legal-documents", legaldocuments.GetAll(deps.Log, deps.PgRepo, deps.MinioRepo))
-			r.Get("/legal-documents/types", legaldocuments.GetTypes(deps.Log, deps.PgRepo))
-			r.Get("/legal-documents/{id}", legaldocuments.GetByID(deps.Log, deps.PgRepo, deps.MinioRepo))
 			r.Post("/legal-documents", legaldocuments.Add(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
 			r.Patch("/legal-documents/{id}", legaldocuments.Edit(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
 			r.Delete("/legal-documents/{id}", legaldocuments.Delete(deps.Log, deps.PgRepo))
