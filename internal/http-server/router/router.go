@@ -63,6 +63,7 @@ import (
 	legaldocuments "srmt-admin/internal/http-server/handlers/legal-documents"
 	"srmt-admin/internal/http-server/handlers/letters"
 	levelVolumeGet "srmt-admin/internal/http-server/handlers/level-volume/get"
+	lexparser "srmt-admin/internal/http-server/handlers/lex-parser"
 	"srmt-admin/internal/http-server/handlers/news"
 	orgTypeAdd "srmt-admin/internal/http-server/handlers/organization-types/add"
 	orgTypeDelete "srmt-admin/internal/http-server/handlers/organization-types/delete"
@@ -219,6 +220,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 		r.Get("/legal-documents", legaldocuments.GetAll(deps.Log, deps.PgRepo, deps.MinioRepo))
 		r.Get("/legal-documents/types", legaldocuments.GetTypes(deps.Log, deps.PgRepo))
 		r.Get("/legal-documents/{id}", legaldocuments.GetByID(deps.Log, deps.PgRepo, deps.MinioRepo))
+		r.Get("/lex-search", lexparser.Search(deps.Log, deps.HTTPClient, deps.Config.LexParser.BaseURL))
 
 		// Admin routes
 		r.Group(func(r chi.Router) {
