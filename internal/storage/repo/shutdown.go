@@ -266,11 +266,10 @@ func (r *Repo) EditShutdown(ctx context.Context, id int64, req dto.EditShutdownR
 		args = append(args, *req.Reason)
 		argID++
 	}
-	if req.GenerationLossMwh != nil {
-		updates = append(updates, fmt.Sprintf("generation_loss_mwh = $%d", argID))
-		args = append(args, *req.GenerationLossMwh)
-		argID++
-	}
+	// generation_loss_mwh is always updated: nil = NULL, value = value
+	updates = append(updates, fmt.Sprintf("generation_loss_mwh = $%d", argID))
+	args = append(args, req.GenerationLossMwh) // nil → NULL
+	argID++
 	if req.ReportedByContactID != nil {
 		updates = append(updates, fmt.Sprintf("reported_by_contact_id = $%d", argID))
 		args = append(args, *req.ReportedByContactID)
