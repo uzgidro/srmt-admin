@@ -1,0 +1,19 @@
+{
+  "kind": "SealedSecret",
+  "apiVersion": "bitnami.com/v1alpha1",
+  "metadata": {
+    "name": "ac-integration-config",
+    "namespace": "dev"
+  },
+  "spec": {
+    "template": {
+      "metadata": {
+        "name": "ac-integration-config",
+        "namespace": "dev"
+      }
+    },
+    "encryptedData": {
+      "config.yaml": "AgBz4jfEcC374hnlVS4Ke6y0FelXj/Cq/uf5NEonk/Qk9H/QCUDqW+mfB7tZhtoLJQxNyD6szPm3DWxawe9mIuy7Ubja8ULthx9D61fq7u05lXWcQrJTi/8uT4EKwkgcpUMz27AqctZNsZwOGd04GhUAdAoS3ktdkYRekaaAOQ2kxhP98ius3TuPXHUkLYiCFCtB0rCmvd3wKlMaJ/urFi474sqVR+VzXkV/uKMJ3Hrhojt1LQlIYoi8pl3ZEfZYrubWyI8zXuWi6bCrnfOUTF3Oq+ksB/BwdRSUFbaOYD9eeKW5AirSnkmyV7FN2t51ulVU9KauknZUbehS4YOUoxcGl5h62pZvU2OjR4ovX+7MWXRBVB+Vzpod05ZaVqfcbTnx4lHrFUv1dS06IeElY9nYuMrZXbSBG9PwlB1NLy5ZnhHGfO/4GXy9k8Mr/NHcQT8tL3mG76L4DrHFijRo+jytGGHaa/vCRJVySc3PJl2koqq59YIPOzK513+KWinakbuAt2anhbIfazci59Sa/wqGmre+Zy+lTc07n6cWwGNXfJo04t4M7pEUQq4P9N9mEWfeUTAuPhEpg8K7ZX3i7z19w0sqr/WFCSoGV+eA0VoiNSVRRmnWt7oggaOjiuxnjovKtMkH0w7umK/H0GavQueofSwxsf2nLva4tAMe4KPpP0oS2WtB6H/JJ34hvf/KtaqF13jdYV8EGreyYrwGmTEMDvvomadBIEsfxuA+0WQBgSlBcMIWNwEW44qVjzFKU/HfCE2iUPBocmDD/BL2vEegG0LuvIhETDYPjFSiVHFEyZg17P9s0tSN4TcJmMEKrV7x2quZGPMWmglsDHSK+I9YN7Dz2N1R2C7r4xYXq2541vzv35EkqRlz+keV28JEq0nQ0CHEj5r3Cb4jCTnknZBHh9w0+YwXufGk9gmVDa2JrDOZKCHME9BybFPDfxvUGIqtJ7EDfWgWO9ysXpmEGB0bT6rBtDxHQ2Ll3VDAJ8WZN1vro6GydpmAonFbSp7ln1V5qHdbDYOuB5APlnx7TWLrvz2jjCiiO9sft3ehZz5bjqIq/tCKfjYjgdNikELhNing6y3F8vom/SCT7xaHbm5popvZNPIMJXb/+QU6uFadGJqFdblop3L0zu13GWTN0s2btngouz5UAKekzEmQLFrH5Lqmkw=="
+    }
+  }
+}

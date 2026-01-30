@@ -55,6 +55,31 @@ import (
 	getbycategory "srmt-admin/internal/http-server/handlers/file/get-by-category"
 	"srmt-admin/internal/http-server/handlers/file/latest"
 	"srmt-admin/internal/http-server/handlers/file/upload"
+	hrmAccess "srmt-admin/internal/http-server/handlers/hrm/access"
+	hrmAnalytics "srmt-admin/internal/http-server/handlers/hrm/analytics"
+	hrmCabinet "srmt-admin/internal/http-server/handlers/hrm/cabinet"
+	hrmCompetency "srmt-admin/internal/http-server/handlers/hrm/competency"
+	hrmDashboard "srmt-admin/internal/http-server/handlers/hrm/dashboard"
+	hrmDocument "srmt-admin/internal/http-server/handlers/hrm/document"
+	hrmEmployeeAdd "srmt-admin/internal/http-server/handlers/hrm/employee/add"
+	hrmEmployeeDelete "srmt-admin/internal/http-server/handlers/hrm/employee/delete"
+	hrmEmployeeEdit "srmt-admin/internal/http-server/handlers/hrm/employee/edit"
+	hrmEmployeeGet "srmt-admin/internal/http-server/handlers/hrm/employee/get"
+	hrmEmployeeGetByID "srmt-admin/internal/http-server/handlers/hrm/employee/get-by-id"
+	hrmEmployeeTerminate "srmt-admin/internal/http-server/handlers/hrm/employee/terminate"
+	hrmNotification "srmt-admin/internal/http-server/handlers/hrm/notification"
+	hrmPerformance "srmt-admin/internal/http-server/handlers/hrm/performance"
+	hrmPersonnelDocAdd "srmt-admin/internal/http-server/handlers/hrm/personnel-document/add"
+	hrmPersonnelDocDelete "srmt-admin/internal/http-server/handlers/hrm/personnel-document/delete"
+	hrmPersonnelDocEdit "srmt-admin/internal/http-server/handlers/hrm/personnel-document/edit"
+	hrmPersonnelDocGet "srmt-admin/internal/http-server/handlers/hrm/personnel-document/get"
+	hrmRecruiting "srmt-admin/internal/http-server/handlers/hrm/recruiting"
+	hrmSalary "srmt-admin/internal/http-server/handlers/hrm/salary"
+	hrmTimesheet "srmt-admin/internal/http-server/handlers/hrm/timesheet"
+	hrmTraining "srmt-admin/internal/http-server/handlers/hrm/training"
+	hrmTransferAdd "srmt-admin/internal/http-server/handlers/hrm/transfer/add"
+	hrmTransferGet "srmt-admin/internal/http-server/handlers/hrm/transfer/get"
+	hrmVacation "srmt-admin/internal/http-server/handlers/hrm/vacation"
 	incidentsHandler "srmt-admin/internal/http-server/handlers/incidents-handler"
 	setIndicator "srmt-admin/internal/http-server/handlers/indicators/set"
 	"srmt-admin/internal/http-server/handlers/instructions"
@@ -180,6 +205,41 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 		r.Use(mwauth.Authenticator(deps.Token))
 
 		r.Get("/auth/me", me.New(deps.Log))
+
+		// Employee Cabinet (Personal workspace - available to all authenticated users)
+		r.Route("/my-profile", func(r chi.Router) {
+			r.Get("/", hrmCabinet.GetProfile(deps.Log, deps.PgRepo))
+			r.Patch("/", hrmCabinet.UpdateProfile(deps.Log, deps.PgRepo))
+		})
+
+		r.Get("/my-leave-balance", hrmCabinet.GetLeaveBalance(deps.Log, deps.PgRepo))
+
+		r.Route("/my-vacations", func(r chi.Router) {
+			r.Get("/", hrmCabinet.GetMyVacations(deps.Log, deps.PgRepo))
+			r.Post("/", hrmCabinet.CreateMyVacation(deps.Log, deps.PgRepo))
+			r.Post("/{id}/cancel", hrmCabinet.CancelMyVacation(deps.Log, deps.PgRepo))
+		})
+
+		r.Route("/my-salary", func(r chi.Router) {
+			r.Get("/", hrmCabinet.GetMySalary(deps.Log, deps.PgRepo))
+			r.Get("/payslip/{id}", hrmCabinet.GetMyPayslip(deps.Log, deps.PgRepo))
+		})
+
+		r.Get("/my-training", hrmCabinet.GetMyTraining(deps.Log, deps.PgRepo))
+		r.Get("/my-competencies", hrmCabinet.GetMyCompetencies(deps.Log, deps.PgRepo))
+
+		r.Route("/my-notifications", func(r chi.Router) {
+			r.Get("/", hrmCabinet.GetMyNotifications(deps.Log, deps.PgRepo))
+			r.Patch("/{id}/read", hrmCabinet.MarkNotificationRead(deps.Log, deps.PgRepo))
+			r.Post("/read-all", hrmCabinet.MarkAllNotificationsRead(deps.Log, deps.PgRepo))
+		})
+
+		r.Get("/my-tasks", hrmCabinet.GetMyTasks(deps.Log, deps.PgRepo))
+
+		r.Route("/my-documents", func(r chi.Router) {
+			r.Get("/", hrmCabinet.GetMyDocuments(deps.Log, deps.PgRepo))
+			r.Get("/{id}/download", hrmCabinet.DownloadMyDocument(deps.Log, deps.PgRepo))
+		})
 
 		// News
 		r.Get("/news", news.New(deps.Log, deps.HTTPClient, deps.Config.NewsRetriever.BaseURL))
@@ -465,6 +525,332 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Post("/receptions", receptionAdd.New(deps.Log, deps.PgRepo))
 			r.Patch("/receptions/{id}", receptionEdit.New(deps.Log, deps.PgRepo))
 			r.Delete("/receptions/{id}", receptionDelete.New(deps.Log, deps.PgRepo))
+		})
+
+		// HRM Module - Human Resource Management
+		r.Group(func(r chi.Router) {
+			r.Use(mwauth.RequireAnyRole("hrm", "rais"))
+
+			r.Route("/hrm", func(r chi.Router) {
+				// Dashboard
+				r.Get("/dashboard", hrmDashboard.Get(deps.Log, deps.PgRepo))
+
+				// Analytics
+				r.Route("/analytics", func(r chi.Router) {
+					r.Get("/dashboard", hrmAnalytics.GetDashboard(deps.Log, deps.PgRepo))
+
+					r.Route("/reports", func(r chi.Router) {
+						r.Get("/headcount", hrmAnalytics.GetHeadcountReport(deps.Log, deps.PgRepo))
+						r.Get("/headcount-trend", hrmAnalytics.GetHeadcountTrend(deps.Log, deps.PgRepo))
+						r.Get("/turnover", hrmAnalytics.GetTurnoverReport(deps.Log, deps.PgRepo))
+						r.Get("/turnover-trend", hrmAnalytics.GetTurnoverTrend(deps.Log, deps.PgRepo))
+						r.Get("/attendance", hrmAnalytics.GetAttendanceReport(deps.Log, deps.PgRepo))
+						r.Get("/salary", hrmAnalytics.GetSalaryReport(deps.Log, deps.PgRepo))
+						r.Get("/salary-trend", hrmAnalytics.GetSalaryTrend(deps.Log, deps.PgRepo))
+						r.Get("/performance", hrmAnalytics.GetPerformanceReport(deps.Log, deps.PgRepo))
+						r.Get("/training", hrmAnalytics.GetTrainingReport(deps.Log, deps.PgRepo))
+						r.Get("/demographics", hrmAnalytics.GetDemographicsReport(deps.Log, deps.PgRepo))
+						r.Post("/custom", hrmAnalytics.GenerateCustomReport(deps.Log, deps.PgRepo))
+					})
+
+					r.Route("/export", func(r chi.Router) {
+						r.Post("/", hrmAnalytics.Export(deps.Log, deps.PgRepo))
+						r.Post("/pdf", hrmAnalytics.ExportPDF(deps.Log, deps.PgRepo))
+						r.Post("/excel", hrmAnalytics.ExportExcel(deps.Log, deps.PgRepo))
+					})
+				})
+
+				// Employees
+				r.Route("/employees", func(r chi.Router) {
+					r.Get("/", hrmEmployeeGet.New(deps.Log, deps.PgRepo))
+					r.Post("/", hrmEmployeeAdd.New(deps.Log, deps.PgRepo))
+					r.Get("/{id}", hrmEmployeeGetByID.New(deps.Log, deps.PgRepo))
+					r.Patch("/{id}", hrmEmployeeEdit.New(deps.Log, deps.PgRepo))
+					r.Delete("/{id}", hrmEmployeeDelete.New(deps.Log, deps.PgRepo))
+					r.Post("/{id}/terminate", hrmEmployeeTerminate.New(deps.Log, deps.PgRepo))
+				})
+
+				// Personnel Documents
+				r.Route("/personnel-documents", func(r chi.Router) {
+					r.Get("/", hrmPersonnelDocGet.New(deps.Log, deps.PgRepo))
+					r.Post("/", hrmPersonnelDocAdd.New(deps.Log, deps.PgRepo))
+					r.Patch("/{id}", hrmPersonnelDocEdit.New(deps.Log, deps.PgRepo))
+					r.Delete("/{id}", hrmPersonnelDocDelete.New(deps.Log, deps.PgRepo))
+				})
+
+				// Transfers
+				r.Route("/transfers", func(r chi.Router) {
+					r.Get("/", hrmTransferGet.New(deps.Log, deps.PgRepo))
+					r.Post("/", hrmTransferAdd.New(deps.Log, deps.PgRepo))
+				})
+
+				// Vacations
+				r.Route("/vacations", func(r chi.Router) {
+					// Vacation Types
+					r.Get("/types", hrmVacation.GetTypes(deps.Log, deps.PgRepo))
+					r.Post("/types", hrmVacation.AddType(deps.Log, deps.PgRepo))
+					r.Patch("/types/{id}", hrmVacation.EditType(deps.Log, deps.PgRepo))
+					r.Delete("/types/{id}", hrmVacation.DeleteType(deps.Log, deps.PgRepo))
+
+					// Vacation Balances
+					r.Get("/balances", hrmVacation.GetBalances(deps.Log, deps.PgRepo))
+					r.Post("/balances", hrmVacation.AddBalance(deps.Log, deps.PgRepo))
+					r.Patch("/balances/{id}", hrmVacation.EditBalance(deps.Log, deps.PgRepo))
+
+					// Vacation Requests
+					r.Get("/", hrmVacation.GetAll(deps.Log, deps.PgRepo))
+					r.Post("/", hrmVacation.Add(deps.Log, deps.PgRepo))
+					r.Get("/calendar", hrmVacation.GetCalendar(deps.Log, deps.PgRepo))
+					r.Get("/{id}", hrmVacation.GetByID(deps.Log, deps.PgRepo))
+					r.Patch("/{id}", hrmVacation.Edit(deps.Log, deps.PgRepo))
+					r.Delete("/{id}", hrmVacation.Delete(deps.Log, deps.PgRepo))
+					r.Post("/{id}/approve", hrmVacation.Approve(deps.Log, deps.PgRepo))
+					r.Post("/{id}/cancel", hrmVacation.Cancel(deps.Log, deps.PgRepo))
+				})
+
+				// Salaries
+				r.Route("/salaries", func(r chi.Router) {
+					// Salary Structures
+					r.Get("/structures", hrmSalary.GetStructures(deps.Log, deps.PgRepo))
+					r.Post("/structures", hrmSalary.AddStructure(deps.Log, deps.PgRepo))
+					r.Patch("/structures/{id}", hrmSalary.EditStructure(deps.Log, deps.PgRepo))
+					r.Delete("/structures/{id}", hrmSalary.DeleteStructure(deps.Log, deps.PgRepo))
+
+					// Salaries
+					r.Get("/", hrmSalary.GetAll(deps.Log, deps.PgRepo))
+					r.Post("/", hrmSalary.Add(deps.Log, deps.PgRepo))
+					r.Get("/{id}", hrmSalary.GetByID(deps.Log, deps.PgRepo))
+					r.Delete("/{id}", hrmSalary.Delete(deps.Log, deps.PgRepo))
+					r.Post("/{id}/approve", hrmSalary.Approve(deps.Log, deps.PgRepo))
+					r.Post("/{id}/pay", hrmSalary.Pay(deps.Log, deps.PgRepo))
+
+					// Bonuses
+					r.Get("/bonuses", hrmSalary.GetBonuses(deps.Log, deps.PgRepo))
+					r.Post("/bonuses", hrmSalary.AddBonus(deps.Log, deps.PgRepo))
+					r.Delete("/bonuses/{id}", hrmSalary.DeleteBonus(deps.Log, deps.PgRepo))
+					r.Post("/bonuses/{id}/approve", hrmSalary.ApproveBonus(deps.Log, deps.PgRepo))
+
+					// Deductions
+					r.Get("/deductions", hrmSalary.GetDeductions(deps.Log, deps.PgRepo))
+					r.Post("/deductions", hrmSalary.AddDeduction(deps.Log, deps.PgRepo))
+					r.Delete("/deductions/{id}", hrmSalary.DeleteDeduction(deps.Log, deps.PgRepo))
+				})
+
+				// Timesheets
+				r.Route("/timesheets", func(r chi.Router) {
+					// Holidays
+					r.Get("/holidays", hrmTimesheet.GetHolidays(deps.Log, deps.PgRepo))
+					r.Post("/holidays", hrmTimesheet.AddHoliday(deps.Log, deps.PgRepo))
+					r.Delete("/holidays/{id}", hrmTimesheet.DeleteHoliday(deps.Log, deps.PgRepo))
+
+					// Timesheet Entries
+					r.Get("/entries", hrmTimesheet.GetEntries(deps.Log, deps.PgRepo))
+					r.Post("/entries", hrmTimesheet.AddEntry(deps.Log, deps.PgRepo))
+					r.Patch("/entries/{id}", hrmTimesheet.EditEntry(deps.Log, deps.PgRepo))
+					r.Delete("/entries/{id}", hrmTimesheet.DeleteEntry(deps.Log, deps.PgRepo))
+
+					// Timesheets
+					r.Get("/", hrmTimesheet.GetTimesheets(deps.Log, deps.PgRepo))
+					r.Post("/", hrmTimesheet.AddTimesheet(deps.Log, deps.PgRepo))
+					r.Get("/{id}", hrmTimesheet.GetTimesheetByID(deps.Log, deps.PgRepo))
+					r.Patch("/{id}", hrmTimesheet.EditTimesheet(deps.Log, deps.PgRepo))
+					r.Delete("/{id}", hrmTimesheet.DeleteTimesheet(deps.Log, deps.PgRepo))
+					r.Post("/{id}/submit", hrmTimesheet.SubmitTimesheet(deps.Log, deps.PgRepo))
+					r.Post("/{id}/approve", hrmTimesheet.ApproveTimesheet(deps.Log, deps.PgRepo))
+				})
+
+				// Recruiting
+				r.Route("/recruiting", func(r chi.Router) {
+					// Vacancies
+					r.Get("/vacancies", hrmRecruiting.GetVacancies(deps.Log, deps.PgRepo))
+					r.Post("/vacancies", hrmRecruiting.AddVacancy(deps.Log, deps.PgRepo))
+					r.Get("/vacancies/{id}", hrmRecruiting.GetVacancyByID(deps.Log, deps.PgRepo))
+					r.Patch("/vacancies/{id}", hrmRecruiting.EditVacancy(deps.Log, deps.PgRepo))
+					r.Delete("/vacancies/{id}", hrmRecruiting.DeleteVacancy(deps.Log, deps.PgRepo))
+					r.Post("/vacancies/{id}/publish", hrmRecruiting.PublishVacancy(deps.Log, deps.PgRepo))
+					r.Post("/vacancies/{id}/close", hrmRecruiting.CloseVacancy(deps.Log, deps.PgRepo))
+
+					// Candidates
+					r.Get("/candidates", hrmRecruiting.GetCandidates(deps.Log, deps.PgRepo))
+					r.Post("/candidates", hrmRecruiting.AddCandidate(deps.Log, deps.PgRepo))
+					r.Get("/candidates/{id}", hrmRecruiting.GetCandidateByID(deps.Log, deps.PgRepo))
+					r.Patch("/candidates/{id}", hrmRecruiting.EditCandidate(deps.Log, deps.PgRepo))
+					r.Delete("/candidates/{id}", hrmRecruiting.DeleteCandidate(deps.Log, deps.PgRepo))
+					r.Post("/candidates/{id}/status", hrmRecruiting.MoveCandidateStatus(deps.Log, deps.PgRepo))
+
+					// Interviews
+					r.Get("/interviews", hrmRecruiting.GetInterviews(deps.Log, deps.PgRepo))
+					r.Post("/interviews", hrmRecruiting.AddInterview(deps.Log, deps.PgRepo))
+					r.Get("/interviews/{id}", hrmRecruiting.GetInterviewByID(deps.Log, deps.PgRepo))
+					r.Patch("/interviews/{id}", hrmRecruiting.EditInterview(deps.Log, deps.PgRepo))
+					r.Delete("/interviews/{id}", hrmRecruiting.DeleteInterview(deps.Log, deps.PgRepo))
+					r.Post("/interviews/{id}/complete", hrmRecruiting.CompleteInterview(deps.Log, deps.PgRepo))
+					r.Post("/interviews/{id}/cancel", hrmRecruiting.CancelInterview(deps.Log, deps.PgRepo))
+				})
+
+				// Training
+				r.Route("/trainings", func(r chi.Router) {
+					// Trainings
+					r.Get("/", hrmTraining.GetTrainings(deps.Log, deps.PgRepo))
+					r.Post("/", hrmTraining.AddTraining(deps.Log, deps.PgRepo))
+					r.Get("/{id}", hrmTraining.GetTrainingByID(deps.Log, deps.PgRepo))
+					r.Patch("/{id}", hrmTraining.EditTraining(deps.Log, deps.PgRepo))
+					r.Delete("/{id}", hrmTraining.DeleteTraining(deps.Log, deps.PgRepo))
+
+					// Participants
+					r.Get("/participants", hrmTraining.GetParticipants(deps.Log, deps.PgRepo))
+					r.Post("/participants", hrmTraining.EnrollParticipant(deps.Log, deps.PgRepo))
+					r.Post("/participants/{id}/complete", hrmTraining.CompleteParticipantTraining(deps.Log, deps.PgRepo))
+
+					// Certificates
+					r.Get("/certificates", hrmTraining.GetCertificates(deps.Log, deps.PgRepo))
+					r.Post("/certificates", hrmTraining.AddCertificate(deps.Log, deps.PgRepo))
+					r.Patch("/certificates/{id}", hrmTraining.EditCertificate(deps.Log, deps.PgRepo))
+					r.Delete("/certificates/{id}", hrmTraining.DeleteCertificate(deps.Log, deps.PgRepo))
+				})
+
+				// Competencies
+				r.Route("/competencies", func(r chi.Router) {
+					// Categories
+					r.Get("/categories", hrmCompetency.GetCategories(deps.Log, deps.PgRepo))
+					r.Post("/categories", hrmCompetency.AddCategory(deps.Log, deps.PgRepo))
+					r.Get("/categories/{id}", hrmCompetency.GetCategoryByID(deps.Log, deps.PgRepo))
+					r.Patch("/categories/{id}", hrmCompetency.EditCategory(deps.Log, deps.PgRepo))
+					r.Delete("/categories/{id}", hrmCompetency.DeleteCategory(deps.Log, deps.PgRepo))
+
+					// Competencies
+					r.Get("/", hrmCompetency.GetCompetencies(deps.Log, deps.PgRepo))
+					r.Post("/", hrmCompetency.AddCompetency(deps.Log, deps.PgRepo))
+					r.Get("/{id}", hrmCompetency.GetCompetencyByID(deps.Log, deps.PgRepo))
+					r.Patch("/{id}", hrmCompetency.EditCompetency(deps.Log, deps.PgRepo))
+					r.Delete("/{id}", hrmCompetency.DeleteCompetency(deps.Log, deps.PgRepo))
+
+					// Levels
+					r.Get("/{competencyId}/levels", hrmCompetency.GetLevels(deps.Log, deps.PgRepo))
+					r.Post("/levels", hrmCompetency.AddLevel(deps.Log, deps.PgRepo))
+					r.Patch("/levels/{id}", hrmCompetency.EditLevel(deps.Log, deps.PgRepo))
+					r.Delete("/levels/{id}", hrmCompetency.DeleteLevel(deps.Log, deps.PgRepo))
+
+					// Matrix
+					r.Get("/matrix", hrmCompetency.GetMatrix(deps.Log, deps.PgRepo))
+					r.Post("/matrix", hrmCompetency.AddMatrix(deps.Log, deps.PgRepo))
+					r.Patch("/matrix/{id}", hrmCompetency.EditMatrix(deps.Log, deps.PgRepo))
+					r.Delete("/matrix/{id}", hrmCompetency.DeleteMatrix(deps.Log, deps.PgRepo))
+
+					// Assessments
+					r.Get("/assessments", hrmCompetency.GetAssessments(deps.Log, deps.PgRepo))
+					r.Post("/assessments", hrmCompetency.AddAssessment(deps.Log, deps.PgRepo))
+					r.Get("/assessments/{id}", hrmCompetency.GetAssessmentByID(deps.Log, deps.PgRepo))
+					r.Post("/assessments/{id}/start", hrmCompetency.StartAssessment(deps.Log, deps.PgRepo))
+					r.Post("/assessments/{id}/complete", hrmCompetency.CompleteAssessment(deps.Log, deps.PgRepo))
+					r.Delete("/assessments/{id}", hrmCompetency.DeleteAssessment(deps.Log, deps.PgRepo))
+
+					// Scores
+					r.Get("/scores", hrmCompetency.GetScores(deps.Log, deps.PgRepo))
+					r.Post("/scores", hrmCompetency.AddScore(deps.Log, deps.PgRepo))
+					r.Post("/scores/bulk", hrmCompetency.BulkAddScores(deps.Log, deps.PgRepo))
+					r.Patch("/scores/{id}", hrmCompetency.EditScore(deps.Log, deps.PgRepo))
+					r.Delete("/scores/{id}", hrmCompetency.DeleteScore(deps.Log, deps.PgRepo))
+				})
+
+				// Performance
+				r.Route("/performance", func(r chi.Router) {
+					// Reviews
+					r.Get("/reviews", hrmPerformance.GetReviews(deps.Log, deps.PgRepo))
+					r.Post("/reviews", hrmPerformance.AddReview(deps.Log, deps.PgRepo))
+					r.Get("/reviews/{id}", hrmPerformance.GetReviewByID(deps.Log, deps.PgRepo))
+					r.Patch("/reviews/{id}", hrmPerformance.EditReview(deps.Log, deps.PgRepo))
+					r.Delete("/reviews/{id}", hrmPerformance.DeleteReview(deps.Log, deps.PgRepo))
+					r.Post("/reviews/{id}/self-review", hrmPerformance.SubmitSelfReview(deps.Log, deps.PgRepo))
+					r.Post("/reviews/{id}/manager-review", hrmPerformance.SubmitManagerReview(deps.Log, deps.PgRepo))
+					r.Post("/reviews/{id}/calibrate", hrmPerformance.CalibrateReview(deps.Log, deps.PgRepo))
+
+					// Goals
+					r.Get("/goals", hrmPerformance.GetGoals(deps.Log, deps.PgRepo))
+					r.Post("/goals", hrmPerformance.AddGoal(deps.Log, deps.PgRepo))
+					r.Get("/goals/{id}", hrmPerformance.GetGoalByID(deps.Log, deps.PgRepo))
+					r.Patch("/goals/{id}", hrmPerformance.EditGoal(deps.Log, deps.PgRepo))
+					r.Delete("/goals/{id}", hrmPerformance.DeleteGoal(deps.Log, deps.PgRepo))
+					r.Post("/goals/{id}/progress", hrmPerformance.UpdateGoalProgress(deps.Log, deps.PgRepo))
+					r.Post("/goals/{id}/rate", hrmPerformance.RateGoal(deps.Log, deps.PgRepo))
+
+					// KPIs
+					r.Get("/kpis", hrmPerformance.GetKPIs(deps.Log, deps.PgRepo))
+					r.Post("/kpis", hrmPerformance.AddKPI(deps.Log, deps.PgRepo))
+					r.Get("/kpis/{id}", hrmPerformance.GetKPIByID(deps.Log, deps.PgRepo))
+					r.Patch("/kpis/{id}", hrmPerformance.EditKPI(deps.Log, deps.PgRepo))
+					r.Delete("/kpis/{id}", hrmPerformance.DeleteKPI(deps.Log, deps.PgRepo))
+					r.Post("/kpis/{id}/value", hrmPerformance.UpdateKPIValue(deps.Log, deps.PgRepo))
+					r.Post("/kpis/{id}/rate", hrmPerformance.RateKPI(deps.Log, deps.PgRepo))
+				})
+
+				// Documents
+				r.Route("/documents", func(r chi.Router) {
+					// Document Types
+					r.Get("/types", hrmDocument.GetTypes(deps.Log, deps.PgRepo))
+					r.Post("/types", hrmDocument.AddType(deps.Log, deps.PgRepo))
+					r.Get("/types/{id}", hrmDocument.GetTypeByID(deps.Log, deps.PgRepo))
+					r.Patch("/types/{id}", hrmDocument.EditType(deps.Log, deps.PgRepo))
+					r.Delete("/types/{id}", hrmDocument.DeleteType(deps.Log, deps.PgRepo))
+
+					// Documents
+					r.Get("/", hrmDocument.GetDocuments(deps.Log, deps.PgRepo))
+					r.Post("/", hrmDocument.AddDocument(deps.Log, deps.PgRepo))
+					r.Get("/{id}", hrmDocument.GetDocumentByID(deps.Log, deps.PgRepo))
+					r.Patch("/{id}", hrmDocument.EditDocument(deps.Log, deps.PgRepo))
+					r.Delete("/{id}", hrmDocument.DeleteDocument(deps.Log, deps.PgRepo))
+
+					// Signatures
+					r.Get("/signatures", hrmDocument.GetSignatures(deps.Log, deps.PgRepo))
+					r.Post("/signatures", hrmDocument.AddSignature(deps.Log, deps.PgRepo))
+					r.Post("/signatures/{id}/sign", hrmDocument.SignDocument(deps.Log, deps.PgRepo))
+
+					// Templates
+					r.Get("/templates", hrmDocument.GetTemplates(deps.Log, deps.PgRepo))
+					r.Post("/templates", hrmDocument.AddTemplate(deps.Log, deps.PgRepo))
+					r.Get("/templates/{id}", hrmDocument.GetTemplateByID(deps.Log, deps.PgRepo))
+					r.Patch("/templates/{id}", hrmDocument.EditTemplate(deps.Log, deps.PgRepo))
+					r.Delete("/templates/{id}", hrmDocument.DeleteTemplate(deps.Log, deps.PgRepo))
+				})
+
+				// Access Control
+				r.Route("/access", func(r chi.Router) {
+					// Zones
+					r.Get("/zones", hrmAccess.GetZones(deps.Log, deps.PgRepo))
+					r.Post("/zones", hrmAccess.AddZone(deps.Log, deps.PgRepo))
+					r.Get("/zones/{id}", hrmAccess.GetZoneByID(deps.Log, deps.PgRepo))
+					r.Patch("/zones/{id}", hrmAccess.EditZone(deps.Log, deps.PgRepo))
+					r.Delete("/zones/{id}", hrmAccess.DeleteZone(deps.Log, deps.PgRepo))
+
+					// Cards
+					r.Get("/cards", hrmAccess.GetCards(deps.Log, deps.PgRepo))
+					r.Post("/cards", hrmAccess.AddCard(deps.Log, deps.PgRepo))
+					r.Get("/cards/{id}", hrmAccess.GetCardByID(deps.Log, deps.PgRepo))
+					r.Patch("/cards/{id}", hrmAccess.EditCard(deps.Log, deps.PgRepo))
+					r.Delete("/cards/{id}", hrmAccess.DeleteCard(deps.Log, deps.PgRepo))
+					r.Post("/cards/{id}/deactivate", hrmAccess.DeactivateCard(deps.Log, deps.PgRepo))
+
+					// Card Zone Access
+					r.Get("/card-zones", hrmAccess.GetCardZoneAccess(deps.Log, deps.PgRepo))
+					r.Post("/card-zones", hrmAccess.AddCardZoneAccess(deps.Log, deps.PgRepo))
+					r.Delete("/card-zones/{id}", hrmAccess.DeleteCardZoneAccess(deps.Log, deps.PgRepo))
+
+					// Access Logs
+					r.Get("/logs", hrmAccess.GetAccessLogs(deps.Log, deps.PgRepo))
+					r.Post("/logs", hrmAccess.AddAccessLog(deps.Log, deps.PgRepo))
+				})
+
+				// Notifications
+				r.Route("/notifications", func(r chi.Router) {
+					r.Get("/", hrmNotification.GetNotifications(deps.Log, deps.PgRepo))
+					r.Post("/", hrmNotification.AddNotification(deps.Log, deps.PgRepo))
+					r.Get("/unread-count", hrmNotification.GetUnreadCount(deps.Log, deps.PgRepo))
+					r.Post("/mark-all-read", hrmNotification.MarkAllAsRead(deps.Log, deps.PgRepo))
+					r.Get("/{id}", hrmNotification.GetNotificationByID(deps.Log, deps.PgRepo))
+					r.Post("/{id}/read", hrmNotification.MarkAsRead(deps.Log, deps.PgRepo))
+					r.Delete("/{id}", hrmNotification.DeleteNotification(deps.Log, deps.PgRepo))
+				})
+			})
 		})
 	})
 }

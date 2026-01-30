@@ -1,0 +1,12 @@
+DROP TRIGGER IF EXISTS set_timestamp_hrm_competency_scores ON hrm_competency_scores;
+DROP TRIGGER IF EXISTS set_timestamp_hrm_competency_assessments ON hrm_competency_assessments;
+DROP TRIGGER IF EXISTS set_timestamp_hrm_competency_matrices ON hrm_competency_matrices;
+DROP TRIGGER IF EXISTS set_timestamp_hrm_competency_levels ON hrm_competency_levels;
+DROP TRIGGER IF EXISTS set_timestamp_hrm_competencies ON hrm_competencies;
+DROP TRIGGER IF EXISTS set_timestamp_hrm_competency_categories ON hrm_competency_categories;
+DROP TABLE IF EXISTS hrm_competency_scores;
+DROP TABLE IF EXISTS hrm_competency_assessments;
+DROP TABLE IF EXISTS hrm_competency_matrices;
+DROP TABLE IF EXISTS hrm_competency_levels;
+DROP TABLE IF EXISTS hrm_competencies;
+DROP TABLE IF EXISTS hrm_competency_categories;

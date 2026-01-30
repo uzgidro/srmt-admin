@@ -1,0 +1,10 @@
+DROP TRIGGER IF EXISTS set_timestamp_hrm_development_goals ON hrm_development_goals;
+DROP TRIGGER IF EXISTS set_timestamp_hrm_development_plans ON hrm_development_plans;
+DROP TRIGGER IF EXISTS set_timestamp_hrm_certificates ON hrm_certificates;
+DROP TRIGGER IF EXISTS set_timestamp_hrm_training_participants ON hrm_training_participants;
+DROP TRIGGER IF EXISTS set_timestamp_hrm_trainings ON hrm_trainings;
+DROP TABLE IF EXISTS hrm_development_goals;
+DROP TABLE IF EXISTS hrm_development_plans;
+DROP TABLE IF EXISTS hrm_certificates;
+DROP TABLE IF EXISTS hrm_training_participants;
+DROP TABLE IF EXISTS hrm_trainings;

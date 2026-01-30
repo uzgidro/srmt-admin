@@ -1,0 +1,25 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ac-integration
+  labels:
+    app: ac-integration
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - ac-integration.speedwagon.uz
+      secretName: ac-integration-tls
+  rules:
+    - host: ac-integration.speedwagon.uz
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ac-integration
+                port:
+                  number: 80
