@@ -1,10 +1,11 @@
 package config
 
 import (
-	"github.com/ilyakaznacheev/cleanenv"
 	"log"
 	"os"
 	"time"
+
+	"github.com/ilyakaznacheev/cleanenv"
 )
 
 type Config struct {
@@ -25,6 +26,8 @@ type Config struct {
 	NewsRetriever  `yaml:"news_retriever"`
 	PrimeParser    `yaml:"prime_parser"`
 	LexParser      `yaml:"lex_parser"`
+	Redis          `yaml:"redis"`
+	ASUTP          `yaml:"asutp"`
 }
 
 type HttpServer struct {
@@ -76,6 +79,18 @@ type PrimeParser struct {
 
 type LexParser struct {
 	BaseURL string `yaml:"base_url" env-required:"true"`
+}
+
+type Redis struct {
+	Host     string `yaml:"host" env-default:"localhost"`
+	Port     string `yaml:"port" env-default:"6379"`
+	Password string `yaml:"password" env-default:""`
+	DB       int    `yaml:"db" env-default:"0"`
+}
+
+type ASUTP struct {
+	Token string `yaml:"token" env-required:"true"`
+	TTL   int    `yaml:"ttl_seconds" env-default:"300"`
 }
 
 func MustLoad() *Config {

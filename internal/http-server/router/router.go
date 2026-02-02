@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 	"srmt-admin/internal/config"
+	asutpTelemetry "srmt-admin/internal/http-server/handlers/asutp/telemetry"
 	"srmt-admin/internal/http-server/handlers/auth/me"
 	"srmt-admin/internal/http-server/handlers/auth/refresh"
 	signIn "srmt-admin/internal/http-server/handlers/auth/sign-in"
@@ -118,12 +119,14 @@ import (
 	"srmt-admin/internal/http-server/handlers/visit"
 	weatherProxy "srmt-admin/internal/http-server/handlers/weather/proxy"
 	mwapikey "srmt-admin/internal/http-server/middleware/api-key"
+	asutpauth "srmt-admin/internal/http-server/middleware/asutp-auth"
 	mwauth "srmt-admin/internal/http-server/middleware/auth"
 	"srmt-admin/internal/lib/service/ascue"
 	excelgen "srmt-admin/internal/lib/service/excel/reservoir-summary"
 	"srmt-admin/internal/lib/service/reservoir"
 	"srmt-admin/internal/storage/minio"
 	"srmt-admin/internal/storage/mongo"
+	redisRepo "srmt-admin/internal/storage/redis"
 	"srmt-admin/internal/storage/repo"
 	"srmt-admin/internal/token"
 	"time"
@@ -138,6 +141,7 @@ type AppDependencies struct {
 	PgRepo            *repo.Repo
 	MongoRepo         *mongo.Repo
 	MinioRepo         *minio.Repo
+	RedisRepo         *redisRepo.Repo
 	Config            config.Config
 	Location          *time.Location
 	ASCUEFetcher      *ascue.Fetcher
@@ -237,6 +241,8 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 		r.Get("/ges/{id}/discharges", gesDischarges.New(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
 		r.Get("/ges/{id}/incidents", gesIncidents.New(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
 		r.Get("/ges/{id}/visits", gesVisits.New(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
+		r.Get("/ges/{id}/telemetry", asutpTelemetry.NewGetStation(deps.Log, deps.RedisRepo))
+		r.Get("/ges/{id}/telemetry/{device_id}", asutpTelemetry.NewGetDevice(deps.Log, deps.RedisRepo))
 
 		// Admin routes
 		r.Group(func(r chi.Router) {
@@ -482,5 +488,12 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Patch("/receptions/{id}", receptionEdit.New(deps.Log, deps.PgRepo))
 			r.Delete("/receptions/{id}", receptionDelete.New(deps.Log, deps.PgRepo))
 		})
+	})
+
+	// ASUTP Telemetry API - POST with Bearer token (for GES systems)
+	router.Route("/api/v1/asutp", func(r chi.Router) {
+		r.Use(asutpauth.RequireToken(deps.Config.ASUTP.Token))
+
+		r.Post("/telemetry/{station_db_id}", asutpTelemetry.NewPost(deps.Log, deps.RedisRepo))
 	})
 }
