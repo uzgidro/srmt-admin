@@ -454,6 +454,11 @@ func (r *Repo) UpdateSalaryCalculation(ctx context.Context, id int64, baseAmount
 	grossAmount := baseAmount + allowancesAmount + bonusesAmount
 	netAmount := grossAmount - deductionsAmount - taxAmount
 
+	// Validate net amount is not negative
+	if netAmount < 0 {
+		return storage.ErrNegativeNetAmount
+	}
+
 	const query = `
 		UPDATE hrm_salaries
 		SET base_amount = $1, allowances_amount = $2, bonuses_amount = $3,
@@ -540,14 +545,19 @@ func (r *Repo) DeleteSalary(ctx context.Context, id int64) error {
 	return nil
 }
 
-// Helper to scan salary from row
-func (r *Repo) scanSalary(row *sql.Row) (*hrmmodel.Salary, error) {
+// salaryScanner interface for sql.Row and sql.Rows compatibility
+type salaryScanner interface {
+	Scan(dest ...interface{}) error
+}
+
+// scanSalaryFromScanner scans salary data from a scanner interface
+func (r *Repo) scanSalaryFromScanner(s salaryScanner) (*hrmmodel.Salary, error) {
 	var sal hrmmodel.Salary
 	var calculatedAt, approvedAt, paidAt, updatedAt sql.NullTime
 	var approvedBy sql.NullInt64
 	var notes sql.NullString
 
-	err := row.Scan(
+	err := s.Scan(
 		&sal.ID, &sal.EmployeeID, &sal.Year, &sal.Month,
 		&sal.BaseAmount, &sal.AllowancesAmount, &sal.BonusesAmount,
 		&sal.DeductionsAmount, &sal.GrossAmount, &sal.TaxAmount, &sal.NetAmount,
@@ -581,45 +591,14 @@ func (r *Repo) scanSalary(row *sql.Row) (*hrmmodel.Salary, error) {
 	return &sal, nil
 }
 
-// Helper to scan salary from rows
+// scanSalary scans salary from sql.Row
+func (r *Repo) scanSalary(row *sql.Row) (*hrmmodel.Salary, error) {
+	return r.scanSalaryFromScanner(row)
+}
+
+// scanSalaryRow scans salary from sql.Rows
 func (r *Repo) scanSalaryRow(rows *sql.Rows) (*hrmmodel.Salary, error) {
-	var sal hrmmodel.Salary
-	var calculatedAt, approvedAt, paidAt, updatedAt sql.NullTime
-	var approvedBy sql.NullInt64
-	var notes sql.NullString
-
-	err := rows.Scan(
-		&sal.ID, &sal.EmployeeID, &sal.Year, &sal.Month,
-		&sal.BaseAmount, &sal.AllowancesAmount, &sal.BonusesAmount,
-		&sal.DeductionsAmount, &sal.GrossAmount, &sal.TaxAmount, &sal.NetAmount,
-		&sal.WorkedDays, &sal.TotalWorkDays, &sal.OvertimeHours, &sal.Status,
-		&calculatedAt, &approvedBy, &approvedAt, &paidAt, &notes,
-		&sal.CreatedAt, &updatedAt,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	if calculatedAt.Valid {
-		sal.CalculatedAt = &calculatedAt.Time
-	}
-	if approvedBy.Valid {
-		sal.ApprovedBy = &approvedBy.Int64
-	}
-	if approvedAt.Valid {
-		sal.ApprovedAt = &approvedAt.Time
-	}
-	if paidAt.Valid {
-		sal.PaidAt = &paidAt.Time
-	}
-	if notes.Valid {
-		sal.Notes = &notes.String
-	}
-	if updatedAt.Valid {
-		sal.UpdatedAt = &updatedAt.Time
-	}
-
-	return &sal, nil
+	return r.scanSalaryFromScanner(rows)
 }
 
 // --- Bonus Operations ---

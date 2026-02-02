@@ -477,26 +477,54 @@ func (r *Repo) EditVacationBalance(ctx context.Context, id int64, req hrm.EditVa
 	return nil
 }
 
-// UpdateVacationBalanceUsedDays updates the used days for a balance
+// UpdateVacationBalanceUsedDays updates the used days for a balance with proper locking to prevent race conditions
 func (r *Repo) UpdateVacationBalanceUsedDays(ctx context.Context, employeeID int64, vacationTypeID int, year int, daysToAdd float64) error {
 	const op = "storage.repo.UpdateVacationBalanceUsedDays"
 
-	const query = `
+	// Start transaction
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("%s: failed to begin transaction: %w", op, err)
+	}
+	defer tx.Rollback()
+
+	// Lock the row for update and get current values
+	const selectQuery = `
+		SELECT used_days, entitled_days, carried_over_days, adjustment_days
+		FROM hrm_vacation_balances
+		WHERE employee_id = $1 AND vacation_type_id = $2 AND year = $3
+		FOR UPDATE`
+
+	var currentUsed, entitled, carriedOver, adjustment float64
+	err = tx.QueryRowContext(ctx, selectQuery, employeeID, vacationTypeID, year).
+		Scan(&currentUsed, &entitled, &carriedOver, &adjustment)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return storage.ErrNotFound
+		}
+		return fmt.Errorf("%s: failed to get balance: %w", op, err)
+	}
+
+	// Validate sufficient balance (only when adding, not when returning days)
+	if daysToAdd > 0 {
+		availableDays := entitled + carriedOver + adjustment - currentUsed
+		if daysToAdd > availableDays {
+			return storage.ErrInsufficientBalance
+		}
+	}
+
+	// Update with lock held
+	const updateQuery = `
 		UPDATE hrm_vacation_balances
 		SET used_days = used_days + $1
 		WHERE employee_id = $2 AND vacation_type_id = $3 AND year = $4`
 
-	res, err := r.db.ExecContext(ctx, query, daysToAdd, employeeID, vacationTypeID, year)
+	_, err = tx.ExecContext(ctx, updateQuery, daysToAdd, employeeID, vacationTypeID, year)
 	if err != nil {
-		return fmt.Errorf("%s: failed to update used days: %w", op, err)
+		return fmt.Errorf("%s: failed to update: %w", op, err)
 	}
 
-	rowsAffected, _ := res.RowsAffected()
-	if rowsAffected == 0 {
-		return storage.ErrNotFound
-	}
-
-	return nil
+	return tx.Commit()
 }
 
 // --- Vacation Request Operations ---
@@ -504,6 +532,33 @@ func (r *Repo) UpdateVacationBalanceUsedDays(ctx context.Context, employeeID int
 // AddVacation creates a new vacation request
 func (r *Repo) AddVacation(ctx context.Context, req hrm.AddVacationRequest) (int64, error) {
 	const op = "storage.repo.AddVacation"
+
+	// Validate substitute employee cannot be self
+	if req.SubstituteEmployeeID != nil && *req.SubstituteEmployeeID == req.EmployeeID {
+		return 0, storage.ErrSubstituteCannotBeSelf
+	}
+
+	// Check for overlapping vacations
+	hasOverlap, err := r.checkVacationOverlap(ctx, req.EmployeeID, req.StartDate, req.EndDate, nil)
+	if err != nil {
+		return 0, fmt.Errorf("%s: failed to check vacation overlap: %w", op, err)
+	}
+	if hasOverlap {
+		return 0, storage.ErrVacationOverlap
+	}
+
+	// Check vacation balance
+	year := req.StartDate.Year()
+	balance, err := r.GetVacationBalance(ctx, req.EmployeeID, req.VacationTypeID, year)
+	if err != nil && !errors.Is(err, storage.ErrNotFound) {
+		return 0, fmt.Errorf("%s: failed to get vacation balance: %w", op, err)
+	}
+	if balance != nil {
+		availableDays := balance.EntitledDays + balance.CarriedOverDays - balance.UsedDays + balance.AdjustmentDays
+		if req.DaysCount > availableDays {
+			return 0, storage.ErrInsufficientVacationDays
+		}
+	}
 
 	const query = `
 		INSERT INTO hrm_vacations (
@@ -513,7 +568,7 @@ func (r *Repo) AddVacation(ctx context.Context, req hrm.AddVacationRequest) (int
 		RETURNING id`
 
 	var id int64
-	err := r.db.QueryRowContext(ctx, query,
+	err = r.db.QueryRowContext(ctx, query,
 		req.EmployeeID, req.VacationTypeID, req.StartDate, req.EndDate, req.DaysCount,
 		req.Reason, req.SubstituteEmployeeID, req.SupportingDocumentID,
 	).Scan(&id)
@@ -527,6 +582,77 @@ func (r *Repo) AddVacation(ctx context.Context, req hrm.AddVacationRequest) (int
 	}
 
 	return id, nil
+}
+
+// checkVacationOverlap checks if the given date range overlaps with existing vacations
+func (r *Repo) checkVacationOverlap(ctx context.Context, employeeID int64, startDate, endDate time.Time, excludeVacationID *int64) (bool, error) {
+	var query strings.Builder
+	query.WriteString(`
+		SELECT COUNT(*) FROM hrm_vacations
+		WHERE employee_id = $1
+		AND status NOT IN ('rejected', 'cancelled')
+		AND (
+			(start_date <= $2 AND end_date >= $2) OR
+			(start_date <= $3 AND end_date >= $3) OR
+			(start_date >= $2 AND end_date <= $3)
+		)
+	`)
+
+	args := []interface{}{employeeID, startDate, endDate}
+	argIdx := 4
+
+	if excludeVacationID != nil {
+		query.WriteString(fmt.Sprintf(" AND id != $%d", argIdx))
+		args = append(args, *excludeVacationID)
+	}
+
+	var count int
+	err := r.db.QueryRowContext(ctx, query.String(), args...).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+
+	return count > 0, nil
+}
+
+// GetVacationBalance retrieves vacation balance for employee/type/year
+func (r *Repo) GetVacationBalance(ctx context.Context, employeeID int64, vacationTypeID int, year int) (*hrmmodel.VacationBalance, error) {
+	const op = "storage.repo.GetVacationBalance"
+
+	const query = `
+		SELECT id, employee_id, vacation_type_id, year,
+			entitled_days, used_days, carried_over_days, adjustment_days,
+			notes, created_at, updated_at
+		FROM hrm_vacation_balances
+		WHERE employee_id = $1 AND vacation_type_id = $2 AND year = $3`
+
+	var vb hrmmodel.VacationBalance
+	var notes sql.NullString
+	var updatedAt sql.NullTime
+
+	err := r.db.QueryRowContext(ctx, query, employeeID, vacationTypeID, year).Scan(
+		&vb.ID, &vb.EmployeeID, &vb.VacationTypeID, &vb.Year,
+		&vb.EntitledDays, &vb.UsedDays, &vb.CarriedOverDays, &vb.AdjustmentDays,
+		&notes, &vb.CreatedAt, &updatedAt,
+	)
+
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, storage.ErrNotFound
+		}
+		return nil, fmt.Errorf("%s: failed to get vacation balance: %w", op, err)
+	}
+
+	if notes.Valid {
+		vb.Notes = &notes.String
+	}
+	if updatedAt.Valid {
+		vb.UpdatedAt = &updatedAt.Time
+	}
+
+	vb.RemainingDays = vb.CalculateRemaining()
+
+	return &vb, nil
 }
 
 // GetVacationByID retrieves vacation by ID

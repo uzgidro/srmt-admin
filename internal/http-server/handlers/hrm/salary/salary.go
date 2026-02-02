@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/render"
 	"github.com/go-playground/validator/v10"
 
+	"srmt-admin/internal/http-server/handlers/hrm/authz"
 	mwauth "srmt-admin/internal/http-server/middleware/auth"
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/dto/hrm"
@@ -54,6 +55,12 @@ type DeductionRepository interface {
 	DeleteDeduction(ctx context.Context, id int64) error
 }
 
+// EmployeeAccessChecker provides methods for checking employee data access
+type EmployeeAccessChecker interface {
+	GetEmployeeIDByUserID(ctx context.Context, userID int64) (int64, error)
+	IsManagerOf(ctx context.Context, managerEmployeeID, employeeID int64) (bool, error)
+}
+
 // IDResponse represents a response with ID
 type IDResponse struct {
 	resp.Response
@@ -63,13 +70,25 @@ type IDResponse struct {
 // --- Salary Structure Handlers ---
 
 // GetStructures returns salary structures
-func GetStructures(log *slog.Logger, repo SalaryStructureRepository) http.HandlerFunc {
+// Access control: HR/admin can see all, others can only see their own salary structure
+func GetStructures(log *slog.Logger, repo SalaryStructureRepository, accessChecker EmployeeAccessChecker) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.hrm.salary.GetStructures"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
 
+		claims, ok := mwauth.ClaimsFromContext(r.Context())
+		if !ok {
+			log.Error("failed to get claims from context")
+			render.Status(r, http.StatusUnauthorized)
+			render.JSON(w, r, resp.Unauthorized("Authentication required"))
+			return
+		}
+
 		var filter hrm.SalaryStructureFilter
 		q := r.URL.Query()
+
+		// Check if user has privileged access (HR or admin)
+		hasPrivilegedAccess := authz.HasAnyRole(claims, "hr", "admin")
 
 		if empIDStr := q.Get("employee_id"); empIDStr != "" {
 			val, err := strconv.ParseInt(empIDStr, 10, 64)
@@ -79,7 +98,34 @@ func GetStructures(log *slog.Logger, repo SalaryStructureRepository) http.Handle
 				render.JSON(w, r, resp.BadRequest("Invalid 'employee_id' parameter"))
 				return
 			}
+
+			// Check access permission for the requested employee's salary structure
+			if !hasPrivilegedAccess {
+				canAccess, err := authz.CanAccessSalaryData(r.Context(), claims, val, accessChecker)
+				if err != nil {
+					log.Error("failed to check access permission", sl.Err(err))
+					render.Status(r, http.StatusInternalServerError)
+					render.JSON(w, r, resp.InternalServerError("Failed to verify access"))
+					return
+				}
+				if !canAccess {
+					log.Warn("access denied to employee salary structure", slog.Int64("target_employee_id", val), slog.Int64("user_id", claims.UserID))
+					render.Status(r, http.StatusForbidden)
+					render.JSON(w, r, resp.Forbidden("Access denied to this employee's salary structure"))
+					return
+				}
+			}
 			filter.EmployeeID = &val
+		} else if !hasPrivilegedAccess {
+			// Non-privileged users must specify employee_id (their own)
+			currentEmpID, err := accessChecker.GetEmployeeIDByUserID(r.Context(), claims.UserID)
+			if err != nil {
+				log.Warn("user has no employee record", slog.Int64("user_id", claims.UserID))
+				render.Status(r, http.StatusForbidden)
+				render.JSON(w, r, resp.Forbidden("Access denied - no employee record found"))
+				return
+			}
+			filter.EmployeeID = &currentEmpID
 		}
 
 		filter.ActiveOnly = q.Get("active_only") == "true"
@@ -219,13 +265,25 @@ func DeleteStructure(log *slog.Logger, repo SalaryStructureRepository) http.Hand
 // --- Salary Handlers ---
 
 // GetAll returns salaries with filters
-func GetAll(log *slog.Logger, repo SalaryRepository) http.HandlerFunc {
+// Access control: HR/admin can see all, others can only see their own salary
+func GetAll(log *slog.Logger, repo SalaryRepository, accessChecker EmployeeAccessChecker) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.hrm.salary.GetAll"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
 
+		claims, ok := mwauth.ClaimsFromContext(r.Context())
+		if !ok {
+			log.Error("failed to get claims from context")
+			render.Status(r, http.StatusUnauthorized)
+			render.JSON(w, r, resp.Unauthorized("Authentication required"))
+			return
+		}
+
 		var filter hrm.SalaryFilter
 		q := r.URL.Query()
+
+		// Check if user has privileged access (HR or admin)
+		hasPrivilegedAccess := authz.HasAnyRole(claims, "hr", "admin")
 
 		if empIDStr := q.Get("employee_id"); empIDStr != "" {
 			val, err := strconv.ParseInt(empIDStr, 10, 64)
@@ -235,7 +293,34 @@ func GetAll(log *slog.Logger, repo SalaryRepository) http.HandlerFunc {
 				render.JSON(w, r, resp.BadRequest("Invalid 'employee_id' parameter"))
 				return
 			}
+
+			// Check access permission for the requested employee's salary
+			if !hasPrivilegedAccess {
+				canAccess, err := authz.CanAccessSalaryData(r.Context(), claims, val, accessChecker)
+				if err != nil {
+					log.Error("failed to check access permission", sl.Err(err))
+					render.Status(r, http.StatusInternalServerError)
+					render.JSON(w, r, resp.InternalServerError("Failed to verify access"))
+					return
+				}
+				if !canAccess {
+					log.Warn("access denied to employee salary", slog.Int64("target_employee_id", val), slog.Int64("user_id", claims.UserID))
+					render.Status(r, http.StatusForbidden)
+					render.JSON(w, r, resp.Forbidden("Access denied to this employee's salary data"))
+					return
+				}
+			}
 			filter.EmployeeID = &val
+		} else if !hasPrivilegedAccess {
+			// Non-privileged users must specify employee_id (their own)
+			currentEmpID, err := accessChecker.GetEmployeeIDByUserID(r.Context(), claims.UserID)
+			if err != nil {
+				log.Warn("user has no employee record", slog.Int64("user_id", claims.UserID))
+				render.Status(r, http.StatusForbidden)
+				render.JSON(w, r, resp.Forbidden("Access denied - no employee record found"))
+				return
+			}
+			filter.EmployeeID = &currentEmpID
 		}
 
 		if yearStr := q.Get("year"); yearStr != "" {
@@ -303,10 +388,19 @@ func GetAll(log *slog.Logger, repo SalaryRepository) http.HandlerFunc {
 }
 
 // GetByID returns a salary by ID
-func GetByID(log *slog.Logger, repo SalaryRepository) http.HandlerFunc {
+// Access control: HR/admin can see all, others can only see their own salary
+func GetByID(log *slog.Logger, repo SalaryRepository, accessChecker EmployeeAccessChecker) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.hrm.salary.GetByID"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
+
+		claims, ok := mwauth.ClaimsFromContext(r.Context())
+		if !ok {
+			log.Error("failed to get claims from context")
+			render.Status(r, http.StatusUnauthorized)
+			render.JSON(w, r, resp.Unauthorized("Authentication required"))
+			return
+		}
 
 		idStr := chi.URLParam(r, "id")
 		id, err := strconv.ParseInt(idStr, 10, 64)
@@ -329,6 +423,23 @@ func GetByID(log *slog.Logger, repo SalaryRepository) http.HandlerFunc {
 			render.Status(r, http.StatusInternalServerError)
 			render.JSON(w, r, resp.InternalServerError("Failed to retrieve salary"))
 			return
+		}
+
+		// Check access permission for the salary's employee
+		if !authz.HasAnyRole(claims, "hr", "admin") {
+			canAccess, err := authz.CanAccessSalaryData(r.Context(), claims, salary.EmployeeID, accessChecker)
+			if err != nil {
+				log.Error("failed to check access permission", sl.Err(err))
+				render.Status(r, http.StatusInternalServerError)
+				render.JSON(w, r, resp.InternalServerError("Failed to verify access"))
+				return
+			}
+			if !canAccess {
+				log.Warn("access denied to salary record", slog.Int64("salary_id", id), slog.Int64("user_id", claims.UserID))
+				render.Status(r, http.StatusForbidden)
+				render.JSON(w, r, resp.Forbidden("Access denied to this salary record"))
+				return
+			}
 		}
 
 		log.Info("successfully retrieved salary", slog.Int64("id", salary.ID))

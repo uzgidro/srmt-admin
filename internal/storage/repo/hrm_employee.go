@@ -20,6 +20,43 @@ import (
 
 // --- Employee Operations ---
 
+// validateManagerHierarchy checks that setting a manager doesn't create a circular hierarchy
+func (r *Repo) validateManagerHierarchy(ctx context.Context, employeeID, newManagerID int64) error {
+	// Walk up the manager tree to check for cycles
+	visited := make(map[int64]bool)
+	currentID := newManagerID
+
+	for currentID != 0 {
+		// If we reach the employee we're updating, we have a cycle
+		if currentID == employeeID {
+			return storage.ErrCircularManagerHierarchy
+		}
+		// If we've visited this node before, there's a cycle in the existing hierarchy
+		if visited[currentID] {
+			return storage.ErrCircularManagerHierarchy
+		}
+		visited[currentID] = true
+
+		var managerID sql.NullInt64
+		err := r.db.QueryRowContext(ctx,
+			`SELECT manager_id FROM hrm_employees WHERE id = $1`, currentID).
+			Scan(&managerID)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				// Reached end of hierarchy
+				break
+			}
+			return err
+		}
+		if !managerID.Valid {
+			// No more managers up the chain
+			break
+		}
+		currentID = managerID.Int64
+	}
+	return nil
+}
+
 // AddEmployee creates a new HRM employee record
 func (r *Repo) AddEmployee(ctx context.Context, req hrm.AddEmployeeRequest) (int64, error) {
 	const op = "storage.repo.AddEmployee"
@@ -167,6 +204,23 @@ func (r *Repo) GetEmployeeByUserID(ctx context.Context, userID int64) (*hrmmodel
 	return emp, nil
 }
 
+// GetEmployeeIDByUserID retrieves just the employee ID for a given user ID
+func (r *Repo) GetEmployeeIDByUserID(ctx context.Context, userID int64) (int64, error) {
+	const op = "storage.repo.GetEmployeeIDByUserID"
+
+	var employeeID int64
+	err := r.db.QueryRowContext(ctx,
+		`SELECT id FROM hrm_employees WHERE user_id = $1`, userID).Scan(&employeeID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, storage.ErrNotFound
+		}
+		return 0, fmt.Errorf("%s: failed to get employee ID: %w", op, err)
+	}
+
+	return employeeID, nil
+}
+
 // GetAllEmployees retrieves all employees with filters
 func (r *Repo) GetAllEmployees(ctx context.Context, filter hrm.EmployeeFilter) ([]*hrmmodel.Employee, error) {
 	const op = "storage.repo.GetAllEmployees"
@@ -271,6 +325,13 @@ func (r *Repo) GetAllEmployees(ctx context.Context, filter hrm.EmployeeFilter) (
 // EditEmployee updates an employee record
 func (r *Repo) EditEmployee(ctx context.Context, id int64, req hrm.EditEmployeeRequest) error {
 	const op = "storage.repo.EditEmployee"
+
+	// Validate manager hierarchy if manager is being changed
+	if req.ManagerID != nil {
+		if err := r.validateManagerHierarchy(ctx, id, *req.ManagerID); err != nil {
+			return err
+		}
+	}
 
 	var updates []string
 	var args []interface{}
@@ -418,6 +479,45 @@ func (r *Repo) TerminateEmployee(ctx context.Context, id int64, terminationDate 
 	return nil
 }
 
+// IsManagerOf checks if managerEmployeeID is a manager of employeeID (directly or indirectly)
+func (r *Repo) IsManagerOf(ctx context.Context, managerEmployeeID, employeeID int64) (bool, error) {
+	const op = "storage.repo.IsManagerOf"
+
+	if managerEmployeeID == employeeID {
+		return false, nil // Cannot be manager of self
+	}
+
+	// Walk up the manager tree from employeeID
+	currentID := employeeID
+	visited := make(map[int64]bool)
+
+	for {
+		var managerID sql.NullInt64
+		err := r.db.QueryRowContext(ctx,
+			`SELECT manager_id FROM hrm_employees WHERE id = $1`, currentID).Scan(&managerID)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return false, nil
+			}
+			return false, fmt.Errorf("%s: failed to check manager: %w", op, err)
+		}
+
+		if !managerID.Valid {
+			return false, nil // Reached top of hierarchy
+		}
+
+		if managerID.Int64 == managerEmployeeID {
+			return true, nil // Found manager
+		}
+
+		if visited[managerID.Int64] {
+			return false, nil // Cycle detected, stop
+		}
+		visited[currentID] = true
+		currentID = managerID.Int64
+	}
+}
+
 // CountEmployees returns count of employees matching filter
 func (r *Repo) CountEmployees(ctx context.Context, filter hrm.EmployeeFilter) (int, error) {
 	const op = "storage.repo.CountEmployees"
@@ -458,8 +558,13 @@ func (r *Repo) CountEmployees(ctx context.Context, filter hrm.EmployeeFilter) (i
 	return count, nil
 }
 
-// Helper function to scan employee from row
-func (r *Repo) scanEmployee(row *sql.Row) (*hrmmodel.Employee, error) {
+// scanner interface for sql.Row and sql.Rows compatibility
+type employeeScanner interface {
+	Scan(dest ...interface{}) error
+}
+
+// scanEmployeeFromScanner scans employee data from a scanner interface (works with both sql.Row and sql.Rows)
+func (r *Repo) scanEmployeeFromScanner(s employeeScanner) (*hrmmodel.Employee, error) {
 	var emp hrmmodel.Employee
 	var userID, managerID sql.NullInt64
 	var employeeNumber, workSchedule, notes sql.NullString
@@ -479,7 +584,7 @@ func (r *Repo) scanEmployee(row *sql.Row) (*hrmmodel.Employee, error) {
 	var posID sql.NullInt64
 	var posName sql.NullString
 
-	err := row.Scan(
+	err := s.Scan(
 		&emp.ID, &emp.ContactID, &userID, &employeeNumber, &emp.HireDate,
 		&terminationDate, &emp.EmploymentType, &emp.EmploymentStatus,
 		&workSchedule, &workHoursPerWeek, &managerID,
@@ -570,116 +675,14 @@ func (r *Repo) scanEmployee(row *sql.Row) (*hrmmodel.Employee, error) {
 	return &emp, nil
 }
 
-// Helper to scan employee from rows
+// scanEmployee scans employee from sql.Row
+func (r *Repo) scanEmployee(row *sql.Row) (*hrmmodel.Employee, error) {
+	return r.scanEmployeeFromScanner(row)
+}
+
+// scanEmployeeRow scans employee from sql.Rows
 func (r *Repo) scanEmployeeRow(rows *sql.Rows) (*hrmmodel.Employee, error) {
-	var emp hrmmodel.Employee
-	var userID, managerID sql.NullInt64
-	var employeeNumber, workSchedule, notes sql.NullString
-	var workHoursPerWeek sql.NullFloat64
-	var terminationDate, probationEndDate, updatedAt sql.NullTime
-
-	// Contact fields
-	var contactID sql.NullInt64
-	var contactName, contactEmail, contactPhone, contactIPPhone sql.NullString
-	var contactDOB sql.NullTime
-
-	// Organization, Department, Position
-	var orgID sql.NullInt64
-	var orgName sql.NullString
-	var deptID sql.NullInt64
-	var deptName sql.NullString
-	var posID sql.NullInt64
-	var posName sql.NullString
-
-	err := rows.Scan(
-		&emp.ID, &emp.ContactID, &userID, &employeeNumber, &emp.HireDate,
-		&terminationDate, &emp.EmploymentType, &emp.EmploymentStatus,
-		&workSchedule, &workHoursPerWeek, &managerID,
-		&probationEndDate, &emp.ProbationPassed, &notes,
-		&emp.CreatedAt, &updatedAt,
-		&contactID, &contactName, &contactEmail, &contactPhone, &contactIPPhone, &contactDOB,
-		&orgID, &orgName,
-		&deptID, &deptName,
-		&posID, &posName,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	// Map nullable fields (same as scanEmployee)
-	if userID.Valid {
-		emp.UserID = &userID.Int64
-	}
-	if employeeNumber.Valid {
-		emp.EmployeeNumber = &employeeNumber.String
-	}
-	if terminationDate.Valid {
-		emp.TerminationDate = &terminationDate.Time
-	}
-	if workSchedule.Valid {
-		emp.WorkSchedule = &workSchedule.String
-	}
-	if workHoursPerWeek.Valid {
-		emp.WorkHoursPerWeek = &workHoursPerWeek.Float64
-	}
-	if managerID.Valid {
-		emp.ManagerID = &managerID.Int64
-	}
-	if probationEndDate.Valid {
-		emp.ProbationEndDate = &probationEndDate.Time
-	}
-	if notes.Valid {
-		emp.Notes = &notes.String
-	}
-	if updatedAt.Valid {
-		emp.UpdatedAt = &updatedAt.Time
-	}
-
-	// Build contact
-	if contactID.Valid {
-		emp.Contact = &contact.Model{
-			ID:   contactID.Int64,
-			Name: contactName.String,
-		}
-		if contactEmail.Valid {
-			emp.Contact.Email = &contactEmail.String
-		}
-		if contactPhone.Valid {
-			emp.Contact.Phone = &contactPhone.String
-		}
-		if contactIPPhone.Valid {
-			emp.Contact.IPPhone = &contactIPPhone.String
-		}
-		if contactDOB.Valid {
-			emp.Contact.DOB = &contactDOB.Time
-		}
-	}
-
-	// Build organization
-	if orgID.Valid && orgName.Valid {
-		emp.Organization = &organization.Model{
-			ID:   orgID.Int64,
-			Name: orgName.String,
-		}
-	}
-
-	// Build department
-	if deptID.Valid && deptName.Valid {
-		emp.Department = &department.Model{
-			ID:   deptID.Int64,
-			Name: deptName.String,
-		}
-	}
-
-	// Build position
-	if posID.Valid && posName.Valid {
-		emp.Position = &position.Model{
-			ID:   posID.Int64,
-			Name: posName.String,
-		}
-	}
-
-	return &emp, nil
+	return r.scanEmployeeFromScanner(rows)
 }
 
 // --- Personnel Document Operations ---

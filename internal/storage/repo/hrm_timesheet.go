@@ -393,14 +393,19 @@ func (r *Repo) DeleteTimesheet(ctx context.Context, id int64) error {
 	return nil
 }
 
-// Helper to scan timesheet
-func (r *Repo) scanTimesheet(row *sql.Row) (*hrmmodel.Timesheet, error) {
+// timesheetScanner interface for sql.Row and sql.Rows compatibility
+type timesheetScanner interface {
+	Scan(dest ...interface{}) error
+}
+
+// scanTimesheetFromScanner scans timesheet data from a scanner interface
+func (r *Repo) scanTimesheetFromScanner(s timesheetScanner) (*hrmmodel.Timesheet, error) {
 	var ts hrmmodel.Timesheet
 	var submittedAt, approvedAt, updatedAt sql.NullTime
 	var approvedBy sql.NullInt64
 	var rejectionReason, notes sql.NullString
 
-	err := row.Scan(
+	err := s.Scan(
 		&ts.ID, &ts.EmployeeID, &ts.Year, &ts.Month,
 		&ts.TotalWorkDays, &ts.TotalWorkedDays, &ts.TotalHours, &ts.OvertimeHours,
 		&ts.SickDays, &ts.VacationDays, &ts.AbsenceDays,
@@ -433,44 +438,14 @@ func (r *Repo) scanTimesheet(row *sql.Row) (*hrmmodel.Timesheet, error) {
 	return &ts, nil
 }
 
-// Helper to scan timesheet from rows
+// scanTimesheet scans timesheet from sql.Row
+func (r *Repo) scanTimesheet(row *sql.Row) (*hrmmodel.Timesheet, error) {
+	return r.scanTimesheetFromScanner(row)
+}
+
+// scanTimesheetRow scans timesheet from sql.Rows
 func (r *Repo) scanTimesheetRow(rows *sql.Rows) (*hrmmodel.Timesheet, error) {
-	var ts hrmmodel.Timesheet
-	var submittedAt, approvedAt, updatedAt sql.NullTime
-	var approvedBy sql.NullInt64
-	var rejectionReason, notes sql.NullString
-
-	err := rows.Scan(
-		&ts.ID, &ts.EmployeeID, &ts.Year, &ts.Month,
-		&ts.TotalWorkDays, &ts.TotalWorkedDays, &ts.TotalHours, &ts.OvertimeHours,
-		&ts.SickDays, &ts.VacationDays, &ts.AbsenceDays,
-		&ts.Status, &submittedAt, &approvedBy, &approvedAt, &rejectionReason,
-		&notes, &ts.CreatedAt, &updatedAt,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	if submittedAt.Valid {
-		ts.SubmittedAt = &submittedAt.Time
-	}
-	if approvedBy.Valid {
-		ts.ApprovedBy = &approvedBy.Int64
-	}
-	if approvedAt.Valid {
-		ts.ApprovedAt = &approvedAt.Time
-	}
-	if rejectionReason.Valid {
-		ts.RejectionReason = &rejectionReason.String
-	}
-	if notes.Valid {
-		ts.Notes = &notes.String
-	}
-	if updatedAt.Valid {
-		ts.UpdatedAt = &updatedAt.Time
-	}
-
-	return &ts, nil
+	return r.scanTimesheetFromScanner(rows)
 }
 
 // --- Timesheet Entry Operations ---

@@ -283,12 +283,34 @@ func GetCards(log *slog.Logger, repo CardRepository) http.HandlerFunc {
 		}
 
 		if limitStr := q.Get("limit"); limitStr != "" {
-			val, _ := strconv.Atoi(limitStr)
+			val, err := strconv.Atoi(limitStr)
+			if err != nil {
+				log.Warn("invalid 'limit' parameter", sl.Err(err))
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest("Invalid 'limit' parameter"))
+				return
+			}
+			if val < 1 || val > 1000 {
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest("Limit must be between 1 and 1000"))
+				return
+			}
 			filter.Limit = val
 		}
 
 		if offsetStr := q.Get("offset"); offsetStr != "" {
-			val, _ := strconv.Atoi(offsetStr)
+			val, err := strconv.Atoi(offsetStr)
+			if err != nil {
+				log.Warn("invalid 'offset' parameter", sl.Err(err))
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest("Invalid 'offset' parameter"))
+				return
+			}
+			if val < 0 {
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest("Offset cannot be negative"))
+				return
+			}
 			filter.Offset = val
 		}
 
@@ -717,12 +739,34 @@ func GetAccessLogs(log *slog.Logger, repo AccessLogRepository) http.HandlerFunc 
 		}
 
 		if limitStr := q.Get("limit"); limitStr != "" {
-			val, _ := strconv.Atoi(limitStr)
+			val, err := strconv.Atoi(limitStr)
+			if err != nil {
+				log.Warn("invalid 'limit' parameter", sl.Err(err))
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest("Invalid 'limit' parameter"))
+				return
+			}
+			if val < 1 || val > 1000 {
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest("Limit must be between 1 and 1000"))
+				return
+			}
 			filter.Limit = val
 		}
 
 		if offsetStr := q.Get("offset"); offsetStr != "" {
-			val, _ := strconv.Atoi(offsetStr)
+			val, err := strconv.Atoi(offsetStr)
+			if err != nil {
+				log.Warn("invalid 'offset' parameter", sl.Err(err))
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest("Invalid 'offset' parameter"))
+				return
+			}
+			if val < 0 {
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest("Offset cannot be negative"))
+				return
+			}
 			filter.Offset = val
 		}
 

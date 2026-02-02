@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/render"
 	"github.com/go-playground/validator/v10"
 
+	"srmt-admin/internal/http-server/handlers/hrm/authz"
 	mwauth "srmt-admin/internal/http-server/middleware/auth"
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/dto/hrm"
@@ -46,6 +47,12 @@ type VacationRepository interface {
 	CancelVacation(ctx context.Context, id int64) error
 	DeleteVacation(ctx context.Context, id int64) error
 	GetVacationCalendar(ctx context.Context, filter hrm.VacationCalendarFilter) ([]*hrmmodel.VacationCalendarEntry, error)
+}
+
+// EmployeeAccessChecker provides methods for checking employee data access
+type EmployeeAccessChecker interface {
+	GetEmployeeIDByUserID(ctx context.Context, userID int64) (int64, error)
+	IsManagerOf(ctx context.Context, managerEmployeeID, employeeID int64) (bool, error)
 }
 
 // IDResponse represents a response with ID
@@ -347,13 +354,25 @@ func EditBalance(log *slog.Logger, repo VacationBalanceRepository) http.HandlerF
 // --- Vacation Request Handlers ---
 
 // GetAll returns vacation requests with filters
-func GetAll(log *slog.Logger, repo VacationRepository) http.HandlerFunc {
+// Access control: HR/admin/manager can see all or subordinates, others see only their own
+func GetAll(log *slog.Logger, repo VacationRepository, accessChecker EmployeeAccessChecker) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.hrm.vacation.GetAll"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
 
+		claims, ok := mwauth.ClaimsFromContext(r.Context())
+		if !ok {
+			log.Error("failed to get claims from context")
+			render.Status(r, http.StatusUnauthorized)
+			render.JSON(w, r, resp.Unauthorized("Authentication required"))
+			return
+		}
+
 		var filter hrm.VacationFilter
 		q := r.URL.Query()
+
+		// Check if user has privileged access (HR or admin)
+		hasPrivilegedAccess := authz.HasAnyRole(claims, "hr", "admin")
 
 		if empIDStr := q.Get("employee_id"); empIDStr != "" {
 			val, err := strconv.ParseInt(empIDStr, 10, 64)
@@ -363,7 +382,34 @@ func GetAll(log *slog.Logger, repo VacationRepository) http.HandlerFunc {
 				render.JSON(w, r, resp.BadRequest("Invalid 'employee_id' parameter"))
 				return
 			}
+
+			// Check access permission for the requested employee's vacations
+			if !hasPrivilegedAccess {
+				canAccess, _, err := authz.CanAccessEmployeeData(r.Context(), claims, val, accessChecker)
+				if err != nil {
+					log.Error("failed to check access permission", sl.Err(err))
+					render.Status(r, http.StatusInternalServerError)
+					render.JSON(w, r, resp.InternalServerError("Failed to verify access"))
+					return
+				}
+				if !canAccess {
+					log.Warn("access denied to employee vacations", slog.Int64("target_employee_id", val), slog.Int64("user_id", claims.UserID))
+					render.Status(r, http.StatusForbidden)
+					render.JSON(w, r, resp.Forbidden("Access denied to this employee's vacation data"))
+					return
+				}
+			}
 			filter.EmployeeID = &val
+		} else if !hasPrivilegedAccess {
+			// Non-privileged users must specify employee_id (their own)
+			currentEmpID, err := accessChecker.GetEmployeeIDByUserID(r.Context(), claims.UserID)
+			if err != nil {
+				log.Warn("user has no employee record", slog.Int64("user_id", claims.UserID))
+				render.Status(r, http.StatusForbidden)
+				render.JSON(w, r, resp.Forbidden("Access denied - no employee record found"))
+				return
+			}
+			filter.EmployeeID = &currentEmpID
 		}
 
 		if typeIDStr := q.Get("vacation_type_id"); typeIDStr != "" {
@@ -450,10 +496,19 @@ func GetAll(log *slog.Logger, repo VacationRepository) http.HandlerFunc {
 }
 
 // GetByID returns a vacation request by ID
-func GetByID(log *slog.Logger, repo VacationRepository) http.HandlerFunc {
+// Access control: HR/admin/manager can see all, others see only their own
+func GetByID(log *slog.Logger, repo VacationRepository, accessChecker EmployeeAccessChecker) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.hrm.vacation.GetByID"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
+
+		claims, ok := mwauth.ClaimsFromContext(r.Context())
+		if !ok {
+			log.Error("failed to get claims from context")
+			render.Status(r, http.StatusUnauthorized)
+			render.JSON(w, r, resp.Unauthorized("Authentication required"))
+			return
+		}
 
 		idStr := chi.URLParam(r, "id")
 		id, err := strconv.ParseInt(idStr, 10, 64)
@@ -476,6 +531,23 @@ func GetByID(log *slog.Logger, repo VacationRepository) http.HandlerFunc {
 			render.Status(r, http.StatusInternalServerError)
 			render.JSON(w, r, resp.InternalServerError("Failed to retrieve vacation"))
 			return
+		}
+
+		// Check access permission for the vacation's employee
+		if !authz.HasAnyRole(claims, "hr", "admin") {
+			canAccess, _, err := authz.CanAccessEmployeeData(r.Context(), claims, vacation.EmployeeID, accessChecker)
+			if err != nil {
+				log.Error("failed to check access permission", sl.Err(err))
+				render.Status(r, http.StatusInternalServerError)
+				render.JSON(w, r, resp.InternalServerError("Failed to verify access"))
+				return
+			}
+			if !canAccess {
+				log.Warn("access denied to vacation record", slog.Int64("vacation_id", id), slog.Int64("user_id", claims.UserID))
+				render.Status(r, http.StatusForbidden)
+				render.JSON(w, r, resp.Forbidden("Access denied to this vacation record"))
+				return
+			}
 		}
 
 		log.Info("successfully retrieved vacation", slog.Int64("id", vacation.ID))

@@ -598,31 +598,37 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 					r.Patch("/balances/{id}", hrmVacation.EditBalance(deps.Log, deps.PgRepo))
 
 					// Vacation Requests
-					r.Get("/", hrmVacation.GetAll(deps.Log, deps.PgRepo))
+					r.Get("/", hrmVacation.GetAll(deps.Log, deps.PgRepo, deps.PgRepo))
 					r.Post("/", hrmVacation.Add(deps.Log, deps.PgRepo))
 					r.Get("/calendar", hrmVacation.GetCalendar(deps.Log, deps.PgRepo))
-					r.Get("/{id}", hrmVacation.GetByID(deps.Log, deps.PgRepo))
+					r.Get("/{id}", hrmVacation.GetByID(deps.Log, deps.PgRepo, deps.PgRepo))
 					r.Patch("/{id}", hrmVacation.Edit(deps.Log, deps.PgRepo))
 					r.Delete("/{id}", hrmVacation.Delete(deps.Log, deps.PgRepo))
 					r.Post("/{id}/approve", hrmVacation.Approve(deps.Log, deps.PgRepo))
 					r.Post("/{id}/cancel", hrmVacation.Cancel(deps.Log, deps.PgRepo))
 				})
 
-				// Salaries
+				// Salaries - requires hr, manager, or admin role for write operations
 				r.Route("/salaries", func(r chi.Router) {
-					// Salary Structures
-					r.Get("/structures", hrmSalary.GetStructures(deps.Log, deps.PgRepo))
-					r.Post("/structures", hrmSalary.AddStructure(deps.Log, deps.PgRepo))
-					r.Patch("/structures/{id}", hrmSalary.EditStructure(deps.Log, deps.PgRepo))
-					r.Delete("/structures/{id}", hrmSalary.DeleteStructure(deps.Log, deps.PgRepo))
+					// Salary Structures - read is allowed for all HRM users, write requires elevated roles
+					r.Get("/structures", hrmSalary.GetStructures(deps.Log, deps.PgRepo, deps.PgRepo))
+					r.Group(func(r chi.Router) {
+						r.Use(mwauth.RequireAnyRole("hr", "admin"))
+						r.Post("/structures", hrmSalary.AddStructure(deps.Log, deps.PgRepo))
+						r.Patch("/structures/{id}", hrmSalary.EditStructure(deps.Log, deps.PgRepo))
+						r.Delete("/structures/{id}", hrmSalary.DeleteStructure(deps.Log, deps.PgRepo))
+					})
 
-					// Salaries
-					r.Get("/", hrmSalary.GetAll(deps.Log, deps.PgRepo))
-					r.Post("/", hrmSalary.Add(deps.Log, deps.PgRepo))
-					r.Get("/{id}", hrmSalary.GetByID(deps.Log, deps.PgRepo))
-					r.Delete("/{id}", hrmSalary.Delete(deps.Log, deps.PgRepo))
-					r.Post("/{id}/approve", hrmSalary.Approve(deps.Log, deps.PgRepo))
-					r.Post("/{id}/pay", hrmSalary.Pay(deps.Log, deps.PgRepo))
+					// Salaries - read has row-level access control, write requires elevated roles
+					r.Get("/", hrmSalary.GetAll(deps.Log, deps.PgRepo, deps.PgRepo))
+					r.Get("/{id}", hrmSalary.GetByID(deps.Log, deps.PgRepo, deps.PgRepo))
+					r.Group(func(r chi.Router) {
+						r.Use(mwauth.RequireAnyRole("hr", "admin"))
+						r.Post("/", hrmSalary.Add(deps.Log, deps.PgRepo))
+						r.Delete("/{id}", hrmSalary.Delete(deps.Log, deps.PgRepo))
+						r.Post("/{id}/approve", hrmSalary.Approve(deps.Log, deps.PgRepo))
+						r.Post("/{id}/pay", hrmSalary.Pay(deps.Log, deps.PgRepo))
+					})
 
 					// Bonuses
 					r.Get("/bonuses", hrmSalary.GetBonuses(deps.Log, deps.PgRepo))
@@ -813,8 +819,10 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 					r.Delete("/templates/{id}", hrmDocument.DeleteTemplate(deps.Log, deps.PgRepo))
 				})
 
-				// Access Control
+				// Access Control - requires security or admin role
 				r.Route("/access", func(r chi.Router) {
+					r.Use(mwauth.RequireAnyRole("security", "admin", "hr"))
+
 					// Zones
 					r.Get("/zones", hrmAccess.GetZones(deps.Log, deps.PgRepo))
 					r.Post("/zones", hrmAccess.AddZone(deps.Log, deps.PgRepo))
@@ -835,9 +843,12 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 					r.Post("/card-zones", hrmAccess.AddCardZoneAccess(deps.Log, deps.PgRepo))
 					r.Delete("/card-zones/{id}", hrmAccess.DeleteCardZoneAccess(deps.Log, deps.PgRepo))
 
-					// Access Logs
-					r.Get("/logs", hrmAccess.GetAccessLogs(deps.Log, deps.PgRepo))
-					r.Post("/logs", hrmAccess.AddAccessLog(deps.Log, deps.PgRepo))
+					// Access Logs - additional security: only security and admin can view
+					r.Group(func(r chi.Router) {
+						r.Use(mwauth.RequireAnyRole("security", "admin"))
+						r.Get("/logs", hrmAccess.GetAccessLogs(deps.Log, deps.PgRepo))
+						r.Post("/logs", hrmAccess.AddAccessLog(deps.Log, deps.PgRepo))
+					})
 				})
 
 				// Notifications

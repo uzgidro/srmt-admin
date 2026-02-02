@@ -31,4 +31,13 @@ var (
 
 	ErrNotFound      = errors.New("not found")
 	ErrInvalidStatus = errors.New("invalid status for operation")
+
+	// HRM-specific errors
+	ErrInsufficientBalance      = errors.New("insufficient vacation balance")
+	ErrVacationOverlap          = errors.New("vacation dates overlap with existing request")
+	ErrCircularManagerHierarchy = errors.New("circular manager hierarchy detected")
+	ErrSubstituteCannotBeSelf   = errors.New("substitute employee cannot be the same as requesting employee")
+	ErrNegativeNetAmount        = errors.New("net salary amount cannot be negative")
+	ErrInsufficientVacationDays = errors.New("requested days exceed available vacation balance")
+	ErrAccessDenied             = errors.New("access denied to requested resource")
 )
