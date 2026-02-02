@@ -56,6 +56,7 @@ import (
 	getbycategory "srmt-admin/internal/http-server/handlers/file/get-by-category"
 	"srmt-admin/internal/http-server/handlers/file/latest"
 	"srmt-admin/internal/http-server/handlers/file/upload"
+	gesAskue "srmt-admin/internal/http-server/handlers/ges/askue"
 	gesContacts "srmt-admin/internal/http-server/handlers/ges/contacts"
 	gesDepartments "srmt-admin/internal/http-server/handlers/ges/departments"
 	gesDischarges "srmt-admin/internal/http-server/handlers/ges/discharges"
@@ -243,6 +244,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 		r.Get("/ges/{id}/visits", gesVisits.New(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
 		r.Get("/ges/{id}/telemetry", asutpTelemetry.NewGetStation(deps.Log, deps.RedisRepo))
 		r.Get("/ges/{id}/telemetry/{device_id}", asutpTelemetry.NewGetDevice(deps.Log, deps.RedisRepo))
+		r.Get("/ges/{id}/askue", gesAskue.New(deps.Log, deps.ASCUEFetcher))
 
 		// Admin routes
 		r.Group(func(r chi.Router) {

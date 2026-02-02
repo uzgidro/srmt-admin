@@ -110,7 +110,7 @@ func TestEditShutdown(t *testing.T) {
 			id:   1,
 			req: dto.EditShutdownRequest{
 				StartTime: timePtr(time.Now()),
-				EndTime:   ptrTimePtr(time.Now().Add(3 * time.Hour)),
+				EndTime:   timePtr(time.Now().Add(3 * time.Hour)),
 			},
 			wantErr: false,
 		},
@@ -311,11 +311,6 @@ func float64Ptr(f float64) *float64 {
 
 func timePtr(t time.Time) *time.Time {
 	return &t
-}
-
-func ptrTimePtr(t time.Time) **time.Time {
-	p := &t
-	return &p
 }
 
 // TestEditShutdownIdleDischargeCreation specifically tests the fix for creating
