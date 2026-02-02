@@ -11,6 +11,7 @@ import (
 	"srmt-admin/internal/lib/service/reservoir"
 	"srmt-admin/internal/storage/minio"
 	mngRepo "srmt-admin/internal/storage/mongo"
+	redisRepo "srmt-admin/internal/storage/redis"
 	pgRepo "srmt-admin/internal/storage/repo"
 	"srmt-admin/internal/token"
 	"time"
@@ -37,6 +38,7 @@ type AppContainer struct {
 	PgRepo           *pgRepo.Repo
 	MongoRepo        *mngRepo.Repo
 	MinioRepo        *minio.Repo
+	RedisRepo        *redisRepo.Repo
 	Token            *token.Token
 	Location         *time.Location
 	ASCUEFetcher     *ascue.Fetcher
@@ -53,6 +55,7 @@ func ProvideAppContainer(
 	pg *pgRepo.Repo,
 	mng *mngRepo.Repo,
 	minioRepo *minio.Repo,
+	redis *redisRepo.Repo,
 	tkn *token.Token,
 	loc *time.Location,
 	ascueFetcher *ascue.Fetcher,
@@ -67,6 +70,7 @@ func ProvideAppContainer(
 		PgRepo:           pg,
 		MongoRepo:        mng,
 		MinioRepo:        minioRepo,
+		RedisRepo:        redis,
 		Token:            tkn,
 		Location:         loc,
 		ASCUEFetcher:     ascueFetcher,
@@ -83,6 +87,7 @@ func ProvideRouter(
 	pg *pgRepo.Repo,
 	mng *mngRepo.Repo,
 	minioRepo *minio.Repo,
+	redis *redisRepo.Repo,
 	loc *time.Location,
 	ascueFetcher *ascue.Fetcher,
 	reservoirFetcher *reservoir.Fetcher,
@@ -104,6 +109,7 @@ func ProvideRouter(
 		PgRepo:            pg,
 		MongoRepo:         mng,
 		MinioRepo:         minioRepo,
+		RedisRepo:         redis,
 		Config:            *cfg,
 		Location:          loc,
 		ASCUEFetcher:      ascueFetcher,

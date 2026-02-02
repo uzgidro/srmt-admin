@@ -9,9 +9,11 @@ import (
 	pgDriver "srmt-admin/internal/storage/driver/postgres"
 	"srmt-admin/internal/storage/minio"
 	mngRepo "srmt-admin/internal/storage/mongo"
+	redisRepo "srmt-admin/internal/storage/redis"
 	pgRepo "srmt-admin/internal/storage/repo"
 
 	"github.com/google/wire"
+	"github.com/redis/go-redis/v9"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 )
 
@@ -22,6 +24,8 @@ var StorageProviderSet = wire.NewSet(
 	ProvideMongoClient,
 	ProvideMongoRepo,
 	ProvideMinioRepo,
+	ProvideRedisClient,
+	ProvideRedisRepo,
 )
 
 // ProvidePostgresDriver creates PostgreSQL driver with migrations
@@ -69,4 +73,32 @@ func ProvideMongoRepo(client *mongo.Client) *mngRepo.Repo {
 // ProvideMinioRepo creates MinIO repository
 func ProvideMinioRepo(cfg config.Minio, mainCfg *config.Config, log *slog.Logger) (*minio.Repo, error) {
 	return minio.New(cfg, log, mainCfg.Bucket)
+}
+
+// ProvideRedisClient creates a Redis client with connection pooling
+func ProvideRedisClient(cfg config.Redis, log *slog.Logger) (*redis.Client, func(), error) {
+	client := redis.NewClient(&redis.Options{
+		Addr:     cfg.Host + ":" + cfg.Port,
+		Password: cfg.Password,
+		DB:       cfg.DB,
+	})
+
+	if err := client.Ping(context.Background()).Err(); err != nil {
+		return nil, nil, err
+	}
+
+	log.Info("connected to Redis", "addr", cfg.Host+":"+cfg.Port, "db", cfg.DB)
+
+	cleanup := func() {
+		if err := client.Close(); err != nil {
+			log.Error("failed to close redis connection", "error", err)
+		}
+	}
+
+	return client, cleanup, nil
+}
+
+// ProvideRedisRepo creates the Redis repository for ASUTP telemetry
+func ProvideRedisRepo(client *redis.Client, cfg config.ASUTP) *redisRepo.Repo {
+	return redisRepo.New(client, cfg.TTL)
 }

@@ -19,6 +19,8 @@ var ConfigProviderSet = wire.NewSet(
 	ProvideLocation,
 	ProvideASCUEConfig,
 	ProvideReservoirConfig,
+	ProvideRedisConfig,
+	ProvideASUTPConfig,
 )
 
 // ProvideConfig loads the main application config
@@ -76,4 +78,14 @@ func ProvideReservoirConfig(log *slog.Logger) *config.ReservoirConfig {
 		return nil
 	}
 	return cfg
+}
+
+// ProvideRedisConfig extracts Redis config from main config
+func ProvideRedisConfig(cfg *config.Config) config.Redis {
+	return cfg.Redis
+}
+
+// ProvideASUTPConfig extracts ASUTP config from main config
+func ProvideASUTPConfig(cfg *config.Config) config.ASUTP {
+	return cfg.ASUTP
 }
