@@ -86,7 +86,7 @@ func TestEdit(t *testing.T) {
 			shutdownID: "1",
 			body: editRequest{
 				StartTime: &now,
-				EndTime:   ptrTimePtr(later),
+				EndTime:   timePtr(later),
 			},
 			mockError:      nil,
 			wantStatusCode: http.StatusOK,
@@ -130,7 +130,7 @@ func TestEdit(t *testing.T) {
 			name:       "successful edit - add idle discharge with new end time",
 			shutdownID: "1",
 			body: editRequest{
-				EndTime:             ptrTimePtr(later),
+				EndTime:             timePtr(later),
 				IdleDischargeVolume: float64Ptr(8.0),
 			},
 			mockError:      nil,
@@ -283,7 +283,7 @@ func TestEdit_IdleDischargeScenarios(t *testing.T) {
 			name:       "add idle discharge and provide new end_time",
 			shutdownID: "2",
 			body: editRequest{
-				EndTime:             ptrTimePtr(time.Now().Add(3 * time.Hour)),
+				EndTime:             timePtr(time.Now().Add(3 * time.Hour)),
 				IdleDischargeVolume: float64Ptr(8.5),
 			},
 			mockError:   nil,
@@ -295,7 +295,7 @@ func TestEdit_IdleDischargeScenarios(t *testing.T) {
 			body: editRequest{
 				OrganizationID:      int64Ptr(2),
 				StartTime:           timePtr(time.Now()),
-				EndTime:             ptrTimePtr(time.Now().Add(4 * time.Hour)),
+				EndTime:             timePtr(time.Now().Add(4 * time.Hour)),
 				Reason:              stringPtr("Comprehensive update"),
 				GenerationLossMwh:   float64Ptr(25.5),
 				IdleDischargeVolume: float64Ptr(20.0),
@@ -350,9 +350,4 @@ func int64Ptr(i int64) *int64 {
 
 func timePtr(t time.Time) *time.Time {
 	return &t
-}
-
-func ptrTimePtr(t time.Time) **time.Time {
-	p := &t
-	return &p
 }
