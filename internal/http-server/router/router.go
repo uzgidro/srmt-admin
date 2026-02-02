@@ -55,6 +55,13 @@ import (
 	getbycategory "srmt-admin/internal/http-server/handlers/file/get-by-category"
 	"srmt-admin/internal/http-server/handlers/file/latest"
 	"srmt-admin/internal/http-server/handlers/file/upload"
+	gesContacts "srmt-admin/internal/http-server/handlers/ges/contacts"
+	gesDepartments "srmt-admin/internal/http-server/handlers/ges/departments"
+	gesDischarges "srmt-admin/internal/http-server/handlers/ges/discharges"
+	gesGet "srmt-admin/internal/http-server/handlers/ges/get"
+	gesIncidents "srmt-admin/internal/http-server/handlers/ges/incidents"
+	gesShutdowns "srmt-admin/internal/http-server/handlers/ges/shutdowns"
+	gesVisits "srmt-admin/internal/http-server/handlers/ges/visits"
 	incidentsHandler "srmt-admin/internal/http-server/handlers/incidents-handler"
 	setIndicator "srmt-admin/internal/http-server/handlers/indicators/set"
 	"srmt-admin/internal/http-server/handlers/instructions"
@@ -221,6 +228,15 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 		r.Get("/legal-documents/types", legaldocuments.GetTypes(deps.Log, deps.PgRepo))
 		r.Get("/legal-documents/{id}", legaldocuments.GetByID(deps.Log, deps.PgRepo, deps.MinioRepo))
 		r.Get("/lex-search", lexparser.Search(deps.Log, deps.HTTPClient, deps.Config.LexParser.BaseURL))
+
+		// GES (individual HPP view)
+		r.Get("/ges/{id}", gesGet.New(deps.Log, deps.PgRepo))
+		r.Get("/ges/{id}/departments", gesDepartments.New(deps.Log, deps.PgRepo))
+		r.Get("/ges/{id}/contacts", gesContacts.New(deps.Log, deps.PgRepo, deps.MinioRepo))
+		r.Get("/ges/{id}/shutdowns", gesShutdowns.New(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
+		r.Get("/ges/{id}/discharges", gesDischarges.New(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
+		r.Get("/ges/{id}/incidents", gesIncidents.New(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
+		r.Get("/ges/{id}/visits", gesVisits.New(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
 
 		// Admin routes
 		r.Group(func(r chi.Router) {
