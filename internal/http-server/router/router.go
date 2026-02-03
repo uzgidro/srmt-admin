@@ -161,13 +161,6 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 	router.Post("/auth/refresh", refresh.New(deps.Log, deps.PgRepo, deps.Token))
 	router.Post("/auth/sign-out", signOut.New(deps.Log))
 
-	router.Get("/discharges/export", dischargeExport.New(
-		deps.Log,
-		deps.PgRepo,
-		dischargeExcelGen.New(deps.DischargeExcelTemplatePath),
-		loc,
-	))
-
 	router.Route("/api/v3", func(r chi.Router) {
 		r.Get("/modsnow", table.Get(deps.Log, deps.MongoRepo))
 		r.Get("/stock", stock.Get(deps.Log, deps.MongoRepo))
@@ -320,6 +313,12 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Post("/discharges", dischargeAdd.New(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
 			r.Patch("/discharges/{id}", dischargePatch.New(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
 			r.Delete("/discharges/{id}", dischargeDelete.New(deps.Log, deps.PgRepo))
+			router.Get("/discharges/export", dischargeExport.New(
+				deps.Log,
+				deps.PgRepo,
+				dischargeExcelGen.New(deps.DischargeExcelTemplatePath),
+				loc,
+			))
 
 			r.Get("/incidents", incidentsHandler.Get(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
 			r.Post("/incidents", incidentsHandler.Add(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
