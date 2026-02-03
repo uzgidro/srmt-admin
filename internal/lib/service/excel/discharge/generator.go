@@ -143,10 +143,10 @@ func (g *Generator) GenerateExcel(date string, data []discharge.Model, loc *time
 		return nil, writeErr
 	}
 
-	// Set print area (B1 to K{lastDataRow})
+	// Set print area (A1 to L{lastDataRow})
 	lastDataRow := 1
 	if len(remainingRows) > 0 {
-		lastDataRow = remainingRows[len(remainingRows)]
+		lastDataRow = remainingRows[len(remainingRows)-1]
 	}
 	printArea := fmt.Sprintf("$A$1:$L$%d", lastDataRow)
 	if err := f.SetDefinedName(&excelize.DefinedName{
