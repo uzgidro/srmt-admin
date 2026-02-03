@@ -191,7 +191,7 @@ func (g *Generator) GenerateExcel(
 
 	// Set print area (delete existing first to avoid "name already exists" error)
 	lastRow := g.findLastDataRow(f, sheet)
-	printArea := fmt.Sprintf("$A$1:$O$%d", lastRow)
+	printArea := fmt.Sprintf("$A$1:$P$%d", lastRow)
 
 	// Delete existing print area if it exists
 	_ = f.DeleteDefinedName(&excelize.DefinedName{
