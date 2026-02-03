@@ -146,9 +146,9 @@ func (g *Generator) GenerateExcel(date string, data []discharge.Model, loc *time
 	// Set print area (B1 to K{lastDataRow})
 	lastDataRow := 1
 	if len(remainingRows) > 0 {
-		lastDataRow = remainingRows[len(remainingRows)-1]
+		lastDataRow = remainingRows[len(remainingRows)]
 	}
-	printArea := fmt.Sprintf("$B$1:$K$%d", lastDataRow)
+	printArea := fmt.Sprintf("$A$1:$L$%d", lastDataRow)
 	if err := f.SetDefinedName(&excelize.DefinedName{
 		Name:     "_xlnm.Print_Area",
 		RefersTo: fmt.Sprintf("'%s'!%s", sheet, printArea),
