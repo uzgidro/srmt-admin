@@ -170,6 +170,8 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 		deps.PgRepo, // DischargeGetter
 		deps.PgRepo, // ShutdownGetter
 		deps.PgRepo, // OrgTypesGetter
+		deps.PgRepo, // VisitGetter
+		deps.PgRepo, // IncidentGetter
 		scExcelGen.New(deps.SCExcelTemplatePath),
 		loc,
 	))

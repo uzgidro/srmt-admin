@@ -14,7 +14,9 @@ import (
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/lib/model/discharge"
+	"srmt-admin/internal/lib/model/incident"
 	"srmt-admin/internal/lib/model/shutdown"
+	"srmt-admin/internal/lib/model/visit"
 	scgen "srmt-admin/internal/lib/service/excel/sc"
 
 	"github.com/go-chi/chi/v5/middleware"
@@ -37,12 +39,24 @@ type OrgTypesGetter interface {
 	GetOrganizationTypesMap(ctx context.Context) (map[int64][]string, error)
 }
 
+// VisitGetter defines the interface for fetching visit data
+type VisitGetter interface {
+	GetVisits(ctx context.Context, day time.Time) ([]*visit.ResponseModel, error)
+}
+
+// IncidentGetter defines the interface for fetching incident data
+type IncidentGetter interface {
+	GetIncidents(ctx context.Context, day time.Time) ([]*incident.ResponseModel, error)
+}
+
 // New returns an HTTP handler for Excel/PDF export of SC reports
 func New(
 	log *slog.Logger,
 	dischargeGetter DischargeGetter,
 	shutdownGetter ShutdownGetter,
 	orgTypesGetter OrgTypesGetter,
+	visitGetter VisitGetter,
+	incidentGetter IncidentGetter,
 	generator *scgen.Generator,
 	loc *time.Location,
 ) http.HandlerFunc {
@@ -117,8 +131,26 @@ func New(
 		// Group shutdowns by organization type (ges/mini/micro)
 		groupedShutdowns := groupShutdownsByType(shutdowns, orgTypesMap)
 
+		// Fetch visit data for the operational day
+		visits, err := visitGetter.GetVisits(r.Context(), startDate)
+		if err != nil {
+			log.Error("failed to fetch visit data", sl.Err(err))
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, resp.InternalServerError("Failed to fetch visit data"))
+			return
+		}
+
+		// Fetch incident data for the operational day
+		incidents, err := incidentGetter.GetIncidents(r.Context(), startDate)
+		if err != nil {
+			log.Error("failed to fetch incident data", sl.Err(err))
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, resp.InternalServerError("Failed to fetch incident data"))
+			return
+		}
+
 		// Generate Excel file
-		excelFile, err := generator.GenerateExcel(startDate, endDate, discharges, groupedShutdowns, loc)
+		excelFile, err := generator.GenerateExcel(startDate, endDate, discharges, groupedShutdowns, visits, incidents, loc)
 		if err != nil {
 			log.Error("failed to generate Excel file", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)

@@ -6,14 +6,16 @@ import (
 	"time"
 
 	"srmt-admin/internal/lib/model/discharge"
+	"srmt-admin/internal/lib/model/incident"
 	"srmt-admin/internal/lib/model/shutdown"
+	"srmt-admin/internal/lib/model/visit"
 
 	"github.com/xuri/excelize/v2"
 )
 
 // SectionInfo holds information about a section in the template
 type SectionInfo struct {
-	Tag       string        // "discharges", "ges", "mini", "micro", "visits"
+	Tag       string        // "discharges", "ges", "mini", "micro", "visits", "incidents"
 	HeaderRow int           // row number of section header
 	OrgRows   map[int64]int // organization_id -> row_number
 }
@@ -42,6 +44,8 @@ func (g *Generator) GenerateExcel(
 	dateStart, dateEnd time.Time,
 	discharges []discharge.Model,
 	shutdowns *GroupedShutdowns,
+	visits []*visit.ResponseModel,
+	incidents []*incident.ResponseModel,
 	loc *time.Location,
 ) (*excelize.File, error) {
 	// Open template file
@@ -138,6 +142,46 @@ func (g *Generator) GenerateExcel(
 		return nil, writeErr
 	}
 
+	// Process visits section
+	// Re-scan sections after shutdowns processing (rows may have shifted)
+	sections, err = g.scanSections(f, sheet)
+	if err != nil {
+		f.Close()
+		return nil, fmt.Errorf("failed to re-scan sections for visits: %w", err)
+	}
+
+	if visitsSection, ok := sections["visits"]; ok {
+		if err := g.processVisits(f, sheet, visitsSection, visits, loc, set); err != nil {
+			f.Close()
+			return nil, fmt.Errorf("failed to process visits: %w", err)
+		}
+	}
+
+	if writeErr != nil {
+		f.Close()
+		return nil, writeErr
+	}
+
+	// Process incidents section
+	// Re-scan sections after visits processing (rows may have shifted)
+	sections, err = g.scanSections(f, sheet)
+	if err != nil {
+		f.Close()
+		return nil, fmt.Errorf("failed to re-scan sections for incidents: %w", err)
+	}
+
+	if incidentsSection, ok := sections["incidents"]; ok {
+		if err := g.processIncidents(f, sheet, incidentsSection, incidents, loc, set); err != nil {
+			f.Close()
+			return nil, fmt.Errorf("failed to process incidents: %w", err)
+		}
+	}
+
+	if writeErr != nil {
+		f.Close()
+		return nil, writeErr
+	}
+
 	// Clear column P (tags column)
 	if err := g.clearColumn(f, sheet, "P"); err != nil {
 		f.Close()
@@ -218,7 +262,7 @@ func (g *Generator) scanSections(f *excelize.File, sheet string) (map[string]*Se
 
 		// Check if it's a section tag
 		switch cellValue {
-		case "ges", "mini", "micro", "discharges", "visits", "res":
+		case "ges", "mini", "micro", "discharges", "visits", "incidents", "res":
 			currentSection = &SectionInfo{
 				Tag:       cellValue,
 				HeaderRow: rowNum,
@@ -695,4 +739,113 @@ func sortAsc(arr []int) {
 			}
 		}
 	}
+}
+
+// processVisits fills the visits section with data
+func (g *Generator) processVisits(
+	f *excelize.File,
+	sheet string,
+	section *SectionInfo,
+	visits []*visit.ResponseModel,
+	loc *time.Location,
+	set func(cell string, value interface{}),
+) error {
+	// The template has one row after the "visits" tag as a template row
+	templateRow := section.HeaderRow + 1
+
+	// If no visits, leave empty template row (don't delete)
+	if len(visits) == 0 {
+		return nil
+	}
+
+	// Duplicate the template row for additional visits (len(visits) - 1) times
+	for i := 1; i < len(visits); i++ {
+		if err := f.DuplicateRow(sheet, templateRow); err != nil {
+			return fmt.Errorf("failed to duplicate row %d: %w", templateRow, err)
+		}
+	}
+
+	// Fill data for each visit
+	for i, v := range visits {
+		row := templateRow + i
+
+		// A: № (numbering)
+		set(fmt.Sprintf("A%d", row), i+1)
+
+		// B: Organization name (B-E merged cells, write to first cell)
+		set(fmt.Sprintf("B%d", row), v.OrganizationName)
+
+		// F: Description - event name (F-L merged cells, write to first cell)
+		set(fmt.Sprintf("F%d", row), v.Description)
+
+		// M: Responsible name (M-O merged cells, write to first cell)
+		set(fmt.Sprintf("M%d", row), v.ResponsibleName)
+	}
+
+	// Restore bottom border for the last data row
+	if len(visits) > 0 {
+		lastRow := templateRow + len(visits) - 1
+		if err := g.applyBottomBorder(f, sheet, lastRow, "A", "O"); err != nil {
+			return fmt.Errorf("failed to apply bottom border: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// processIncidents fills the incidents section with data
+func (g *Generator) processIncidents(
+	f *excelize.File,
+	sheet string,
+	section *SectionInfo,
+	incidents []*incident.ResponseModel,
+	loc *time.Location,
+	set func(cell string, value interface{}),
+) error {
+	// The template has one row after the "incidents" tag as a template row
+	templateRow := section.HeaderRow + 1
+
+	// If no incidents, leave empty template row (don't delete)
+	if len(incidents) == 0 {
+		return nil
+	}
+
+	// Duplicate the template row for additional incidents (len(incidents) - 1) times
+	for i := 1; i < len(incidents); i++ {
+		if err := f.DuplicateRow(sheet, templateRow); err != nil {
+			return fmt.Errorf("failed to duplicate row %d: %w", templateRow, err)
+		}
+	}
+
+	// Fill data for each incident
+	for i, inc := range incidents {
+		row := templateRow + i
+
+		// A: № (numbering)
+		set(fmt.Sprintf("A%d", row), i+1)
+
+		// B: Incident time (dd.MM.yyyy HH:mm)
+		set(fmt.Sprintf("B%d", row), inc.IncidentTime.In(loc).Format("02.01.2006 15:04"))
+
+		// C: Organization name (C-E merged cells, write to first cell)
+		// Use default text if organization is NULL
+		orgName := "Энергия хосил қилувчи корхона ва сув омборлар"
+		if inc.OrganizationName != nil && *inc.OrganizationName != "" {
+			orgName = *inc.OrganizationName
+		}
+		set(fmt.Sprintf("C%d", row), orgName)
+
+		// F: Description (F-O merged cells, write to first cell)
+		set(fmt.Sprintf("F%d", row), inc.Description)
+	}
+
+	// Restore bottom border for the last data row
+	if len(incidents) > 0 {
+		lastRow := templateRow + len(incidents) - 1
+		if err := g.applyBottomBorder(f, sheet, lastRow, "A", "O"); err != nil {
+			return fmt.Errorf("failed to apply bottom border: %w", err)
+		}
+	}
+
+	return nil
 }
