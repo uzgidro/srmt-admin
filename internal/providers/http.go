@@ -117,6 +117,7 @@ func ProvideRouter(
 		HTTPClient:                 httpClient,
 		ExcelTemplatePath:          cfg.TemplatePath + "/res-summary.xlsx",
 		DischargeExcelTemplatePath: cfg.TemplatePath + "/discharge.xlsx",
+		SCExcelTemplatePath:        cfg.TemplatePath + "/sc.xlsx",
 	}
 
 	router.SetupRoutes(r, deps)
