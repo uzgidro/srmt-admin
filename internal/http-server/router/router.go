@@ -105,6 +105,7 @@ import (
 	callbackModsnow "srmt-admin/internal/http-server/handlers/sc/callback/modsnow"
 	callbackStock "srmt-admin/internal/http-server/handlers/sc/callback/stock"
 	"srmt-admin/internal/http-server/handlers/sc/dc"
+	scExport "srmt-admin/internal/http-server/handlers/sc/export"
 	modsnowImg "srmt-admin/internal/http-server/handlers/sc/modsnow/img"
 	"srmt-admin/internal/http-server/handlers/sc/modsnow/table"
 	"srmt-admin/internal/http-server/handlers/sc/stock"
@@ -126,6 +127,7 @@ import (
 	"srmt-admin/internal/lib/service/ascue"
 	dischargeExcelGen "srmt-admin/internal/lib/service/excel/discharge"
 	excelgen "srmt-admin/internal/lib/service/excel/reservoir-summary"
+	scExcelGen "srmt-admin/internal/lib/service/excel/sc"
 	"srmt-admin/internal/lib/service/reservoir"
 	"srmt-admin/internal/storage/minio"
 	"srmt-admin/internal/storage/mongo"
@@ -152,6 +154,7 @@ type AppDependencies struct {
 	HTTPClient                 *http.Client
 	ExcelTemplatePath          string
 	DischargeExcelTemplatePath string
+	SCExcelTemplatePath        string
 }
 
 func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
@@ -353,6 +356,18 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Post("/visits", visit.Add(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
 			r.Patch("/visits/{id}", visit.Edit(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
 			r.Delete("/visits/{id}", visit.Delete(deps.Log, deps.PgRepo))
+
+			// SC Export (комплексный суточный отчёт)
+			r.Get("/sc/export", scExport.New(
+				deps.Log,
+				deps.PgRepo, // DischargeGetter
+				deps.PgRepo, // ShutdownGetter
+				deps.PgRepo, // OrgTypesGetter
+				deps.PgRepo, // VisitGetter
+				deps.PgRepo, // IncidentGetter
+				scExcelGen.New(deps.SCExcelTemplatePath),
+				loc,
+			))
 		})
 
 		r.Group(func(r chi.Router) {
