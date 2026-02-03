@@ -3,6 +3,7 @@ package sc
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"srmt-admin/internal/lib/model/discharge"
@@ -210,23 +211,34 @@ func (g *Generator) GenerateExcel(
 	return f, nil
 }
 
-// replaceDatePlaceholders replaces DATE_START and DATE_END in the template
+// replaceDatePlaceholders replaces DATE_START, DATE_END, and DATE_TITLE in the template
 func (g *Generator) replaceDatePlaceholders(f *excelize.File, sheet string, dateStart, dateEnd time.Time) error {
 	rows, err := f.GetRows(sheet)
 	if err != nil {
 		return fmt.Errorf("failed to get rows: %w", err)
 	}
 
+	// Format dates as "3 февраль" (day month in Cyrillic)
+	dateStartStr := fmt.Sprintf("%d %s", dateStart.Day(), monthNameCyrillic(dateStart.Month()))
+	dateEndStr := fmt.Sprintf("%d %s", dateEnd.Day(), monthNameCyrillic(dateEnd.Month()))
+
 	for rowIdx, row := range rows {
 		for colIdx, cellValue := range row {
-			if cellValue == "DATE_START" {
+			newValue := cellValue
+			replaced := false
+
+			if strings.Contains(newValue, "DATE_START") {
+				newValue = strings.Replace(newValue, "DATE_START", dateStartStr, -1)
+				replaced = true
+			}
+			if strings.Contains(newValue, "DATE_END") {
+				newValue = strings.Replace(newValue, "DATE_END", dateEndStr, -1)
+				replaced = true
+			}
+
+			if replaced {
 				cell, _ := excelize.CoordinatesToCellName(colIdx+1, rowIdx+1)
-				if err := f.SetCellValue(sheet, cell, dateStart.Format("02.01.2006 15:04")); err != nil {
-					return err
-				}
-			} else if cellValue == "DATE_END" {
-				cell, _ := excelize.CoordinatesToCellName(colIdx+1, rowIdx+1)
-				if err := f.SetCellValue(sheet, cell, dateEnd.Format("02.01.2006 15:04")); err != nil {
+				if err := f.SetCellValue(sheet, cell, newValue); err != nil {
 					return err
 				}
 			}
@@ -234,6 +246,25 @@ func (g *Generator) replaceDatePlaceholders(f *excelize.File, sheet string, date
 	}
 
 	return nil
+}
+
+// monthNameCyrillic returns month name in Cyrillic
+func monthNameCyrillic(m time.Month) string {
+	months := []string{
+		"январь",
+		"февраль",
+		"март",
+		"апрель",
+		"май",
+		"июнь",
+		"июль",
+		"август",
+		"сентябрь",
+		"октябрь",
+		"ноябрь",
+		"декабрь",
+	}
+	return months[m-1]
 }
 
 // scanSections reads column P to identify sections and their organization rows
