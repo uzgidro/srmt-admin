@@ -167,7 +167,9 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 	// SC Export (комплексный суточный отчёт)
 	router.Get("/sc/export", scExport.New(
 		deps.Log,
-		deps.PgRepo,
+		deps.PgRepo, // DischargeGetter
+		deps.PgRepo, // ShutdownGetter
+		deps.PgRepo, // OrgTypesGetter
 		scExcelGen.New(deps.SCExcelTemplatePath),
 		loc,
 	))

@@ -14,6 +14,7 @@ import (
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/lib/model/discharge"
+	"srmt-admin/internal/lib/model/shutdown"
 	scgen "srmt-admin/internal/lib/service/excel/sc"
 
 	"github.com/go-chi/chi/v5/middleware"
@@ -26,8 +27,25 @@ type DischargeGetter interface {
 	GetAllDischarges(ctx context.Context, isOngoing *bool, startDate, endDate *time.Time) ([]discharge.Model, error)
 }
 
+// ShutdownGetter defines the interface for fetching shutdown data
+type ShutdownGetter interface {
+	GetShutdowns(ctx context.Context, day time.Time) ([]*shutdown.ResponseModel, error)
+}
+
+// OrgTypesGetter defines the interface for fetching organization types
+type OrgTypesGetter interface {
+	GetOrganizationTypesMap(ctx context.Context) (map[int64][]string, error)
+}
+
 // New returns an HTTP handler for Excel/PDF export of SC reports
-func New(log *slog.Logger, dischargeGetter DischargeGetter, generator *scgen.Generator, loc *time.Location) http.HandlerFunc {
+func New(
+	log *slog.Logger,
+	dischargeGetter DischargeGetter,
+	shutdownGetter ShutdownGetter,
+	orgTypesGetter OrgTypesGetter,
+	generator *scgen.Generator,
+	loc *time.Location,
+) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.sc.export.New"
 		log := log.With(
@@ -78,8 +96,29 @@ func New(log *slog.Logger, dischargeGetter DischargeGetter, generator *scgen.Gen
 			return
 		}
 
+		// Fetch shutdown data for the operational day
+		shutdowns, err := shutdownGetter.GetShutdowns(r.Context(), startDate)
+		if err != nil {
+			log.Error("failed to fetch shutdown data", sl.Err(err))
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, resp.InternalServerError("Failed to fetch shutdown data"))
+			return
+		}
+
+		// Fetch organization types map
+		orgTypesMap, err := orgTypesGetter.GetOrganizationTypesMap(r.Context())
+		if err != nil {
+			log.Error("failed to fetch organization types", sl.Err(err))
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, resp.InternalServerError("Failed to fetch organization types"))
+			return
+		}
+
+		// Group shutdowns by organization type (ges/mini/micro)
+		groupedShutdowns := groupShutdownsByType(shutdowns, orgTypesMap)
+
 		// Generate Excel file
-		excelFile, err := generator.GenerateExcel(startDate, endDate, discharges, loc)
+		excelFile, err := generator.GenerateExcel(startDate, endDate, discharges, groupedShutdowns, loc)
 		if err != nil {
 			log.Error("failed to generate Excel file", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)
@@ -208,4 +247,54 @@ func exportPDF(w http.ResponseWriter, excelFile *excelize.File, parsedDate time.
 	}
 
 	return nil
+}
+
+// groupShutdownsByType groups shutdowns by organization type (ges, mini, micro)
+func groupShutdownsByType(shutdowns []*shutdown.ResponseModel, orgTypesMap map[int64][]string) *scgen.GroupedShutdowns {
+	result := &scgen.GroupedShutdowns{
+		Ges:   make([]*shutdown.ResponseModel, 0),
+		Mini:  make([]*shutdown.ResponseModel, 0),
+		Micro: make([]*shutdown.ResponseModel, 0),
+	}
+
+	for _, s := range shutdowns {
+		types, ok := orgTypesMap[s.OrganizationID]
+		if !ok {
+			continue
+		}
+
+		// Determine the type of organization
+		orgType := determineOrgType(types)
+		switch orgType {
+		case "ges":
+			result.Ges = append(result.Ges, s)
+		case "mini":
+			result.Mini = append(result.Mini, s)
+		case "micro":
+			result.Micro = append(result.Micro, s)
+		}
+	}
+
+	return result
+}
+
+// determineOrgType determines the organization type from a list of types
+// Priority: micro > mini > ges (more specific wins)
+func determineOrgType(types []string) string {
+	for _, t := range types {
+		if t == "micro" {
+			return "micro"
+		}
+	}
+	for _, t := range types {
+		if t == "mini" {
+			return "mini"
+		}
+	}
+	for _, t := range types {
+		if t == "ges" {
+			return "ges"
+		}
+	}
+	return ""
 }

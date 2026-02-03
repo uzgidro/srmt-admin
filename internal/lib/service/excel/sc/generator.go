@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"srmt-admin/internal/lib/model/discharge"
+	"srmt-admin/internal/lib/model/shutdown"
 
 	"github.com/xuri/excelize/v2"
 )
@@ -15,6 +16,13 @@ type SectionInfo struct {
 	Tag       string        // "discharges", "ges", "mini", "micro", "visits"
 	HeaderRow int           // row number of section header
 	OrgRows   map[int64]int // organization_id -> row_number
+}
+
+// GroupedShutdowns holds shutdowns grouped by organization type
+type GroupedShutdowns struct {
+	Ges   []*shutdown.ResponseModel
+	Mini  []*shutdown.ResponseModel
+	Micro []*shutdown.ResponseModel
 }
 
 // Generator handles Excel file generation for SC reports
@@ -33,6 +41,7 @@ func New(templatePath string) *Generator {
 func (g *Generator) GenerateExcel(
 	dateStart, dateEnd time.Time,
 	discharges []discharge.Model,
+	shutdowns *GroupedShutdowns,
 	loc *time.Location,
 ) (*excelize.File, error) {
 	// Open template file
@@ -71,6 +80,56 @@ func (g *Generator) GenerateExcel(
 		if err := g.processDischarges(f, sheet, dischargesSection, discharges, loc, set); err != nil {
 			f.Close()
 			return nil, fmt.Errorf("failed to process discharges: %w", err)
+		}
+	}
+
+	if writeErr != nil {
+		f.Close()
+		return nil, writeErr
+	}
+
+	// Process shutdown sections (ges, mini, micro)
+	if shutdowns != nil {
+		// Re-scan sections after discharges processing (rows may have shifted)
+		sections, err = g.scanSections(f, sheet)
+		if err != nil {
+			f.Close()
+			return nil, fmt.Errorf("failed to re-scan sections: %w", err)
+		}
+
+		if gesSection, ok := sections["ges"]; ok {
+			if err := g.processShutdowns(f, sheet, gesSection, shutdowns.Ges, loc, set); err != nil {
+				f.Close()
+				return nil, fmt.Errorf("failed to process ges shutdowns: %w", err)
+			}
+		}
+
+		// Re-scan sections after ges processing
+		sections, err = g.scanSections(f, sheet)
+		if err != nil {
+			f.Close()
+			return nil, fmt.Errorf("failed to re-scan sections: %w", err)
+		}
+
+		if miniSection, ok := sections["mini"]; ok {
+			if err := g.processShutdowns(f, sheet, miniSection, shutdowns.Mini, loc, set); err != nil {
+				f.Close()
+				return nil, fmt.Errorf("failed to process mini shutdowns: %w", err)
+			}
+		}
+
+		// Re-scan sections after mini processing
+		sections, err = g.scanSections(f, sheet)
+		if err != nil {
+			f.Close()
+			return nil, fmt.Errorf("failed to re-scan sections: %w", err)
+		}
+
+		if microSection, ok := sections["micro"]; ok {
+			if err := g.processShutdowns(f, sheet, microSection, shutdowns.Micro, loc, set); err != nil {
+				f.Close()
+				return nil, fmt.Errorf("failed to process micro shutdowns: %w", err)
+			}
 		}
 	}
 
@@ -267,6 +326,170 @@ func (g *Generator) processDischarges(
 
 	for i, rowNum := range remainingRows {
 		set(fmt.Sprintf("A%d", rowNum), i+1) // 1-based numbering
+	}
+
+	return nil
+}
+
+// processShutdowns fills a shutdown section (ges/mini/micro) with data
+func (g *Generator) processShutdowns(
+	f *excelize.File,
+	sheet string,
+	section *SectionInfo,
+	shutdowns []*shutdown.ResponseModel,
+	loc *time.Location,
+	set func(cell string, value interface{}),
+) error {
+	// Group shutdowns by organization ID
+	shutdownsByOrg := make(map[int64][]*shutdown.ResponseModel)
+	for _, s := range shutdowns {
+		shutdownsByOrg[s.OrganizationID] = append(shutdownsByOrg[s.OrganizationID], s)
+	}
+
+	// Collect rows to delete (organizations without data)
+	var rowsToDelete []int
+	var orgsToDelete []int64
+	for orgID, rowNum := range section.OrgRows {
+		if _, hasData := shutdownsByOrg[orgID]; !hasData {
+			rowsToDelete = append(rowsToDelete, rowNum)
+			orgsToDelete = append(orgsToDelete, orgID)
+		}
+	}
+
+	// Delete rows in reverse order to preserve row numbers
+	sortReverse(rowsToDelete)
+	for _, rowNum := range rowsToDelete {
+		if err := f.RemoveRow(sheet, rowNum); err != nil {
+			return fmt.Errorf("failed to remove row %d: %w", rowNum, err)
+		}
+		// Update orgRowMap for remaining rows
+		for oid, r := range section.OrgRows {
+			if r > rowNum {
+				section.OrgRows[oid] = r - 1
+			}
+		}
+	}
+
+	// Remove deleted organizations from map
+	for _, orgID := range orgsToDelete {
+		delete(section.OrgRows, orgID)
+	}
+
+	// Track all data rows (for numbering and totals)
+	var allDataRows []int
+	var totalGenerationLoss float64
+	var totalIdleDischargeVolume float64
+
+	// Process organizations with shutdowns
+	// We need to handle row duplication for multiple shutdowns per org
+	// Collect orgs sorted by row number to process in order
+	type orgRow struct {
+		orgID  int64
+		rowNum int
+	}
+	var orgRows []orgRow
+	for orgID, rowNum := range section.OrgRows {
+		orgRows = append(orgRows, orgRow{orgID: orgID, rowNum: rowNum})
+	}
+	// Sort by row number ascending
+	for i := 0; i < len(orgRows)-1; i++ {
+		for j := i + 1; j < len(orgRows); j++ {
+			if orgRows[i].rowNum > orgRows[j].rowNum {
+				orgRows[i], orgRows[j] = orgRows[j], orgRows[i]
+			}
+		}
+	}
+
+	// Track row offset due to insertions
+	rowOffset := 0
+
+	for _, or := range orgRows {
+		orgID := or.orgID
+		baseRowNum := or.rowNum + rowOffset
+		shutdownList := shutdownsByOrg[orgID]
+
+		if len(shutdownList) == 0 {
+			continue
+		}
+
+		// For multiple shutdowns, we need to duplicate the row
+		for i := 1; i < len(shutdownList); i++ {
+			// Duplicate the row (insert after baseRowNum)
+			if err := f.DuplicateRow(sheet, baseRowNum); err != nil {
+				return fmt.Errorf("failed to duplicate row %d: %w", baseRowNum, err)
+			}
+			rowOffset++
+		}
+
+		// Fill data for each shutdown
+		for i, s := range shutdownList {
+			currentRow := baseRowNum + i
+			allDataRows = append(allDataRows, currentRow)
+
+			// C: StartedAt (dd.MM.yyyy HH:mm)
+			set(fmt.Sprintf("C%d", currentRow), s.StartedAt.In(loc).Format("02.01.2006 15:04"))
+
+			// D: EndedAt (dd.MM.yyyy HH:mm) or empty
+			if s.EndedAt != nil {
+				set(fmt.Sprintf("D%d", currentRow), s.EndedAt.In(loc).Format("02.01.2006 15:04"))
+			}
+
+			// E: Reason (merged cells E-I)
+			if s.Reason != nil {
+				set(fmt.Sprintf("E%d", currentRow), *s.Reason)
+			}
+
+			// J-M: leave empty (already empty in template)
+
+			// N: GenerationLossMwh (convert from kWh to thousand kWh)
+			if s.GenerationLossMwh != nil {
+				valueInThousands := *s.GenerationLossMwh / 1000
+				set(fmt.Sprintf("N%d", currentRow), valueInThousands)
+				totalGenerationLoss += valueInThousands
+			}
+
+			// O: IdleDischargeVolumeThousandM3
+			if s.IdleDischargeVolumeThousandM3 != nil {
+				set(fmt.Sprintf("O%d", currentRow), *s.IdleDischargeVolumeThousandM3)
+				totalIdleDischargeVolume += *s.IdleDischargeVolumeThousandM3
+			}
+		}
+	}
+
+	// Sort allDataRows for numbering
+	sortAsc(allDataRows)
+
+	// Recalculate numbering in column A
+	for i, rowNum := range allDataRows {
+		set(fmt.Sprintf("A%d", rowNum), i+1) // 1-based numbering
+	}
+
+	// Find and update "Жами" row (totals)
+	// "Жами" should be somewhere after the last data row
+	if len(allDataRows) > 0 {
+		lastDataRow := allDataRows[len(allDataRows)-1]
+		rows, err := f.GetRows(sheet)
+		if err == nil {
+			// Look for "Жами" in columns B or C within the next 5 rows
+			for rowIdx := lastDataRow; rowIdx < lastDataRow+5 && rowIdx <= len(rows); rowIdx++ {
+				if rowIdx-1 < len(rows) {
+					row := rows[rowIdx-1]
+					for colIdx, cellValue := range row {
+						if cellValue == "Жами" || cellValue == "Жами:" {
+							// Found "Жами" row - update totals in columns N and O
+							if totalGenerationLoss > 0 {
+								set(fmt.Sprintf("N%d", rowIdx), totalGenerationLoss)
+							}
+							if totalIdleDischargeVolume > 0 {
+								set(fmt.Sprintf("O%d", rowIdx), totalIdleDischargeVolume)
+							}
+							_ = colIdx // suppress unused warning
+							break
+						}
+					}
+				}
+			}
+		}
 	}
 
 	return nil
