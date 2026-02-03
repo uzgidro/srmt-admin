@@ -32,6 +32,7 @@ import (
 	dischargeAdd "srmt-admin/internal/http-server/handlers/discharge/add"
 	dischargeDelete "srmt-admin/internal/http-server/handlers/discharge/delete"
 	dischargePatch "srmt-admin/internal/http-server/handlers/discharge/edit"
+	dischargeExport "srmt-admin/internal/http-server/handlers/discharge/export"
 	dischargeGet "srmt-admin/internal/http-server/handlers/discharge/get"
 	dischargeGetCurrent "srmt-admin/internal/http-server/handlers/discharge/get-current"
 	dischargeGetFlat "srmt-admin/internal/http-server/handlers/discharge/get-flat"
@@ -123,6 +124,7 @@ import (
 	asutpauth "srmt-admin/internal/http-server/middleware/asutp-auth"
 	mwauth "srmt-admin/internal/http-server/middleware/auth"
 	"srmt-admin/internal/lib/service/ascue"
+	dischargeExcelGen "srmt-admin/internal/lib/service/excel/discharge"
 	excelgen "srmt-admin/internal/lib/service/excel/reservoir-summary"
 	"srmt-admin/internal/lib/service/reservoir"
 	"srmt-admin/internal/storage/minio"
@@ -137,18 +139,19 @@ import (
 
 // AppDependencies contains all dependencies needed for route setup
 type AppDependencies struct {
-	Log               *slog.Logger
-	Token             *token.Token
-	PgRepo            *repo.Repo
-	MongoRepo         *mongo.Repo
-	MinioRepo         *minio.Repo
-	RedisRepo         *redisRepo.Repo
-	Config            config.Config
-	Location          *time.Location
-	ASCUEFetcher      *ascue.Fetcher
-	ReservoirFetcher  *reservoir.Fetcher
-	HTTPClient        *http.Client
-	ExcelTemplatePath string
+	Log                        *slog.Logger
+	Token                      *token.Token
+	PgRepo                     *repo.Repo
+	MongoRepo                  *mongo.Repo
+	MinioRepo                  *minio.Repo
+	RedisRepo                  *redisRepo.Repo
+	Config                     config.Config
+	Location                   *time.Location
+	ASCUEFetcher               *ascue.Fetcher
+	ReservoirFetcher           *reservoir.Fetcher
+	HTTPClient                 *http.Client
+	ExcelTemplatePath          string
+	DischargeExcelTemplatePath string
 }
 
 func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
@@ -310,6 +313,12 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Post("/discharges", dischargeAdd.New(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
 			r.Patch("/discharges/{id}", dischargePatch.New(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
 			r.Delete("/discharges/{id}", dischargeDelete.New(deps.Log, deps.PgRepo))
+			router.Get("/discharges/export", dischargeExport.New(
+				deps.Log,
+				deps.PgRepo,
+				dischargeExcelGen.New(deps.DischargeExcelTemplatePath),
+				loc,
+			))
 
 			r.Get("/incidents", incidentsHandler.Get(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
 			r.Post("/incidents", incidentsHandler.Add(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
