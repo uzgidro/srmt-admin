@@ -208,6 +208,12 @@ func (g *Generator) GenerateExcel(
 		return nil, fmt.Errorf("failed to set print area: %w", err)
 	}
 
+	// Force formula recalculation when file is opened
+	if err := f.UpdateLinkedValue(); err != nil {
+		f.Close()
+		return nil, fmt.Errorf("failed to update linked values: %w", err)
+	}
+
 	return f, nil
 }
 
