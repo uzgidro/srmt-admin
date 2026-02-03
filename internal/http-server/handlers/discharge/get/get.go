@@ -2,8 +2,6 @@ package get
 
 import (
 	"context"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/render"
 	"log/slog"
 	"net/http"
 	resp "srmt-admin/internal/lib/api/response"
@@ -12,6 +10,9 @@ import (
 	"srmt-admin/internal/lib/model/discharge"
 	"strconv"
 	"time"
+
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/render"
 )
 
 type DischargeGetter interface {
