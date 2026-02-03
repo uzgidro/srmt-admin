@@ -143,6 +143,21 @@ func (g *Generator) GenerateExcel(date string, data []discharge.Model, loc *time
 		return nil, writeErr
 	}
 
+	// Set print area (B1 to K{lastDataRow})
+	lastDataRow := 1
+	if len(remainingRows) > 0 {
+		lastDataRow = remainingRows[len(remainingRows)-1]
+	}
+	printArea := fmt.Sprintf("$B$1:$K$%d", lastDataRow)
+	if err := f.SetDefinedName(&excelize.DefinedName{
+		Name:     "_xlnm.Print_Area",
+		RefersTo: fmt.Sprintf("'%s'!%s", sheet, printArea),
+		Scope:    sheet,
+	}); err != nil {
+		f.Close()
+		return nil, fmt.Errorf("failed to set print area: %w", err)
+	}
+
 	return f, nil
 }
 
