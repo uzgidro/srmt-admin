@@ -328,6 +328,64 @@ func (g *Generator) processDischarges(
 		set(fmt.Sprintf("A%d", rowNum), i+1) // 1-based numbering
 	}
 
+	// Restore bottom border for the last data row (lost after row deletion)
+	if len(remainingRows) > 0 {
+		lastRow := remainingRows[len(remainingRows)-1]
+		if err := g.applyBottomBorder(f, sheet, lastRow, "A", "O"); err != nil {
+			return fmt.Errorf("failed to apply bottom border: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// applyBottomBorder applies a bottom border to cells in a row from startCol to endCol
+func (g *Generator) applyBottomBorder(f *excelize.File, sheet string, row int, startCol, endCol string) error {
+	// Create style with bottom border
+	borderStyle := excelize.Border{
+		Type:  "bottom",
+		Color: "000000",
+		Style: 1, // thin border
+	}
+
+	// Get column indices
+	startColIdx, _ := excelize.ColumnNameToNumber(startCol)
+	endColIdx, _ := excelize.ColumnNameToNumber(endCol)
+
+	for colIdx := startColIdx; colIdx <= endColIdx; colIdx++ {
+		colName, _ := excelize.ColumnNumberToName(colIdx)
+		cell := fmt.Sprintf("%s%d", colName, row)
+
+		// Get existing style
+		existingStyleID, _ := f.GetCellStyle(sheet, cell)
+
+		// Get existing style details
+		existingStyle, _ := f.GetStyle(existingStyleID)
+
+		// Build new style preserving existing properties
+		newStyle := &excelize.Style{
+			Border: []excelize.Border{borderStyle},
+		}
+
+		if existingStyle != nil {
+			// Preserve existing borders (top, left, right) and add bottom
+			newStyle.Border = append(existingStyle.Border, borderStyle)
+			newStyle.Fill = existingStyle.Fill
+			newStyle.Font = existingStyle.Font
+			newStyle.Alignment = existingStyle.Alignment
+			newStyle.NumFmt = existingStyle.NumFmt
+		}
+
+		styleID, err := f.NewStyle(newStyle)
+		if err != nil {
+			return fmt.Errorf("failed to create style for cell %s: %w", cell, err)
+		}
+
+		if err := f.SetCellStyle(sheet, cell, cell, styleID); err != nil {
+			return fmt.Errorf("failed to set style for cell %s: %w", cell, err)
+		}
+	}
+
 	return nil
 }
 
@@ -464,10 +522,15 @@ func (g *Generator) processShutdowns(
 		set(fmt.Sprintf("A%d", rowNum), i+1) // 1-based numbering
 	}
 
-	// Find and update "Жами" row (totals)
-	// "Жами" should be somewhere after the last data row
+	// Restore bottom border for the last data row (lost after row deletion)
 	if len(allDataRows) > 0 {
 		lastDataRow := allDataRows[len(allDataRows)-1]
+		if err := g.applyBottomBorder(f, sheet, lastDataRow, "A", "O"); err != nil {
+			return fmt.Errorf("failed to apply bottom border: %w", err)
+		}
+
+		// Find and update "Жами" row (totals)
+		// "Жами" should be somewhere after the last data row
 		rows, err := f.GetRows(sheet)
 		if err == nil {
 			// Look for "Жами" in columns B or C within the next 5 rows
