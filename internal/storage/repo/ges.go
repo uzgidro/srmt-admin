@@ -182,16 +182,9 @@ func (r *Repo) GetShutdownsByOrgID(ctx context.Context, orgID int64, startDate, 
 	argID := 2
 
 	if startDate != nil {
-		query += fmt.Sprintf(" AND s.start_time >= $%d", argID)
+		query += fmt.Sprintf(" AND (s.end_time > $%d OR s.end_time IS NULL)", argID)
 		args = append(args, *startDate)
 		argID++
-	}
-
-	if endDate != nil {
-		// Add one day to end date to include the entire end day
-		endOfDay := endDate.AddDate(0, 0, 1)
-		query += fmt.Sprintf(" AND s.start_time < $%d", argID)
-		args = append(args, endOfDay)
 	}
 
 	query += " ORDER BY s.start_time DESC"
@@ -272,15 +265,9 @@ func (r *Repo) GetDischargesByOrgID(ctx context.Context, orgID int64, startDate,
 	argID := 2
 
 	if startDate != nil {
-		baseQuery += fmt.Sprintf(" AND d.start_time >= $%d", argID)
+		baseQuery += fmt.Sprintf(" AND (d.end_time > $%d OR d.end_time IS NULL)", argID)
 		args = append(args, *startDate)
 		argID++
-	}
-
-	if endDate != nil {
-		endOfDay := endDate.AddDate(0, 0, 1)
-		baseQuery += fmt.Sprintf(" AND d.start_time < $%d", argID)
-		args = append(args, endOfDay)
 	}
 
 	baseQuery += " ORDER BY d.start_time DESC"

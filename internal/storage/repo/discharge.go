@@ -80,24 +80,16 @@ func (r *Repo) GetAllDischarges(ctx context.Context, isOngoing *bool, startDate,
 	var args []interface{}
 	argID := 1
 
-	// Добавляем условия фильтрации (без изменений)
+	// Добавляем условия фильтрации
 	if isOngoing != nil {
 		conditions = append(conditions, fmt.Sprintf("d.is_ongoing = $%d", argID))
 		args = append(args, *isOngoing)
 		argID++
 	}
 
-	if startDate != nil && endDate != nil {
-		conditions = append(conditions, fmt.Sprintf("(d.start_time >= $%d AND d.start_time < $%d)", argID, argID+1))
-		args = append(args, *startDate, *endDate)
-		argID += 2
-	} else if startDate != nil {
-		conditions = append(conditions, fmt.Sprintf("d.start_time >= $%d", argID))
+	if startDate != nil {
+		conditions = append(conditions, fmt.Sprintf("(d.end_time > $%d OR d.end_time IS NULL)", argID))
 		args = append(args, *startDate)
-		argID++
-	} else if endDate != nil {
-		conditions = append(conditions, fmt.Sprintf("d.start_time < $%d", argID))
-		args = append(args, *endDate)
 		argID++
 	}
 
@@ -223,23 +215,15 @@ func (r *Repo) GetDischargesByCascades(ctx context.Context, isOngoing *bool, sta
 	var args []interface{}
 	argID := 1
 
-	// Динамическое добавление фильтров (код без изменений)
+	// Динамическое добавление фильтров
 	if isOngoing != nil {
 		conditions = append(conditions, fmt.Sprintf("d.is_ongoing = $%d", argID))
 		args = append(args, *isOngoing)
 		argID++
 	}
-	if startDate != nil && endDate != nil {
-		conditions = append(conditions, fmt.Sprintf("(d.start_time >= $%d AND d.start_time < $%d)", argID, argID+1))
-		args = append(args, *startDate, *endDate)
-		argID += 2
-	} else if startDate != nil {
-		conditions = append(conditions, fmt.Sprintf("d.start_time >= $%d", argID))
+	if startDate != nil {
+		conditions = append(conditions, fmt.Sprintf("(d.end_time > $%d OR d.end_time IS NULL)", argID))
 		args = append(args, *startDate)
-		argID++
-	} else if endDate != nil {
-		conditions = append(conditions, fmt.Sprintf("d.start_time < $%d", argID))
-		args = append(args, *endDate)
 		argID++
 	}
 

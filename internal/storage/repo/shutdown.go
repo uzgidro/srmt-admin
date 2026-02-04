@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/lib/pq"
 	"srmt-admin/internal/lib/dto"
 	"srmt-admin/internal/lib/model/file"
 	"srmt-admin/internal/lib/model/shutdown"
@@ -13,6 +12,8 @@ import (
 	"srmt-admin/internal/storage"
 	"strings"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 func (r *Repo) AddShutdown(ctx context.Context, req dto.AddShutdownRequest) (int64, error) {
@@ -86,17 +87,14 @@ func (r *Repo) AddShutdown(ctx context.Context, req dto.AddShutdownRequest) (int
 func (r *Repo) GetShutdowns(ctx context.Context, day time.Time) ([]*shutdown.ResponseModel, error) {
 	const op = "storage.repo.GetShutdowns"
 
-	// Create date range for the full day in the provided timezone
-	// This handles timezone conversion properly
 	// День начинается в 07:00 местного времени
 	startOfDay := time.Date(day.Year(), day.Month(), day.Day(), 7, 0, 0, 0, day.Location())
-	endOfDay := startOfDay.Add(24 * time.Hour)
 
 	query := selectShutdownFields + fromShutdownJoins +
-		`WHERE s.start_time >= $1 AND s.start_time < $2
+		`WHERE s.end_time > $1 OR s.end_time IS NULL
 		 ORDER BY s.start_time ASC`
 
-	rows, err := r.db.QueryContext(ctx, query, startOfDay, endOfDay)
+	rows, err := r.db.QueryContext(ctx, query, startOfDay)
 	if err != nil {
 		return nil, fmt.Errorf("%s: failed to query shutdowns: %w", op, err)
 	}
