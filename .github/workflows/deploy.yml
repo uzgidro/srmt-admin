@@ -42,6 +42,8 @@ jobs:
   verify-image:
     runs-on: ubuntu-latest
     needs: build-and-push
+    outputs:
+      sha8: ${{ needs.build-and-push.outputs.sha8 }}
 
     steps:
       - name: Run Trivy vulnerability scan
@@ -63,7 +65,7 @@ jobs:
 
   update-k8s-manifest:
     runs-on: ubuntu-latest
-    needs: [verify-image, build-and-push]
+    needs: verify-image
 
     steps:
       - name: Setup SSH
@@ -82,11 +84,11 @@ jobs:
           git clone git@github.com:uzgidro/GitOps-Repo.git temp-repo
           cd temp-repo
 
-          sed -i "s|image: ${{ secrets.DOCKERHUB_USERNAME }}/srmt-prime:.*|image: ${{ secrets.DOCKERHUB_USERNAME }}/srmt-prime:${{ needs.build-and-push.outputs.sha8 }}|g" apps/prime/deployment.yaml
+          sed -i "s|image: ${{ secrets.DOCKERHUB_USERNAME }}/srmt-prime:.*|image: ${{ secrets.DOCKERHUB_USERNAME }}/srmt-prime:${{ needs.verify-image.outputs.sha8 }}|g" apps/prime/deployment.yaml
 
           if [[ -n $(git status --porcelain) ]]; then
             git add apps/prime/deployment.yaml
-            git commit -m "Update image to version ${{ needs.build-and-push.outputs.sha8 }}"
+            git commit -m "Update image to version ${{ needs.verify-image.outputs.sha8 }}"
             git push origin main
           else
             echo "No changes in manifest"
