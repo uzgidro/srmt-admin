@@ -7,7 +7,7 @@ import (
 	"srmt-admin/internal/http-server/middleware/cors"
 	"srmt-admin/internal/http-server/middleware/logger"
 	"srmt-admin/internal/http-server/router"
-	"srmt-admin/internal/lib/service/ascue"
+	"srmt-admin/internal/lib/service/metrics"
 	"srmt-admin/internal/lib/service/reservoir"
 	"srmt-admin/internal/storage/minio"
 	mngRepo "srmt-admin/internal/storage/mongo"
@@ -41,7 +41,7 @@ type AppContainer struct {
 	RedisRepo        *redisRepo.Repo
 	Token            *token.Token
 	Location         *time.Location
-	ASCUEFetcher     *ascue.Fetcher
+	MetricsBlender   *metrics.MetricsBlender
 	ReservoirFetcher *reservoir.Fetcher
 	HTTPClient       *http.Client
 }
@@ -58,7 +58,7 @@ func ProvideAppContainer(
 	redis *redisRepo.Repo,
 	tkn *token.Token,
 	loc *time.Location,
-	ascueFetcher *ascue.Fetcher,
+	metricsBlender *metrics.MetricsBlender,
 	reservoirFetcher *reservoir.Fetcher,
 	httpClient *http.Client,
 ) *AppContainer {
@@ -73,7 +73,7 @@ func ProvideAppContainer(
 		RedisRepo:        redis,
 		Token:            tkn,
 		Location:         loc,
-		ASCUEFetcher:     ascueFetcher,
+		MetricsBlender:   metricsBlender,
 		ReservoirFetcher: reservoirFetcher,
 		HTTPClient:       httpClient,
 	}
@@ -89,7 +89,7 @@ func ProvideRouter(
 	minioRepo *minio.Repo,
 	redis *redisRepo.Repo,
 	loc *time.Location,
-	ascueFetcher *ascue.Fetcher,
+	metricsBlender *metrics.MetricsBlender,
 	reservoirFetcher *reservoir.Fetcher,
 	httpClient *http.Client,
 ) *chi.Mux {
@@ -112,7 +112,7 @@ func ProvideRouter(
 		RedisRepo:                  redis,
 		Config:                     *cfg,
 		Location:                   loc,
-		ASCUEFetcher:               ascueFetcher,
+		MetricsBlender:             metricsBlender,
 		ReservoirFetcher:           reservoirFetcher,
 		HTTPClient:                 httpClient,
 		ExcelTemplatePath:          cfg.TemplatePath + "/res-summary.xlsx",

@@ -124,10 +124,10 @@ import (
 	mwapikey "srmt-admin/internal/http-server/middleware/api-key"
 	asutpauth "srmt-admin/internal/http-server/middleware/asutp-auth"
 	mwauth "srmt-admin/internal/http-server/middleware/auth"
-	"srmt-admin/internal/lib/service/ascue"
 	dischargeExcelGen "srmt-admin/internal/lib/service/excel/discharge"
 	excelgen "srmt-admin/internal/lib/service/excel/reservoir-summary"
 	scExcelGen "srmt-admin/internal/lib/service/excel/sc"
+	"srmt-admin/internal/lib/service/metrics"
 	"srmt-admin/internal/lib/service/reservoir"
 	"srmt-admin/internal/storage/minio"
 	"srmt-admin/internal/storage/mongo"
@@ -149,7 +149,7 @@ type AppDependencies struct {
 	RedisRepo                  *redisRepo.Repo
 	Config                     config.Config
 	Location                   *time.Location
-	ASCUEFetcher               *ascue.Fetcher
+	MetricsBlender             *metrics.MetricsBlender
 	ReservoirFetcher           *reservoir.Fetcher
 	HTTPClient                 *http.Client
 	ExcelTemplatePath          string
@@ -229,7 +229,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 		// Dashboard
 		r.Get("/dashboard/reservoir", dashboardGetReservoir.New(deps.Log, deps.PgRepo, deps.ReservoirFetcher))
 		r.Get("/dashboard/reservoir-hourly", dashboardGetReservoirHourly.New(deps.Log, deps.ReservoirFetcher))
-		r.Get("/dashboard/cascades", orgGetCascades.New(deps.Log, deps.PgRepo, deps.ASCUEFetcher))
+		r.Get("/dashboard/cascades", orgGetCascades.New(deps.Log, deps.PgRepo, deps.MetricsBlender))
 		r.Get("/dashboard/production", production.New(deps.Log, deps.PgRepo))
 		r.Get("/dashboard/production-stats", productionstats.New(deps.Log, deps.PgRepo))
 
@@ -250,7 +250,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 		r.Get("/ges/{id}/visits", gesVisits.New(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
 		r.Get("/ges/{id}/telemetry", asutpTelemetry.NewGetStation(deps.Log, deps.RedisRepo))
 		r.Get("/ges/{id}/telemetry/{device_id}", asutpTelemetry.NewGetDevice(deps.Log, deps.RedisRepo))
-		r.Get("/ges/{id}/askue", gesAskue.New(deps.Log, deps.ASCUEFetcher))
+		r.Get("/ges/{id}/askue", gesAskue.New(deps.Log, deps.MetricsBlender))
 
 		// Admin routes
 		r.Group(func(r chi.Router) {

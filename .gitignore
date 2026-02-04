@@ -18,3 +18,6 @@ srmt-admin
 /k8s-config/
 
 *.pem
+
+/docs
+tools.go
