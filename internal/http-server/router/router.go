@@ -124,6 +124,7 @@ import (
 	mwapikey "srmt-admin/internal/http-server/middleware/api-key"
 	asutpauth "srmt-admin/internal/http-server/middleware/asutp-auth"
 	mwauth "srmt-admin/internal/http-server/middleware/auth"
+	"srmt-admin/internal/lib/service/alarm"
 	dischargeExcelGen "srmt-admin/internal/lib/service/excel/discharge"
 	excelgen "srmt-admin/internal/lib/service/excel/reservoir-summary"
 	scExcelGen "srmt-admin/internal/lib/service/excel/sc"
@@ -155,6 +156,7 @@ type AppDependencies struct {
 	ExcelTemplatePath          string
 	DischargeExcelTemplatePath string
 	SCExcelTemplatePath        string
+	AlarmProcessor             *alarm.Processor
 }
 
 func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
@@ -520,6 +522,6 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 	router.Route("/api/v1/asutp", func(r chi.Router) {
 		r.Use(asutpauth.RequireToken(deps.Config.ASUTP.Token))
 
-		r.Post("/telemetry/{station_db_id}", asutpTelemetry.NewPost(deps.Log, deps.RedisRepo))
+		r.Post("/telemetry/{station_db_id}", asutpTelemetry.NewPost(deps.Log, deps.RedisRepo, deps.AlarmProcessor))
 	})
 }

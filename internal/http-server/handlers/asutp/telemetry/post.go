@@ -18,12 +18,16 @@ type TelemetrySaver interface {
 	SaveTelemetry(ctx context.Context, stationDBID int64, env *asutp.Envelope) error
 }
 
+type AlarmProcessor interface {
+	ProcessEnvelope(ctx context.Context, stationDBID int64, env *asutp.Envelope) error
+}
+
 type PostResponse struct {
 	Status string `json:"status"`
 	ID     string `json:"id"`
 }
 
-func NewPost(log *slog.Logger, saver TelemetrySaver) http.HandlerFunc {
+func NewPost(log *slog.Logger, saver TelemetrySaver, alarmProc AlarmProcessor) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.asutp.telemetry.post"
 
@@ -60,6 +64,14 @@ func NewPost(log *slog.Logger, saver TelemetrySaver) http.HandlerFunc {
 			render.Status(r, http.StatusInternalServerError)
 			render.JSON(w, r, resp.InternalServerError("failed to save telemetry"))
 			return
+		}
+
+		// Process alarms (non-blocking - errors are logged but don't fail the request)
+		if alarmProc != nil {
+			if err := alarmProc.ProcessEnvelope(r.Context(), stationDBID, &env); err != nil {
+				log.Error("failed to process alarms", sl.Err(err))
+				// Continue - alarm processing failure should not block telemetry saving
+			}
 		}
 
 		log.Info("telemetry saved", "station_db_id", stationDBID, "device_id", env.DeviceID)
