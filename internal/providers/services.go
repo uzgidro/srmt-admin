@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"srmt-admin/internal/config"
 	"srmt-admin/internal/lib/service/ascue"
+	"srmt-admin/internal/lib/service/metrics"
 	"srmt-admin/internal/lib/service/reservoir"
+	"srmt-admin/internal/storage/redis"
 	"srmt-admin/internal/token"
 	"time"
 
@@ -16,6 +18,7 @@ import (
 var ServiceProviderSet = wire.NewSet(
 	ProvideTokenService,
 	ProvideASCUEFetcher,
+	ProvideMetricsBlender,
 	ProvideReservoirFetcher,
 	ProvideHTTPClient,
 )
@@ -31,6 +34,14 @@ func ProvideASCUEFetcher(cfg *config.ASCUEConfig, log *slog.Logger) *ascue.Fetch
 		return nil
 	}
 	return ascue.NewFetcher(cfg, log)
+}
+
+// ProvideMetricsBlender creates MetricsBlender that wraps ASCUEFetcher with ASUTP enrichment
+func ProvideMetricsBlender(fetcher *ascue.Fetcher, redisRepo *redis.Repo, log *slog.Logger) *metrics.MetricsBlender {
+	if fetcher == nil {
+		return nil
+	}
+	return metrics.NewMetricsBlender(fetcher, redisRepo, log)
 }
 
 // ProvideReservoirFetcher creates reservoir fetcher (returns nil if config is nil)
