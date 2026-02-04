@@ -89,12 +89,13 @@ func (r *Repo) GetShutdowns(ctx context.Context, day time.Time) ([]*shutdown.Res
 
 	// День начинается в 07:00 местного времени
 	startOfDay := time.Date(day.Year(), day.Month(), day.Day(), 7, 0, 0, 0, day.Location())
+	endOfDay := startOfDay.Add(24 * time.Hour)
 
 	query := selectShutdownFields + fromShutdownJoins +
-		`WHERE s.end_time > $1 OR s.end_time IS NULL
+		`WHERE (s.end_time > $1 OR s.end_time IS NULL) AND s.start_time < $2
 		 ORDER BY s.start_time ASC`
 
-	rows, err := r.db.QueryContext(ctx, query, startOfDay)
+	rows, err := r.db.QueryContext(ctx, query, startOfDay, endOfDay)
 	if err != nil {
 		return nil, fmt.Errorf("%s: failed to query shutdowns: %w", op, err)
 	}
