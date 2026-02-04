@@ -4,10 +4,12 @@ import (
 	"log/slog"
 	"net/http"
 	"srmt-admin/internal/config"
+	"srmt-admin/internal/lib/service/alarm"
 	"srmt-admin/internal/lib/service/ascue"
 	"srmt-admin/internal/lib/service/metrics"
 	"srmt-admin/internal/lib/service/reservoir"
 	"srmt-admin/internal/storage/redis"
+	"srmt-admin/internal/storage/repo"
 	"srmt-admin/internal/token"
 	"time"
 
@@ -21,6 +23,7 @@ var ServiceProviderSet = wire.NewSet(
 	ProvideMetricsBlender,
 	ProvideReservoirFetcher,
 	ProvideHTTPClient,
+	ProvideAlarmProcessor,
 )
 
 // ProvideTokenService creates JWT token service
@@ -64,4 +67,9 @@ func ProvideHTTPClient() *http.Client {
 	return &http.Client{
 		Timeout: 30 * time.Second,
 	}
+}
+
+// ProvideAlarmProcessor creates the alarm processor for automatic shutdown creation
+func ProvideAlarmProcessor(pgRepo *repo.Repo, redisRepo *redis.Repo, log *slog.Logger) *alarm.Processor {
+	return alarm.NewProcessor(pgRepo, redisRepo, log)
 }

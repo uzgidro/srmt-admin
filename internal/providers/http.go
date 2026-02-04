@@ -7,6 +7,7 @@ import (
 	"srmt-admin/internal/http-server/middleware/cors"
 	"srmt-admin/internal/http-server/middleware/logger"
 	"srmt-admin/internal/http-server/router"
+	"srmt-admin/internal/lib/service/alarm"
 	"srmt-admin/internal/lib/service/metrics"
 	"srmt-admin/internal/lib/service/reservoir"
 	"srmt-admin/internal/storage/minio"
@@ -44,6 +45,7 @@ type AppContainer struct {
 	MetricsBlender   *metrics.MetricsBlender
 	ReservoirFetcher *reservoir.Fetcher
 	HTTPClient       *http.Client
+	AlarmProcessor   *alarm.Processor
 }
 
 // ProvideAppContainer creates the application container
@@ -61,6 +63,7 @@ func ProvideAppContainer(
 	metricsBlender *metrics.MetricsBlender,
 	reservoirFetcher *reservoir.Fetcher,
 	httpClient *http.Client,
+	alarmProcessor *alarm.Processor,
 ) *AppContainer {
 	return &AppContainer{
 		Router:           r,
@@ -76,6 +79,7 @@ func ProvideAppContainer(
 		MetricsBlender:   metricsBlender,
 		ReservoirFetcher: reservoirFetcher,
 		HTTPClient:       httpClient,
+		AlarmProcessor:   alarmProcessor,
 	}
 }
 
@@ -92,6 +96,7 @@ func ProvideRouter(
 	metricsBlender *metrics.MetricsBlender,
 	reservoirFetcher *reservoir.Fetcher,
 	httpClient *http.Client,
+	alarmProcessor *alarm.Processor,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -118,6 +123,7 @@ func ProvideRouter(
 		ExcelTemplatePath:          cfg.TemplatePath + "/res-summary.xlsx",
 		DischargeExcelTemplatePath: cfg.TemplatePath + "/discharge.xlsx",
 		SCExcelTemplatePath:        cfg.TemplatePath + "/sc.xlsx",
+		AlarmProcessor:             alarmProcessor,
 	}
 
 	router.SetupRoutes(r, deps)
