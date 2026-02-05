@@ -384,7 +384,8 @@ func scanShutdownRow(scanner interface {
 		&m.OrganizationName,
 		&createdByFIO,
 		&createdByUserID,
-		&dVolumeThM3, // (Объем)
+		&dVolumeThM3,
+		&m.Viewed,
 	)
 	if err != nil {
 		return nil, err
@@ -419,8 +420,8 @@ const (
 			COALESCE(o.name, '') as org_name,
 			COALESCE(uc.fio, '') as created_by_fio,
 			s.created_by_user_id,
-			
-			(v_idw.total_volume_mln_m3 * 1000.0) as discharge_volume_thousand_m3
+			(v_idw.total_volume_mln_m3 * 1000.0) as discharge_volume_thousand_m3,
+			s.viewed
 	`
 	fromShutdownJoins = `
 		FROM
@@ -435,6 +436,20 @@ const (
 			v_idle_water_discharges_with_volume v_idw ON s.idle_discharge_id = v_idw.id
 	`
 )
+
+// MarkShutdownAsViewed marks a shutdown as viewed by the dispatcher
+func (r *Repo) MarkShutdownAsViewed(ctx context.Context, id int64) error {
+	const op = "storage.repo.MarkShutdownAsViewed"
+	query := `UPDATE shutdowns SET viewed = TRUE, updated_at = NOW() WHERE id = $1`
+	res, err := r.db.ExecContext(ctx, query, id)
+	if err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+	if rowsAffected, _ := res.RowsAffected(); rowsAffected == 0 {
+		return storage.ErrNotFound
+	}
+	return nil
+}
 
 // LinkShutdownFiles links files to a shutdown
 func (r *Repo) LinkShutdownFiles(ctx context.Context, shutdownID int64, fileIDs []int64) error {

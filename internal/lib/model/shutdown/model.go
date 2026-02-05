@@ -17,6 +17,7 @@ type ResponseModel struct {
 	CreatedByUser     *user.ShortInfo `json:"created_by"`
 	GenerationLossMwh *float64        `json:"generation_loss,omitempty"`
 	CreatedAt         time.Time       `json:"created_at"`
+	Viewed            bool            `json:"viewed"`
 
 	IdleDischargeVolumeThousandM3 *float64     `json:"idle_discharge_volume,omitempty"`
 	Files                         []file.Model `json:"files,omitempty"`
@@ -33,6 +34,7 @@ type ResponseWithURLs struct {
 	CreatedByUser     *user.ShortInfo `json:"created_by"`
 	GenerationLossMwh *float64        `json:"generation_loss,omitempty"`
 	CreatedAt         time.Time       `json:"created_at"`
+	Viewed            bool            `json:"viewed"`
 
 	IdleDischargeVolumeThousandM3 *float64           `json:"idle_discharge_volume,omitempty"`
 	Files                         []dto.FileResponse `json:"files,omitempty"`
