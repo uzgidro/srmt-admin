@@ -75,6 +75,7 @@ func Get(log *slog.Logger, getter shutdownGetter, minioRepo helpers.MinioURLGene
 				CreatedByUser:                 s.CreatedByUser,
 				GenerationLossMwh:             s.GenerationLossMwh,
 				CreatedAt:                     s.CreatedAt,
+				Viewed:                        s.Viewed,
 				IdleDischargeVolumeThousandM3: s.IdleDischargeVolumeThousandM3,
 				Files:                         helpers.TransformFilesWithURLs(r.Context(), s.Files, minioRepo, log),
 			}
