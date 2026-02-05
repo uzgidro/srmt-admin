@@ -34,13 +34,15 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
 # Используем минимальный базовый образ, который не содержит ничего лишнего
 FROM alpine:latest
 
+# Обновляем системные пакеты для устранения уязвимостей
 # Устанавливаем необходимые runtime зависимости
 # ca-certificates - для HTTPS соединений
 # tzdata - для поддержки временных зон
 # libreoffice - для конвертации Excel в PDF
 # font-dejavu font-liberation font-noto - шрифты с поддержкой кириллицы
 # msttcorefonts-installer - Arial, Times New Roman и другие MS шрифты
-RUN apk --no-cache add ca-certificates tzdata libreoffice \
+RUN apk upgrade --no-cache && \
+    apk --no-cache add ca-certificates tzdata libreoffice \
     font-dejavu font-liberation font-noto \
     msttcorefonts-installer fontconfig && \
     update-ms-fonts && \
