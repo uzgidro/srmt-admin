@@ -21,14 +21,14 @@ func New(log *slog.Logger, client *http.Client, baseURL string) http.HandlerFunc
 			slog.String("request_id", middleware.GetReqID(r.Context())),
 		)
 
-		// Get query parameters
-		limit := r.URL.Query().Get("limit")
-		offsetID := r.URL.Query().Get("offset_id")
-		dateFrom := r.URL.Query().Get("date_from")
-		dateTo := r.URL.Query().Get("date_to")
+		// Get page parameter (default = 1)
+		page := r.URL.Query().Get("page")
+		if page == "" {
+			page = "1"
+		}
 
 		// Construct the target URL
-		targetURL := fmt.Sprintf("%s/api/v1/messages", baseURL)
+		targetURL := fmt.Sprintf("%s/api/news/page/%s", baseURL, page)
 
 		// Create proxy request
 		proxyReq, err := http.NewRequestWithContext(r.Context(), http.MethodGet, targetURL, nil)
@@ -38,22 +38,6 @@ func New(log *slog.Logger, client *http.Client, baseURL string) http.HandlerFunc
 			render.JSON(w, r, resp.InternalServerError("internal error"))
 			return
 		}
-
-		// Add query parameters to proxy request
-		q := proxyReq.URL.Query()
-		if limit != "" {
-			q.Add("limit", limit)
-		}
-		if offsetID != "" {
-			q.Add("offset_id", offsetID)
-		}
-		if dateFrom != "" {
-			q.Add("date_from", dateFrom)
-		}
-		if dateTo != "" {
-			q.Add("date_to", dateTo)
-		}
-		proxyReq.URL.RawQuery = q.Encode()
 
 		// Execute the proxy request
 		proxyResp, err := client.Do(proxyReq)
@@ -66,15 +50,12 @@ func New(log *slog.Logger, client *http.Client, baseURL string) http.HandlerFunc
 		defer proxyResp.Body.Close()
 
 		// Proxy the response back to the client
-		// Copy headers (like Content-Type) from the target response to our response
 		if contentType := proxyResp.Header.Get("Content-Type"); contentType != "" {
 			w.Header().Set("Content-Type", contentType)
 		}
 
-		// Write the same status code that we received
 		w.WriteHeader(proxyResp.StatusCode)
 
-		// Copy the body (the JSON) directly
 		io.Copy(w, proxyResp.Body)
 	}
 }
