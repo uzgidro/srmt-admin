@@ -14,8 +14,10 @@ import (
 )
 
 type Request struct {
-	Date                  string  `json:"date"`
-	TotalEnergyProduction float64 `json:"total_energy_production"`
+	Date                    string  `json:"date"`
+	TotalEnergyProduction   float64 `json:"total_energy_production"`
+	MonthlyEnergyProduction float64 `json:"monthly_energy_production"`
+	YearlyEnergyProduction  float64 `json:"yearly_energy_production"`
 }
 
 type Saver interface {
@@ -47,8 +49,10 @@ func New(log *slog.Logger, saver Saver) http.HandlerFunc {
 		}
 
 		model := gesproduction.Model{
-			Date:                  req.Date,
-			TotalEnergyProduction: req.TotalEnergyProduction,
+			Date:                    req.Date,
+			TotalEnergyProduction:   req.TotalEnergyProduction,
+			MonthlyEnergyProduction: req.MonthlyEnergyProduction,
+			YearlyEnergyProduction:  req.YearlyEnergyProduction,
 		}
 
 		if err := saver.UpsertGesProduction(r.Context(), model); err != nil {

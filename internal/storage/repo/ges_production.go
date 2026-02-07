@@ -13,14 +13,16 @@ func (r *Repo) UpsertGesProduction(ctx context.Context, data gesproduction.Model
 	const op = "storage.repo.UpsertGesProduction"
 
 	query := `
-		INSERT INTO ges_production (date, total_energy_production, created_at, updated_at)
-		VALUES ($1, $2, NOW(), NOW())
+		INSERT INTO ges_production (date, total_energy_production, monthly_energy_production, yearly_energy_production, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, NOW(), NOW())
 		ON CONFLICT (date) DO UPDATE SET
 			total_energy_production = EXCLUDED.total_energy_production,
+			monthly_energy_production = EXCLUDED.monthly_energy_production,
+			yearly_energy_production = EXCLUDED.yearly_energy_production,
 			updated_at = NOW()
 	`
 
-	_, err := r.db.ExecContext(ctx, query, data.Date, data.TotalEnergyProduction)
+	_, err := r.db.ExecContext(ctx, query, data.Date, data.TotalEnergyProduction, data.MonthlyEnergyProduction, data.YearlyEnergyProduction)
 	if err != nil {
 		return fmt.Errorf("%s: %w", op, err)
 	}
@@ -95,46 +97,23 @@ func (r *Repo) GetGesProductionDashboard(ctx context.Context) (*gesproduction.Da
 func (r *Repo) GetGesProductionStats(ctx context.Context) (*gesproduction.StatsResponse, error) {
 	const op = "storage.repo.GetGesProductionStats"
 
-	// 1. Get the latest record (current value)
 	var latestDate time.Time
 	var latestVal float64
+	var monthTotal float64
+	var yearTotal float64
 
 	err := r.db.QueryRowContext(ctx, `
-		SELECT date, total_energy_production
+		SELECT date, total_energy_production, monthly_energy_production, yearly_energy_production
 		FROM ges_production
 		ORDER BY date DESC
 		LIMIT 1
-	`).Scan(&latestDate, &latestVal)
+	`).Scan(&latestDate, &latestVal, &monthTotal, &yearTotal)
 
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("%s: failed to get latest record: %w", op, err)
-	}
-
-	// 2. Get month total
-	var monthTotal float64
-	err = r.db.QueryRowContext(ctx, `
-		SELECT COALESCE(SUM(total_energy_production), 0)
-		FROM ges_production
-		WHERE date >= DATE_TRUNC('month', CURRENT_DATE)
-	`).Scan(&monthTotal)
-
-	if err != nil {
-		return nil, fmt.Errorf("%s: failed to get month total: %w", op, err)
-	}
-
-	// 3. Get year total
-	var yearTotal float64
-	err = r.db.QueryRowContext(ctx, `
-		SELECT COALESCE(SUM(total_energy_production), 0)
-		FROM ges_production
-		WHERE date >= DATE_TRUNC('year', CURRENT_DATE)
-	`).Scan(&yearTotal)
-
-	if err != nil {
-		return nil, fmt.Errorf("%s: failed to get year total: %w", op, err)
 	}
 
 	return &gesproduction.StatsResponse{
