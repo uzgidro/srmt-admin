@@ -28,6 +28,7 @@ type Config struct {
 	LexParser      `yaml:"lex_parser"`
 	Redis          `yaml:"redis"`
 	ASUTP          `yaml:"asutp"`
+	ModsnowToken   string `yaml:"modsnow_token" env-required:"true"`
 }
 
 type HttpServer struct {

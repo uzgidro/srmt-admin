@@ -111,6 +111,7 @@ import (
 	"srmt-admin/internal/http-server/handlers/sc/stock"
 	"srmt-admin/internal/http-server/handlers/shutdowns"
 	"srmt-admin/internal/http-server/handlers/signatures"
+	snowCover "srmt-admin/internal/http-server/handlers/snow-cover"
 	"srmt-admin/internal/http-server/handlers/telegram/gidro/test"
 	usersAdd "srmt-admin/internal/http-server/handlers/users/add"
 	assignRole "srmt-admin/internal/http-server/handlers/users/assign-role"
@@ -517,6 +518,12 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Patch("/receptions/{id}", receptionEdit.New(deps.Log, deps.PgRepo))
 			r.Delete("/receptions/{id}", receptionDelete.New(deps.Log, deps.PgRepo))
 		})
+	})
+
+	// MODSNOW Pipeline API
+	router.Route("/api/snow-cover", func(r chi.Router) {
+		r.Use(asutpauth.RequireToken(deps.Config.ModsnowToken))
+		r.Post("/", snowCover.New(deps.Log, deps.PgRepo))
 	})
 
 	// ASUTP Telemetry API - POST with Bearer token (for GES systems)
