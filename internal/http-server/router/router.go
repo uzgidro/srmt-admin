@@ -523,7 +523,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 	// MODSNOW Pipeline API
 	router.Route("/api/snow-cover", func(r chi.Router) {
 		r.Use(asutpauth.RequireToken(deps.Config.ModsnowToken))
-		r.Post("/", snowCover.New(deps.Log, deps.PgRepo))
+		r.Post("/", snowCover.New(deps.Log, deps.PgRepo, loc))
 	})
 
 	// ASUTP Telemetry API - POST with Bearer token (for GES systems)

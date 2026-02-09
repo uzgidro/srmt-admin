@@ -39,7 +39,7 @@ var catchmentOrgMap = map[string]int64{
 	"Akdarya_Gissarak":    98,
 }
 
-func New(log *slog.Logger, upserter SnowCoverUpserter) http.HandlerFunc {
+func New(log *slog.Logger, upserter SnowCoverUpserter, loc *time.Location) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.snow-cover.post"
 
@@ -56,26 +56,14 @@ func New(log *slog.Logger, upserter SnowCoverUpserter) http.HandlerFunc {
 			return
 		}
 
-		if req.Date == "" {
-			log.Warn("missing date field")
-			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, resp.BadRequest("field 'date' is required"))
-			return
-		}
-
-		if _, err := time.Parse("2006-01-02", req.Date); err != nil {
-			log.Warn("invalid date format", slog.String("date", req.Date))
-			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, resp.BadRequest("field 'date' must be in YYYY-MM-DD format"))
-			return
-		}
-
 		if len(req.Catchments) == 0 {
 			log.Warn("empty catchments array")
 			render.Status(r, http.StatusBadRequest)
 			render.JSON(w, r, resp.BadRequest("field 'catchments' must contain at least one item"))
 			return
 		}
+
+		date := time.Now().In(loc).Format("2006-01-02")
 
 		var items []repo.SnowCoverItem
 		for _, c := range req.Catchments {
@@ -96,14 +84,14 @@ func New(log *slog.Logger, upserter SnowCoverUpserter) http.HandlerFunc {
 			return
 		}
 
-		if err := upserter.UpsertSnowCoverBatch(r.Context(), req.Date, items); err != nil {
+		if err := upserter.UpsertSnowCoverBatch(r.Context(), date, items); err != nil {
 			log.Error("failed to upsert snow cover", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)
 			render.JSON(w, r, resp.InternalServerError("failed to save snow cover data"))
 			return
 		}
 
-		log.Info("snow cover saved", slog.String("date", req.Date), slog.Int("count", len(items)))
+		log.Info("snow cover saved", slog.String("date", date), slog.Int("count", len(items)))
 
 		render.Status(r, http.StatusOK)
 		render.JSON(w, r, map[string]string{"status": "ok"})
