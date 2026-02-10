@@ -2,8 +2,10 @@ package snowcover
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"time"
 
 	resp "srmt-admin/internal/lib/api/response"
@@ -15,7 +17,7 @@ import (
 )
 
 type SnowCoverUpserter interface {
-	UpsertSnowCoverBatch(ctx context.Context, date string, items []repo.SnowCoverItem) error
+	UpsertSnowCoverBatch(ctx context.Context, date string, resourceDate string, items []repo.SnowCoverItem) error
 }
 
 type Request struct {
@@ -23,9 +25,16 @@ type Request struct {
 	Catchments []Catchment `json:"catchments"`
 }
 
+type Zone struct {
+	MinElev int      `json:"min_elev"`
+	MaxElev int      `json:"max_elev"`
+	ScaPct  *float64 `json:"sca_pct"`
+}
+
 type Catchment struct {
 	Name   string   `json:"name"`
 	ScaPct *float64 `json:"sca_pct"`
+	Zones  []Zone   `json:"zones"`
 }
 
 // catchment name → organization_id
@@ -63,6 +72,17 @@ func New(log *slog.Logger, upserter SnowCoverUpserter, loc *time.Location) http.
 			return
 		}
 
+		var resourceDate string
+		if req.Date != "" {
+			if !regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`).MatchString(req.Date) {
+				log.Warn("invalid date format", slog.String("date", req.Date))
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest("field 'date' must be in YYYY-MM-DD format"))
+				return
+			}
+			resourceDate = req.Date
+		}
+
 		date := time.Now().In(loc).Format("2006-01-02")
 
 		var items []repo.SnowCoverItem
@@ -71,9 +91,23 @@ func New(log *slog.Logger, upserter SnowCoverUpserter, loc *time.Location) http.
 			if !ok {
 				continue
 			}
+
+			var zones json.RawMessage
+			if len(c.Zones) > 0 {
+				z, err := json.Marshal(c.Zones)
+				if err != nil {
+					log.Error("failed to marshal zones", sl.Err(err), slog.String("catchment", c.Name))
+					render.Status(r, http.StatusInternalServerError)
+					render.JSON(w, r, resp.InternalServerError("failed to process zones data"))
+					return
+				}
+				zones = z
+			}
+
 			items = append(items, repo.SnowCoverItem{
 				OrganizationID: orgID,
 				Cover:          c.ScaPct,
+				Zones:          zones,
 			})
 		}
 
@@ -84,7 +118,7 @@ func New(log *slog.Logger, upserter SnowCoverUpserter, loc *time.Location) http.
 			return
 		}
 
-		if err := upserter.UpsertSnowCoverBatch(r.Context(), date, items); err != nil {
+		if err := upserter.UpsertSnowCoverBatch(r.Context(), date, resourceDate, items); err != nil {
 			log.Error("failed to upsert snow cover", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)
 			render.JSON(w, r, resp.InternalServerError("failed to save snow cover data"))

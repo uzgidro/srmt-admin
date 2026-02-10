@@ -1,0 +1,2 @@
+ALTER TABLE modsnow DROP COLUMN IF EXISTS zones;
+ALTER TABLE modsnow DROP COLUMN IF EXISTS resource_date;
