@@ -112,6 +112,7 @@ import (
 	"srmt-admin/internal/http-server/handlers/shutdowns"
 	"srmt-admin/internal/http-server/handlers/signatures"
 	snowCover "srmt-admin/internal/http-server/handlers/snow-cover"
+	snowCoverGet "srmt-admin/internal/http-server/handlers/snow-cover/get"
 	"srmt-admin/internal/http-server/handlers/telegram/gidro/test"
 	usersAdd "srmt-admin/internal/http-server/handlers/users/add"
 	assignRole "srmt-admin/internal/http-server/handlers/users/assign-role"
@@ -235,6 +236,9 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 		r.Get("/dashboard/cascades", orgGetCascades.New(deps.Log, deps.PgRepo, deps.MetricsBlender))
 		r.Get("/dashboard/production", production.New(deps.Log, deps.PgRepo))
 		r.Get("/dashboard/production-stats", productionstats.New(deps.Log, deps.PgRepo))
+
+		// Snow cover (modsnow)
+		r.Get("/snow-cover", snowCoverGet.Get(deps.Log, deps.PgRepo))
 
 		// Open routes (available to all authenticated users)
 		r.Get("/shutdowns", shutdowns.Get(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
