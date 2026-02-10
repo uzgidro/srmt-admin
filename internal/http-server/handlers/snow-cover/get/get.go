@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"math"
 	"net/http"
 	"time"
 
@@ -22,20 +23,37 @@ type SnowCoverGetter interface {
 type snowCoverItem struct {
 	OrganizationID   int64           `json:"organization_id"`
 	OrganizationName string          `json:"organization_name"`
-	Cover            *float64        `json:"cover"`
+	OverallCover     *float64        `json:"overall_cover"`
 	Zones            json.RawMessage `json:"zones"`
 	ResourceDate     *string         `json:"resource_date"`
 }
 
 type periodData struct {
-	Date  string          `json:"date"`
-	Items []snowCoverItem `json:"items"`
+	Date         string          `json:"date"`
+	OverallCover *float64        `json:"overall_cover"`
+	Items        []snowCoverItem `json:"items"`
 }
 
 type getResponse struct {
 	Today     periodData `json:"today"`
 	Yesterday periodData `json:"yesterday"`
 	YearAgo   periodData `json:"year_ago"`
+}
+
+func calcOverallCover(items []snowCoverItem) *float64 {
+	var sum float64
+	var count int
+	for _, item := range items {
+		if item.OverallCover != nil {
+			sum += *item.OverallCover
+			count++
+		}
+	}
+	if count == 0 {
+		return nil
+	}
+	avg := math.Round(sum/float64(count)*100) / 100
+	return &avg
 }
 
 func Get(log *slog.Logger, getter SnowCoverGetter) http.HandlerFunc {
@@ -85,7 +103,7 @@ func Get(log *slog.Logger, getter SnowCoverGetter) http.HandlerFunc {
 			item := snowCoverItem{
 				OrganizationID:   row.OrganizationID,
 				OrganizationName: row.OrganizationName,
-				Cover:            row.Cover,
+				OverallCover:     row.Cover,
 				Zones:            row.Zones,
 				ResourceDate:     row.ResourceDate,
 			}
@@ -99,6 +117,10 @@ func Get(log *slog.Logger, getter SnowCoverGetter) http.HandlerFunc {
 				response.YearAgo.Items = append(response.YearAgo.Items, item)
 			}
 		}
+
+		response.Today.OverallCover = calcOverallCover(response.Today.Items)
+		response.Yesterday.OverallCover = calcOverallCover(response.Yesterday.Items)
+		response.YearAgo.OverallCover = calcOverallCover(response.YearAgo.Items)
 
 		render.JSON(w, r, response)
 	}
