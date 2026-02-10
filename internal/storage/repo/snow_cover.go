@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
-	"github.com/lib/pq"
 )
 
 type SnowCoverItem struct {
@@ -27,13 +25,13 @@ func (r *Repo) GetSnowCoverByDates(ctx context.Context, dates []string) ([]SnowC
 	const op = "storage.repo.GetSnowCoverByDates"
 
 	const query = `
-		SELECT m.organization_id, o.name, m.date, m.cover, m.zones, m.resource_date
+		SELECT m.organization_id, o.name, m.date::text, m.cover, m.zones, m.resource_date::text
 		FROM modsnow m
 		JOIN organizations o ON o.id = m.organization_id
-		WHERE m.date = ANY($1)
+		WHERE m.date IN ($1::date, $2::date, $3::date)
 		ORDER BY m.organization_id, m.date`
 
-	rows, err := r.db.QueryContext(ctx, query, pq.Array(dates))
+	rows, err := r.db.QueryContext(ctx, query, dates[0], dates[1], dates[2])
 	if err != nil {
 		return nil, fmt.Errorf("%s: failed to execute query: %w", op, err)
 	}
@@ -42,9 +40,11 @@ func (r *Repo) GetSnowCoverByDates(ctx context.Context, dates []string) ([]SnowC
 	var result []SnowCoverRow
 	for rows.Next() {
 		var row SnowCoverRow
-		if err := rows.Scan(&row.OrganizationID, &row.OrganizationName, &row.Date, &row.Cover, &row.Zones, &row.ResourceDate); err != nil {
+		var zones []byte
+		if err := rows.Scan(&row.OrganizationID, &row.OrganizationName, &row.Date, &row.Cover, &zones, &row.ResourceDate); err != nil {
 			return nil, fmt.Errorf("%s: failed to scan row: %w", op, err)
 		}
+		row.Zones = zones
 		result = append(result, row)
 	}
 
