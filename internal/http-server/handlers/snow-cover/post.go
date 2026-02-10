@@ -21,8 +21,9 @@ type SnowCoverUpserter interface {
 }
 
 type Request struct {
-	Date       string      `json:"date"`
-	Catchments []Catchment `json:"catchments"`
+	Date         string      `json:"date"`
+	ResourceDate string      `json:"resource_date"`
+	Catchments   []Catchment `json:"catchments"`
 }
 
 type Zone struct {
@@ -72,18 +73,31 @@ func New(log *slog.Logger, upserter SnowCoverUpserter, loc *time.Location) http.
 			return
 		}
 
-		var resourceDate string
+		dateFormat := regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+
+		var date string
 		if req.Date != "" {
-			if !regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`).MatchString(req.Date) {
+			if !dateFormat.MatchString(req.Date) {
 				log.Warn("invalid date format", slog.String("date", req.Date))
 				render.Status(r, http.StatusBadRequest)
 				render.JSON(w, r, resp.BadRequest("field 'date' must be in YYYY-MM-DD format"))
 				return
 			}
-			resourceDate = req.Date
+			date = req.Date
+		} else {
+			date = time.Now().In(loc).Format("2006-01-02")
 		}
 
-		date := time.Now().In(loc).Format("2006-01-02")
+		var resourceDate string
+		if req.ResourceDate != "" {
+			if !dateFormat.MatchString(req.ResourceDate) {
+				log.Warn("invalid resource_date format", slog.String("resource_date", req.ResourceDate))
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest("field 'resource_date' must be in YYYY-MM-DD format"))
+				return
+			}
+			resourceDate = req.ResourceDate
+		}
 
 		var items []repo.SnowCoverItem
 		for _, c := range req.Catchments {
