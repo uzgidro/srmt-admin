@@ -28,6 +28,7 @@ type Task struct {
 	Type            string  `json:"type"`
 	Priority        string  `json:"priority"`
 	DueDate         string  `json:"due_date"`
+	Status          string  `json:"status"`
 	RelatedEntity   *string `json:"related_entity,omitempty"`
 	RelatedEntityID *int64  `json:"related_entity_id,omitempty"`
 	Assignee        *string `json:"assignee,omitempty"`
@@ -49,6 +50,7 @@ type Notification struct {
 	Message   string  `json:"message"`
 	Type      string  `json:"type"`
 	Read      bool    `json:"read"`
+	ReadAt    *string `json:"read_at,omitempty"`
 	CreatedAt string  `json:"created_at"`
 	Link      *string `json:"link,omitempty"`
 }

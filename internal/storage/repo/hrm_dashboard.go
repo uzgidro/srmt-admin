@@ -60,7 +60,7 @@ func (r *Repo) GetHRMDashboardTasks(ctx context.Context, userID int64) ([]dashbo
 	// Tasks are derived from pending vacation approvals for managers
 	query := `
 		SELECT v.id, 'Vacation approval: ' || c.fio, 'Vacation request from ' || c.fio || ' (' || v.vacation_type || ')',
-			   'approval', 'medium', v.start_date::text
+			   'approval', 'medium', v.start_date::text, 'pending'
 		FROM vacations v
 		JOIN contacts c ON v.employee_id = c.id
 		WHERE v.status = 'pending'
@@ -76,7 +76,7 @@ func (r *Repo) GetHRMDashboardTasks(ctx context.Context, userID int64) ([]dashbo
 	var tasks []dashboard.Task
 	for rows.Next() {
 		var t dashboard.Task
-		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.Type, &t.Priority, &t.DueDate); err != nil {
+		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.Type, &t.Priority, &t.DueDate, &t.Status); err != nil {
 			return nil, fmt.Errorf("%s: scan: %w", op, err)
 		}
 		tasks = append(tasks, t)

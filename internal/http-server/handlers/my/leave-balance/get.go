@@ -10,17 +10,17 @@ import (
 	mwauth "srmt-admin/internal/http-server/middleware/auth"
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
-	"srmt-admin/internal/lib/model/hrm/vacation"
+	"srmt-admin/internal/lib/model/hrm/profile"
 
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
 )
 
 type BalanceGetter interface {
-	GetBalance(ctx context.Context, employeeID int64, year int) (*vacation.Balance, error)
+	GetMyLeaveBalance(ctx context.Context, employeeID int64, year int) (*profile.LeaveBalance, error)
 }
 
-func Get(log *slog.Logger, svc BalanceGetter) http.HandlerFunc {
+func Get(log *slog.Logger, repo BalanceGetter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.my.leave-balance.Get"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
@@ -39,7 +39,7 @@ func Get(log *slog.Logger, svc BalanceGetter) http.HandlerFunc {
 			}
 		}
 
-		balance, err := svc.GetBalance(r.Context(), claims.ContactID, year)
+		balance, err := repo.GetMyLeaveBalance(r.Context(), claims.ContactID, year)
 		if err != nil {
 			log.Error("failed to get leave balance", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)

@@ -2,25 +2,22 @@ package documents
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"net/http"
 	mwauth "srmt-admin/internal/http-server/middleware/auth"
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
-	"srmt-admin/internal/lib/model/hrm/personnel"
-	"srmt-admin/internal/storage"
+	"srmt-admin/internal/lib/model/hrm/profile"
 
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
 )
 
-type DocumentsService interface {
-	GetByEmployeeID(ctx context.Context, employeeID int64) (*personnel.Record, error)
-	GetDocuments(ctx context.Context, recordID int64) ([]*personnel.Document, error)
+type DocumentsGetter interface {
+	GetMyDocuments(ctx context.Context, employeeID int64) ([]*profile.MyDocument, error)
 }
 
-func GetAll(log *slog.Logger, svc DocumentsService) http.HandlerFunc {
+func GetAll(log *slog.Logger, repo DocumentsGetter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.my.documents.GetAll"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
@@ -32,19 +29,7 @@ func GetAll(log *slog.Logger, svc DocumentsService) http.HandlerFunc {
 			return
 		}
 
-		record, err := svc.GetByEmployeeID(r.Context(), claims.ContactID)
-		if err != nil {
-			if errors.Is(err, storage.ErrPersonnelRecordNotFound) {
-				render.JSON(w, r, []*personnel.Document{})
-				return
-			}
-			log.Error("failed to get personnel record", sl.Err(err))
-			render.Status(r, http.StatusInternalServerError)
-			render.JSON(w, r, resp.InternalServerError("Failed to get documents"))
-			return
-		}
-
-		docs, err := svc.GetDocuments(r.Context(), record.ID)
+		docs, err := repo.GetMyDocuments(r.Context(), claims.ContactID)
 		if err != nil {
 			log.Error("failed to get documents", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)
@@ -53,7 +38,7 @@ func GetAll(log *slog.Logger, svc DocumentsService) http.HandlerFunc {
 		}
 
 		if docs == nil {
-			docs = []*personnel.Document{}
+			docs = []*profile.MyDocument{}
 		}
 		render.JSON(w, r, docs)
 	}

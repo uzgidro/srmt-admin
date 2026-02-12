@@ -6,19 +6,18 @@ import (
 	"net/http"
 	mwauth "srmt-admin/internal/http-server/middleware/auth"
 	resp "srmt-admin/internal/lib/api/response"
-	"srmt-admin/internal/lib/dto"
 	"srmt-admin/internal/lib/logger/sl"
-	vacationmodel "srmt-admin/internal/lib/model/hrm/vacation"
+	"srmt-admin/internal/lib/model/hrm/profile"
 
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
 )
 
 type AllGetter interface {
-	GetAll(ctx context.Context, filters dto.VacationFilters) ([]*vacationmodel.Vacation, error)
+	GetMyVacations(ctx context.Context, employeeID int64, status *string, vacationType *string) ([]*profile.MyVacation, error)
 }
 
-func GetAll(log *slog.Logger, svc AllGetter) http.HandlerFunc {
+func GetAll(log *slog.Logger, repo AllGetter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.my.vacations.GetAll"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
@@ -30,19 +29,16 @@ func GetAll(log *slog.Logger, svc AllGetter) http.HandlerFunc {
 			return
 		}
 
-		filters := dto.VacationFilters{
-			EmployeeID: &claims.ContactID,
-		}
-
 		q := r.URL.Query()
+		var status, vacationType *string
 		if v := q.Get("status"); v != "" {
-			filters.Status = &v
+			status = &v
 		}
-		if v := q.Get("vacation_type"); v != "" {
-			filters.VacationType = &v
+		if v := q.Get("type"); v != "" {
+			vacationType = &v
 		}
 
-		vacations, err := svc.GetAll(r.Context(), filters)
+		vacations, err := repo.GetMyVacations(r.Context(), claims.ContactID, status, vacationType)
 		if err != nil {
 			log.Error("failed to get vacations", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)
@@ -51,7 +47,7 @@ func GetAll(log *slog.Logger, svc AllGetter) http.HandlerFunc {
 		}
 
 		if vacations == nil {
-			vacations = []*vacationmodel.Vacation{}
+			vacations = []*profile.MyVacation{}
 		}
 		render.JSON(w, r, vacations)
 	}
