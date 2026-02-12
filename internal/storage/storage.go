@@ -31,4 +31,15 @@ var (
 
 	ErrNotFound      = errors.New("not found")
 	ErrInvalidStatus = errors.New("invalid status for operation")
+
+	// HRM errors
+	ErrPersonnelRecordNotFound = errors.New("personnel record not found")
+	ErrVacationNotFound        = errors.New("vacation not found")
+	ErrBalanceNotFound         = errors.New("vacation balance not found")
+	ErrInsufficientBalance     = errors.New("insufficient vacation balance")
+	ErrVacationOverlap         = errors.New("vacation dates overlap with existing vacation")
+	ErrBlockedPeriod           = errors.New("vacation dates fall within a blocked period")
+	ErrInvalidDateRange        = errors.New("invalid date range")
+	ErrStartDateInPast         = errors.New("start date cannot be in the past")
+	ErrNotificationNotFound    = errors.New("notification not found")
 )

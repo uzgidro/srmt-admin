@@ -65,6 +65,9 @@ import (
 	gesIncidents "srmt-admin/internal/http-server/handlers/ges/incidents"
 	gesShutdowns "srmt-admin/internal/http-server/handlers/ges/shutdowns"
 	gesVisits "srmt-admin/internal/http-server/handlers/ges/visits"
+	hrmDashboardHandler "srmt-admin/internal/http-server/handlers/hrm/dashboard"
+	hrmPersonnelHandler "srmt-admin/internal/http-server/handlers/hrm/personnel"
+	hrmVacationHandler "srmt-admin/internal/http-server/handlers/hrm/vacation"
 	incidentsHandler "srmt-admin/internal/http-server/handlers/incidents-handler"
 	setIndicator "srmt-admin/internal/http-server/handlers/indicators/set"
 	"srmt-admin/internal/http-server/handlers/instructions"
@@ -130,6 +133,9 @@ import (
 	dischargeExcelGen "srmt-admin/internal/lib/service/excel/discharge"
 	excelgen "srmt-admin/internal/lib/service/excel/reservoir-summary"
 	scExcelGen "srmt-admin/internal/lib/service/excel/sc"
+	hrmdashboard "srmt-admin/internal/lib/service/hrm/dashboard"
+	hrmpersonnel "srmt-admin/internal/lib/service/hrm/personnel"
+	hrmvacation "srmt-admin/internal/lib/service/hrm/vacation"
 	"srmt-admin/internal/lib/service/metrics"
 	"srmt-admin/internal/lib/service/reservoir"
 	"srmt-admin/internal/storage/minio"
@@ -159,6 +165,9 @@ type AppDependencies struct {
 	DischargeExcelTemplatePath string
 	SCExcelTemplatePath        string
 	AlarmProcessor             *alarm.Processor
+	HRMPersonnelService        *hrmpersonnel.Service
+	HRMVacationService         *hrmvacation.Service
+	HRMDashboardService        *hrmdashboard.Service
 }
 
 func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
@@ -510,6 +519,42 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Post("/fast-calls", fastCallAdd.New(deps.Log, deps.PgRepo))
 			r.Patch("/fast-calls/{id}", fastCallEdit.New(deps.Log, deps.PgRepo))
 			r.Delete("/fast-calls/{id}", fastCallDelete.New(deps.Log, deps.PgRepo))
+		})
+
+		// HRM Module
+		r.Group(func(r chi.Router) {
+			r.Use(mwauth.RequireAnyRole("hrm_admin", "hrm_manager", "hrm_employee"))
+
+			r.Route("/hrm", func(r chi.Router) {
+				// Dashboard
+				r.Get("/dashboard", hrmDashboardHandler.Get(deps.Log, deps.HRMDashboardService))
+				r.Patch("/dashboard/notifications/{id}/read", hrmDashboardHandler.MarkRead(deps.Log, deps.HRMDashboardService))
+				r.Post("/dashboard/notifications/read-all", hrmDashboardHandler.MarkReadAll(deps.Log, deps.HRMDashboardService))
+
+				// Personnel Records
+				r.Get("/personnel-records", hrmPersonnelHandler.GetAll(deps.Log, deps.HRMPersonnelService))
+				r.Post("/personnel-records", hrmPersonnelHandler.Create(deps.Log, deps.HRMPersonnelService))
+				r.Get("/personnel-records/employee/{id}", hrmPersonnelHandler.GetByEmployee(deps.Log, deps.HRMPersonnelService))
+				r.Get("/personnel-records/{id}", hrmPersonnelHandler.GetByID(deps.Log, deps.HRMPersonnelService))
+				r.Patch("/personnel-records/{id}", hrmPersonnelHandler.Update(deps.Log, deps.HRMPersonnelService))
+				r.Delete("/personnel-records/{id}", hrmPersonnelHandler.Delete(deps.Log, deps.HRMPersonnelService))
+				r.Get("/personnel-records/{id}/documents", hrmPersonnelHandler.GetDocuments(deps.Log, deps.HRMPersonnelService))
+				r.Get("/personnel-records/{id}/transfers", hrmPersonnelHandler.GetTransfers(deps.Log, deps.HRMPersonnelService))
+
+				// Vacations — register specific routes BEFORE {id} routes
+				r.Get("/vacations/calendar", hrmVacationHandler.GetCalendar(deps.Log, deps.HRMVacationService))
+				r.Get("/vacations/balances", hrmVacationHandler.GetBalances(deps.Log, deps.HRMVacationService))
+				r.Get("/vacations/pending", hrmVacationHandler.GetPending(deps.Log, deps.HRMVacationService))
+				r.Get("/vacations/balance/{id}", hrmVacationHandler.GetBalance(deps.Log, deps.HRMVacationService))
+				r.Get("/vacations", hrmVacationHandler.GetAll(deps.Log, deps.HRMVacationService))
+				r.Post("/vacations", hrmVacationHandler.Create(deps.Log, deps.HRMVacationService))
+				r.Get("/vacations/{id}", hrmVacationHandler.GetByID(deps.Log, deps.HRMVacationService))
+				r.Patch("/vacations/{id}", hrmVacationHandler.Update(deps.Log, deps.HRMVacationService))
+				r.Delete("/vacations/{id}", hrmVacationHandler.Delete(deps.Log, deps.HRMVacationService))
+				r.Post("/vacations/{id}/approve", hrmVacationHandler.Approve(deps.Log, deps.HRMVacationService))
+				r.Post("/vacations/{id}/reject", hrmVacationHandler.Reject(deps.Log, deps.HRMVacationService))
+				r.Post("/vacations/{id}/cancel", hrmVacationHandler.Cancel(deps.Log, deps.HRMVacationService))
+			})
 		})
 
 		// Receptions

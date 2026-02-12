@@ -6,6 +6,9 @@ import (
 	"srmt-admin/internal/config"
 	"srmt-admin/internal/lib/service/alarm"
 	"srmt-admin/internal/lib/service/ascue"
+	hrmdashboard "srmt-admin/internal/lib/service/hrm/dashboard"
+	hrmpersonnel "srmt-admin/internal/lib/service/hrm/personnel"
+	hrmvacation "srmt-admin/internal/lib/service/hrm/vacation"
 	"srmt-admin/internal/lib/service/metrics"
 	"srmt-admin/internal/lib/service/reservoir"
 	"srmt-admin/internal/storage/redis"
@@ -24,6 +27,9 @@ var ServiceProviderSet = wire.NewSet(
 	ProvideReservoirFetcher,
 	ProvideHTTPClient,
 	ProvideAlarmProcessor,
+	ProvideHRMPersonnelService,
+	ProvideHRMVacationService,
+	ProvideHRMDashboardService,
 )
 
 // ProvideTokenService creates JWT token service
@@ -72,4 +78,19 @@ func ProvideHTTPClient() *http.Client {
 // ProvideAlarmProcessor creates the alarm processor for automatic shutdown creation
 func ProvideAlarmProcessor(pgRepo *repo.Repo, redisRepo *redis.Repo, log *slog.Logger) *alarm.Processor {
 	return alarm.NewProcessor(pgRepo, redisRepo, log)
+}
+
+// ProvideHRMPersonnelService creates the HRM personnel service
+func ProvideHRMPersonnelService(pgRepo *repo.Repo, log *slog.Logger) *hrmpersonnel.Service {
+	return hrmpersonnel.NewService(pgRepo, log)
+}
+
+// ProvideHRMVacationService creates the HRM vacation service
+func ProvideHRMVacationService(pgRepo *repo.Repo, log *slog.Logger) *hrmvacation.Service {
+	return hrmvacation.NewService(pgRepo, log)
+}
+
+// ProvideHRMDashboardService creates the HRM dashboard service
+func ProvideHRMDashboardService(pgRepo *repo.Repo, log *slog.Logger) *hrmdashboard.Service {
+	return hrmdashboard.NewService(pgRepo, log)
 }

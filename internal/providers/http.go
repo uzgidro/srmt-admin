@@ -8,6 +8,9 @@ import (
 	"srmt-admin/internal/http-server/middleware/logger"
 	"srmt-admin/internal/http-server/router"
 	"srmt-admin/internal/lib/service/alarm"
+	hrmdashboard "srmt-admin/internal/lib/service/hrm/dashboard"
+	hrmpersonnel "srmt-admin/internal/lib/service/hrm/personnel"
+	hrmvacation "srmt-admin/internal/lib/service/hrm/vacation"
 	"srmt-admin/internal/lib/service/metrics"
 	"srmt-admin/internal/lib/service/reservoir"
 	"srmt-admin/internal/storage/minio"
@@ -32,20 +35,23 @@ var HTTPProviderSet = wire.NewSet(
 // AppContainer holds all application dependencies
 // This replaces the 9 parameters in SetupRoutes
 type AppContainer struct {
-	Router           *chi.Mux
-	Server           *http.Server
-	Logger           *slog.Logger
-	Config           *config.Config
-	PgRepo           *pgRepo.Repo
-	MongoRepo        *mngRepo.Repo
-	MinioRepo        *minio.Repo
-	RedisRepo        *redisRepo.Repo
-	Token            *token.Token
-	Location         *time.Location
-	MetricsBlender   *metrics.MetricsBlender
-	ReservoirFetcher *reservoir.Fetcher
-	HTTPClient       *http.Client
-	AlarmProcessor   *alarm.Processor
+	Router              *chi.Mux
+	Server              *http.Server
+	Logger              *slog.Logger
+	Config              *config.Config
+	PgRepo              *pgRepo.Repo
+	MongoRepo           *mngRepo.Repo
+	MinioRepo           *minio.Repo
+	RedisRepo           *redisRepo.Repo
+	Token               *token.Token
+	Location            *time.Location
+	MetricsBlender      *metrics.MetricsBlender
+	ReservoirFetcher    *reservoir.Fetcher
+	HTTPClient          *http.Client
+	AlarmProcessor      *alarm.Processor
+	HRMPersonnelService *hrmpersonnel.Service
+	HRMVacationService  *hrmvacation.Service
+	HRMDashboardService *hrmdashboard.Service
 }
 
 // ProvideAppContainer creates the application container
@@ -64,22 +70,28 @@ func ProvideAppContainer(
 	reservoirFetcher *reservoir.Fetcher,
 	httpClient *http.Client,
 	alarmProcessor *alarm.Processor,
+	hrmPersonnelSvc *hrmpersonnel.Service,
+	hrmVacationSvc *hrmvacation.Service,
+	hrmDashboardSvc *hrmdashboard.Service,
 ) *AppContainer {
 	return &AppContainer{
-		Router:           r,
-		Server:           srv,
-		Logger:           log,
-		Config:           cfg,
-		PgRepo:           pg,
-		MongoRepo:        mng,
-		MinioRepo:        minioRepo,
-		RedisRepo:        redis,
-		Token:            tkn,
-		Location:         loc,
-		MetricsBlender:   metricsBlender,
-		ReservoirFetcher: reservoirFetcher,
-		HTTPClient:       httpClient,
-		AlarmProcessor:   alarmProcessor,
+		Router:              r,
+		Server:              srv,
+		Logger:              log,
+		Config:              cfg,
+		PgRepo:              pg,
+		MongoRepo:           mng,
+		MinioRepo:           minioRepo,
+		RedisRepo:           redis,
+		Token:               tkn,
+		Location:            loc,
+		MetricsBlender:      metricsBlender,
+		ReservoirFetcher:    reservoirFetcher,
+		HTTPClient:          httpClient,
+		AlarmProcessor:      alarmProcessor,
+		HRMPersonnelService: hrmPersonnelSvc,
+		HRMVacationService:  hrmVacationSvc,
+		HRMDashboardService: hrmDashboardSvc,
 	}
 }
 
@@ -97,6 +109,9 @@ func ProvideRouter(
 	reservoirFetcher *reservoir.Fetcher,
 	httpClient *http.Client,
 	alarmProcessor *alarm.Processor,
+	hrmPersonnelSvc *hrmpersonnel.Service,
+	hrmVacationSvc *hrmvacation.Service,
+	hrmDashboardSvc *hrmdashboard.Service,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -124,6 +139,9 @@ func ProvideRouter(
 		DischargeExcelTemplatePath: cfg.TemplatePath + "/discharge.xlsx",
 		SCExcelTemplatePath:        cfg.TemplatePath + "/sc.xlsx",
 		AlarmProcessor:             alarmProcessor,
+		HRMPersonnelService:        hrmPersonnelSvc,
+		HRMVacationService:         hrmVacationSvc,
+		HRMDashboardService:        hrmDashboardSvc,
 	}
 
 	router.SetupRoutes(r, deps)
