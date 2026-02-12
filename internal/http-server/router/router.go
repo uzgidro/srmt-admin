@@ -77,6 +77,15 @@ import (
 	"srmt-admin/internal/http-server/handlers/letters"
 	levelVolumeGet "srmt-admin/internal/http-server/handlers/level-volume/get"
 	lexparser "srmt-admin/internal/http-server/handlers/lex-parser"
+	myCompetencies "srmt-admin/internal/http-server/handlers/my/competencies"
+	myDocuments "srmt-admin/internal/http-server/handlers/my/documents"
+	myLeaveBalance "srmt-admin/internal/http-server/handlers/my/leave-balance"
+	myNotifications "srmt-admin/internal/http-server/handlers/my/notifications"
+	myProfile "srmt-admin/internal/http-server/handlers/my/profile"
+	mySalary "srmt-admin/internal/http-server/handlers/my/salary"
+	myTasks "srmt-admin/internal/http-server/handlers/my/tasks"
+	myTraining "srmt-admin/internal/http-server/handlers/my/training"
+	myVacations "srmt-admin/internal/http-server/handlers/my/vacations"
 	"srmt-admin/internal/http-server/handlers/news"
 	orgTypeAdd "srmt-admin/internal/http-server/handlers/organization-types/add"
 	orgTypeDelete "srmt-admin/internal/http-server/handlers/organization-types/delete"
@@ -211,6 +220,34 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 		r.Use(mwauth.Authenticator(deps.Token))
 
 		r.Get("/auth/me", me.New(deps.Log))
+
+		// Personal Cabinet — any authenticated user
+		r.Route("/my-profile", func(r chi.Router) {
+			r.Get("/", myProfile.Get(deps.Log, deps.PgRepo))
+			r.Patch("/", myProfile.Update(deps.Log, deps.PgRepo))
+		})
+		r.Get("/my-leave-balance", myLeaveBalance.Get(deps.Log, deps.HRMVacationService))
+		r.Route("/my-vacations", func(r chi.Router) {
+			r.Get("/", myVacations.GetAll(deps.Log, deps.HRMVacationService))
+			r.Post("/", myVacations.Create(deps.Log, deps.HRMVacationService))
+			r.Post("/{id}/cancel", myVacations.Cancel(deps.Log, deps.HRMVacationService))
+		})
+		r.Route("/my-notifications", func(r chi.Router) {
+			r.Get("/", myNotifications.GetAll(deps.Log, deps.PgRepo))
+			r.Patch("/{id}/read", myNotifications.MarkRead(deps.Log, deps.HRMDashboardService))
+			r.Post("/read-all", myNotifications.MarkReadAll(deps.Log, deps.HRMDashboardService))
+		})
+		r.Get("/my-tasks", myTasks.GetAll(deps.Log, deps.PgRepo))
+		r.Route("/my-documents", func(r chi.Router) {
+			r.Get("/", myDocuments.GetAll(deps.Log, deps.HRMPersonnelService))
+			r.Get("/{id}/download", myDocuments.Download(deps.Log))
+		})
+		r.Route("/my-salary", func(r chi.Router) {
+			r.Get("/", mySalary.Get(deps.Log))
+			r.Get("/payslip/{id}", mySalary.GetPayslip(deps.Log))
+		})
+		r.Get("/my-training", myTraining.Get(deps.Log))
+		r.Get("/my-competencies", myCompetencies.Get(deps.Log))
 
 		// News
 		r.Get("/news", news.New(deps.Log, deps.HTTPClient, deps.Config.NewsRetriever.BaseURL))
