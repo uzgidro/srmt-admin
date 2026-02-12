@@ -25,6 +25,13 @@ type CreateResponse struct {
 	ID int64 `json:"id"`
 }
 
+type createMyVacationRequest struct {
+	Type      string  `json:"type" validate:"required,oneof=annual additional study unpaid maternity comp"`
+	StartDate string  `json:"start_date" validate:"required"`
+	EndDate   string  `json:"end_date" validate:"required"`
+	Reason    *string `json:"reason,omitempty"`
+}
+
 func Create(log *slog.Logger, svc Creator) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.my.vacations.Create"
@@ -37,16 +44,13 @@ func Create(log *slog.Logger, svc Creator) http.HandlerFunc {
 			return
 		}
 
-		var req dto.CreateVacationRequest
+		var req createMyVacationRequest
 		if err := render.DecodeJSON(r.Body, &req); err != nil {
 			log.Error("failed to decode request", sl.Err(err))
 			render.Status(r, http.StatusBadRequest)
 			render.JSON(w, r, resp.BadRequest("Invalid request format"))
 			return
 		}
-
-		// Force employee_id to the authenticated user
-		req.EmployeeID = claims.ContactID
 
 		if err := validator.New().Struct(req); err != nil {
 			var vErrs validator.ValidationErrors
@@ -56,7 +60,15 @@ func Create(log *slog.Logger, svc Creator) http.HandlerFunc {
 			return
 		}
 
-		id, err := svc.Create(r.Context(), req, claims.ContactID)
+		svcReq := dto.CreateVacationRequest{
+			EmployeeID:   claims.ContactID,
+			VacationType: req.Type,
+			StartDate:    req.StartDate,
+			EndDate:      req.EndDate,
+			Reason:       req.Reason,
+		}
+
+		id, err := svc.Create(r.Context(), svcReq, claims.ContactID)
 		if err != nil {
 			switch {
 			case errors.Is(err, storage.ErrStartDateInPast):

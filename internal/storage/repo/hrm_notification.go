@@ -11,7 +11,7 @@ func (r *Repo) GetHRMNotifications(ctx context.Context, userID int64) ([]*dashbo
 	const op = "repo.GetHRMNotifications"
 
 	query := `
-		SELECT id, title, message, type, read, created_at::text, link
+		SELECT id, title, message, type, read, read_at::text, created_at::text, link
 		FROM hrm_notifications
 		WHERE user_id = $1
 		ORDER BY created_at DESC
@@ -27,7 +27,7 @@ func (r *Repo) GetHRMNotifications(ctx context.Context, userID int64) ([]*dashbo
 	for rows.Next() {
 		var n dashboard.Notification
 		var link *string
-		if err := rows.Scan(&n.ID, &n.Title, &n.Message, &n.Type, &n.Read, &n.CreatedAt, &link); err != nil {
+		if err := rows.Scan(&n.ID, &n.Title, &n.Message, &n.Type, &n.Read, &n.ReadAt, &n.CreatedAt, &link); err != nil {
 			return nil, fmt.Errorf("%s: scan: %w", op, err)
 		}
 		n.Link = link

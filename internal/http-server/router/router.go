@@ -226,9 +226,9 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Get("/", myProfile.Get(deps.Log, deps.PgRepo))
 			r.Patch("/", myProfile.Update(deps.Log, deps.PgRepo))
 		})
-		r.Get("/my-leave-balance", myLeaveBalance.Get(deps.Log, deps.HRMVacationService))
+		r.Get("/my-leave-balance", myLeaveBalance.Get(deps.Log, deps.PgRepo))
 		r.Route("/my-vacations", func(r chi.Router) {
-			r.Get("/", myVacations.GetAll(deps.Log, deps.HRMVacationService))
+			r.Get("/", myVacations.GetAll(deps.Log, deps.PgRepo))
 			r.Post("/", myVacations.Create(deps.Log, deps.HRMVacationService))
 			r.Post("/{id}/cancel", myVacations.Cancel(deps.Log, deps.HRMVacationService))
 		})
@@ -239,7 +239,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 		})
 		r.Get("/my-tasks", myTasks.GetAll(deps.Log, deps.PgRepo))
 		r.Route("/my-documents", func(r chi.Router) {
-			r.Get("/", myDocuments.GetAll(deps.Log, deps.HRMPersonnelService))
+			r.Get("/", myDocuments.GetAll(deps.Log, deps.PgRepo))
 			r.Get("/{id}/download", myDocuments.Download(deps.Log))
 		})
 		r.Route("/my-salary", func(r chi.Router) {
