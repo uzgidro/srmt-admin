@@ -67,6 +67,7 @@ import (
 	gesVisits "srmt-admin/internal/http-server/handlers/ges/visits"
 	hrmDashboardHandler "srmt-admin/internal/http-server/handlers/hrm/dashboard"
 	hrmPersonnelHandler "srmt-admin/internal/http-server/handlers/hrm/personnel"
+	hrmTimesheetHandler "srmt-admin/internal/http-server/handlers/hrm/timesheet"
 	hrmVacationHandler "srmt-admin/internal/http-server/handlers/hrm/vacation"
 	incidentsHandler "srmt-admin/internal/http-server/handlers/incidents-handler"
 	setIndicator "srmt-admin/internal/http-server/handlers/indicators/set"
@@ -144,6 +145,7 @@ import (
 	scExcelGen "srmt-admin/internal/lib/service/excel/sc"
 	hrmdashboard "srmt-admin/internal/lib/service/hrm/dashboard"
 	hrmpersonnel "srmt-admin/internal/lib/service/hrm/personnel"
+	hrmtimesheet "srmt-admin/internal/lib/service/hrm/timesheet"
 	hrmvacation "srmt-admin/internal/lib/service/hrm/vacation"
 	"srmt-admin/internal/lib/service/metrics"
 	"srmt-admin/internal/lib/service/reservoir"
@@ -177,6 +179,7 @@ type AppDependencies struct {
 	HRMPersonnelService        *hrmpersonnel.Service
 	HRMVacationService         *hrmvacation.Service
 	HRMDashboardService        *hrmdashboard.Service
+	HRMTimesheetService        *hrmtimesheet.Service
 }
 
 func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
@@ -591,6 +594,20 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 				r.Post("/vacations/{id}/approve", hrmVacationHandler.Approve(deps.Log, deps.HRMVacationService))
 				r.Post("/vacations/{id}/reject", hrmVacationHandler.Reject(deps.Log, deps.HRMVacationService))
 				r.Post("/vacations/{id}/cancel", hrmVacationHandler.Cancel(deps.Log, deps.HRMVacationService))
+
+				// Timesheet — register specific routes BEFORE {id} routes
+				r.Get("/timesheet", hrmTimesheetHandler.GetAll(deps.Log, deps.HRMTimesheetService))
+				r.Get("/timesheet/corrections", hrmTimesheetHandler.GetCorrections(deps.Log, deps.HRMTimesheetService))
+				r.Post("/timesheet/corrections", hrmTimesheetHandler.CreateCorrection(deps.Log, deps.HRMTimesheetService))
+				r.Post("/timesheet/corrections/{id}/approve", hrmTimesheetHandler.ApproveCorrection(deps.Log, deps.HRMTimesheetService))
+				r.Post("/timesheet/corrections/{id}/reject", hrmTimesheetHandler.RejectCorrection(deps.Log, deps.HRMTimesheetService))
+				r.Get("/timesheet/export", hrmTimesheetHandler.Export(deps.Log))
+				r.Patch("/timesheet/{id}", hrmTimesheetHandler.UpdateEntry(deps.Log, deps.HRMTimesheetService))
+
+				// Holidays
+				r.Get("/holidays", hrmTimesheetHandler.GetHolidays(deps.Log, deps.HRMTimesheetService))
+				r.Post("/holidays", hrmTimesheetHandler.CreateHoliday(deps.Log, deps.HRMTimesheetService))
+				r.Delete("/holidays/{id}", hrmTimesheetHandler.DeleteHoliday(deps.Log, deps.HRMTimesheetService))
 			})
 		})
 
