@@ -42,4 +42,10 @@ var (
 	ErrInvalidDateRange        = errors.New("invalid date range")
 	ErrStartDateInPast         = errors.New("start date cannot be in the past")
 	ErrNotificationNotFound    = errors.New("notification not found")
+
+	// Timesheet errors
+	ErrTimesheetEntryNotFound = errors.New("timesheet entry not found")
+	ErrHolidayNotFound        = errors.New("holiday not found")
+	ErrHolidayAlreadyExists   = errors.New("holiday already exists for this date")
+	ErrCorrectionNotFound     = errors.New("timesheet correction not found")
 )
