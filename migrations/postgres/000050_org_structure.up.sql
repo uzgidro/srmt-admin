@@ -1,5 +1,5 @@
 -- Org Structure
-CREATE TABLE org_units (
+CREATE TABLE IF NOT EXISTS org_units (
     id              BIGSERIAL PRIMARY KEY,
     name            VARCHAR(255) NOT NULL,
     type            VARCHAR(20) NOT NULL DEFAULT 'department'
@@ -12,9 +12,13 @@ CREATE TABLE org_units (
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_org_units_parent_id ON org_units(parent_id);
+CREATE INDEX IF NOT EXISTS idx_org_units_parent_id ON org_units(parent_id);
 
-CREATE TRIGGER set_timestamp_org_units
-    BEFORE UPDATE ON org_units
-    FOR EACH ROW
-    EXECUTE FUNCTION trigger_set_timestamp();
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'set_timestamp_org_units') THEN
+        CREATE TRIGGER set_timestamp_org_units
+            BEFORE UPDATE ON org_units
+            FOR EACH ROW
+            EXECUTE FUNCTION trigger_set_timestamp();
+    END IF;
+END $$;

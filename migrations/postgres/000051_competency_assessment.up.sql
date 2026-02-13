@@ -1,5 +1,5 @@
 -- Справочник компетенций
-CREATE TABLE competencies (
+CREATE TABLE IF NOT EXISTS competencies (
     id          BIGSERIAL PRIMARY KEY,
     name        VARCHAR(255) NOT NULL,
     description TEXT,
@@ -11,7 +11,7 @@ CREATE TABLE competencies (
 );
 
 -- Привязка компетенций к должностям (M:N)
-CREATE TABLE competency_positions (
+CREATE TABLE IF NOT EXISTS competency_positions (
     id              BIGSERIAL PRIMARY KEY,
     competency_id   BIGINT NOT NULL REFERENCES competencies(id) ON DELETE CASCADE,
     position_id     BIGINT NOT NULL REFERENCES positions(id) ON DELETE CASCADE,
@@ -20,7 +20,7 @@ CREATE TABLE competency_positions (
 );
 
 -- Сессии ассессмента
-CREATE TABLE assessment_sessions (
+CREATE TABLE IF NOT EXISTS assessment_sessions (
     id          BIGSERIAL PRIMARY KEY,
     name        VARCHAR(255) NOT NULL,
     description TEXT,
@@ -34,7 +34,7 @@ CREATE TABLE assessment_sessions (
 );
 
 -- Компетенции сессии (какие компетенции оцениваются, с весами)
-CREATE TABLE assessment_competencies (
+CREATE TABLE IF NOT EXISTS assessment_competencies (
     id             BIGSERIAL PRIMARY KEY,
     session_id     BIGINT NOT NULL REFERENCES assessment_sessions(id) ON DELETE CASCADE,
     competency_id  BIGINT NOT NULL REFERENCES competencies(id) ON DELETE CASCADE,
@@ -44,7 +44,7 @@ CREATE TABLE assessment_competencies (
 );
 
 -- Кандидаты (оцениваемые сотрудники) сессии
-CREATE TABLE assessment_candidates (
+CREATE TABLE IF NOT EXISTS assessment_candidates (
     id          BIGSERIAL PRIMARY KEY,
     session_id  BIGINT NOT NULL REFERENCES assessment_sessions(id) ON DELETE CASCADE,
     employee_id BIGINT NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
@@ -54,7 +54,7 @@ CREATE TABLE assessment_candidates (
 );
 
 -- Оценщики (эксперты) сессии
-CREATE TABLE assessment_assessors (
+CREATE TABLE IF NOT EXISTS assessment_assessors (
     id          BIGSERIAL PRIMARY KEY,
     session_id  BIGINT NOT NULL REFERENCES assessment_sessions(id) ON DELETE CASCADE,
     employee_id BIGINT NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
@@ -64,7 +64,7 @@ CREATE TABLE assessment_assessors (
 );
 
 -- Оценки (кто-кому-какую компетенцию-на-какой-уровень)
-CREATE TABLE assessment_scores (
+CREATE TABLE IF NOT EXISTS assessment_scores (
     id              BIGSERIAL PRIMARY KEY,
     session_id      BIGINT NOT NULL REFERENCES assessment_sessions(id) ON DELETE CASCADE,
     candidate_id    BIGINT NOT NULL REFERENCES assessment_candidates(id) ON DELETE CASCADE,
@@ -77,21 +77,29 @@ CREATE TABLE assessment_scores (
 );
 
 -- Indexes
-CREATE INDEX idx_competencies_category ON competencies(category);
-CREATE INDEX idx_competency_positions_position_id ON competency_positions(position_id);
-CREATE INDEX idx_assessment_sessions_status ON assessment_sessions(status);
-CREATE INDEX idx_assessment_competencies_session_id ON assessment_competencies(session_id);
-CREATE INDEX idx_assessment_candidates_session_employee ON assessment_candidates(session_id, employee_id);
-CREATE INDEX idx_assessment_assessors_session_id ON assessment_assessors(session_id);
-CREATE INDEX idx_assessment_scores_session_candidate ON assessment_scores(session_id, candidate_id);
+CREATE INDEX IF NOT EXISTS idx_competencies_category ON competencies(category);
+CREATE INDEX IF NOT EXISTS idx_competency_positions_position_id ON competency_positions(position_id);
+CREATE INDEX IF NOT EXISTS idx_assessment_sessions_status ON assessment_sessions(status);
+CREATE INDEX IF NOT EXISTS idx_assessment_competencies_session_id ON assessment_competencies(session_id);
+CREATE INDEX IF NOT EXISTS idx_assessment_candidates_session_employee ON assessment_candidates(session_id, employee_id);
+CREATE INDEX IF NOT EXISTS idx_assessment_assessors_session_id ON assessment_assessors(session_id);
+CREATE INDEX IF NOT EXISTS idx_assessment_scores_session_candidate ON assessment_scores(session_id, candidate_id);
 
 -- Triggers
-CREATE TRIGGER set_timestamp_competencies
-    BEFORE UPDATE ON competencies
-    FOR EACH ROW
-    EXECUTE FUNCTION trigger_set_timestamp();
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'set_timestamp_competencies') THEN
+        CREATE TRIGGER set_timestamp_competencies
+            BEFORE UPDATE ON competencies
+            FOR EACH ROW
+            EXECUTE FUNCTION trigger_set_timestamp();
+    END IF;
+END $$;
 
-CREATE TRIGGER set_timestamp_assessment_sessions
-    BEFORE UPDATE ON assessment_sessions
-    FOR EACH ROW
-    EXECUTE FUNCTION trigger_set_timestamp();
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'set_timestamp_assessment_sessions') THEN
+        CREATE TRIGGER set_timestamp_assessment_sessions
+            BEFORE UPDATE ON assessment_sessions
+            FOR EACH ROW
+            EXECUTE FUNCTION trigger_set_timestamp();
+    END IF;
+END $$;

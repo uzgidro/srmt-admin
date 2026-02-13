@@ -1,5 +1,5 @@
 -- Access Control
-CREATE TABLE access_zones (
+CREATE TABLE IF NOT EXISTS access_zones (
     id              BIGSERIAL PRIMARY KEY,
     name            VARCHAR(255) NOT NULL,
     description     TEXT,
@@ -14,7 +14,7 @@ CREATE TABLE access_zones (
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE access_cards (
+CREATE TABLE IF NOT EXISTS access_cards (
     id              BIGSERIAL PRIMARY KEY,
     employee_id     BIGINT NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
     card_number     VARCHAR(100) NOT NULL UNIQUE,
@@ -28,7 +28,7 @@ CREATE TABLE access_cards (
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE access_logs (
+CREATE TABLE IF NOT EXISTS access_logs (
     id              BIGSERIAL PRIMARY KEY,
     employee_id     BIGINT NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
     card_id         BIGINT REFERENCES access_cards(id) ON DELETE SET NULL,
@@ -41,7 +41,7 @@ CREATE TABLE access_logs (
     denial_reason   TEXT
 );
 
-CREATE TABLE access_requests (
+CREATE TABLE IF NOT EXISTS access_requests (
     id              BIGSERIAL PRIMARY KEY,
     employee_id     BIGINT NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
     zone_id         BIGINT REFERENCES access_zones(id) ON DELETE SET NULL,
@@ -54,22 +54,34 @@ CREATE TABLE access_requests (
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_access_cards_employee_status ON access_cards(employee_id, status);
-CREATE INDEX idx_access_logs_employee_timestamp ON access_logs(employee_id, timestamp);
-CREATE INDEX idx_access_logs_zone_id ON access_logs(zone_id);
-CREATE INDEX idx_access_requests_employee_status ON access_requests(employee_id, status);
+CREATE INDEX IF NOT EXISTS idx_access_cards_employee_status ON access_cards(employee_id, status);
+CREATE INDEX IF NOT EXISTS idx_access_logs_employee_timestamp ON access_logs(employee_id, timestamp);
+CREATE INDEX IF NOT EXISTS idx_access_logs_zone_id ON access_logs(zone_id);
+CREATE INDEX IF NOT EXISTS idx_access_requests_employee_status ON access_requests(employee_id, status);
 
-CREATE TRIGGER set_timestamp_access_zones
-    BEFORE UPDATE ON access_zones
-    FOR EACH ROW
-    EXECUTE FUNCTION trigger_set_timestamp();
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'set_timestamp_access_zones') THEN
+        CREATE TRIGGER set_timestamp_access_zones
+            BEFORE UPDATE ON access_zones
+            FOR EACH ROW
+            EXECUTE FUNCTION trigger_set_timestamp();
+    END IF;
+END $$;
 
-CREATE TRIGGER set_timestamp_access_cards
-    BEFORE UPDATE ON access_cards
-    FOR EACH ROW
-    EXECUTE FUNCTION trigger_set_timestamp();
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'set_timestamp_access_cards') THEN
+        CREATE TRIGGER set_timestamp_access_cards
+            BEFORE UPDATE ON access_cards
+            FOR EACH ROW
+            EXECUTE FUNCTION trigger_set_timestamp();
+    END IF;
+END $$;
 
-CREATE TRIGGER set_timestamp_access_requests
-    BEFORE UPDATE ON access_requests
-    FOR EACH ROW
-    EXECUTE FUNCTION trigger_set_timestamp();
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'set_timestamp_access_requests') THEN
+        CREATE TRIGGER set_timestamp_access_requests
+            BEFORE UPDATE ON access_requests
+            FOR EACH ROW
+            EXECUTE FUNCTION trigger_set_timestamp();
+    END IF;
+END $$;

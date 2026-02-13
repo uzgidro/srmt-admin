@@ -1,5 +1,5 @@
 -- HR Documents
-CREATE TABLE hr_documents (
+CREATE TABLE IF NOT EXISTS hr_documents (
     id              BIGSERIAL PRIMARY KEY,
     title           VARCHAR(255) NOT NULL,
     type            VARCHAR(20) NOT NULL DEFAULT 'other'
@@ -21,7 +21,7 @@ CREATE TABLE hr_documents (
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE document_signatures (
+CREATE TABLE IF NOT EXISTS document_signatures (
     id              BIGSERIAL PRIMARY KEY,
     document_id     BIGINT NOT NULL REFERENCES hr_documents(id) ON DELETE CASCADE,
     signer_id       BIGINT NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
@@ -33,7 +33,7 @@ CREATE TABLE document_signatures (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE document_requests (
+CREATE TABLE IF NOT EXISTS document_requests (
     id              BIGSERIAL PRIMARY KEY,
     employee_id     BIGINT NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
     document_type   VARCHAR(50) NOT NULL,
@@ -46,16 +46,24 @@ CREATE TABLE document_requests (
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_hr_documents_status_type_category ON hr_documents(status, type, category);
-CREATE INDEX idx_document_signatures_document_id ON document_signatures(document_id);
-CREATE INDEX idx_document_requests_employee_status ON document_requests(employee_id, status);
+CREATE INDEX IF NOT EXISTS idx_hr_documents_status_type_category ON hr_documents(status, type, category);
+CREATE INDEX IF NOT EXISTS idx_document_signatures_document_id ON document_signatures(document_id);
+CREATE INDEX IF NOT EXISTS idx_document_requests_employee_status ON document_requests(employee_id, status);
 
-CREATE TRIGGER set_timestamp_hr_documents
-    BEFORE UPDATE ON hr_documents
-    FOR EACH ROW
-    EXECUTE FUNCTION trigger_set_timestamp();
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'set_timestamp_hr_documents') THEN
+        CREATE TRIGGER set_timestamp_hr_documents
+            BEFORE UPDATE ON hr_documents
+            FOR EACH ROW
+            EXECUTE FUNCTION trigger_set_timestamp();
+    END IF;
+END $$;
 
-CREATE TRIGGER set_timestamp_document_requests
-    BEFORE UPDATE ON document_requests
-    FOR EACH ROW
-    EXECUTE FUNCTION trigger_set_timestamp();
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'set_timestamp_document_requests') THEN
+        CREATE TRIGGER set_timestamp_document_requests
+            BEFORE UPDATE ON document_requests
+            FOR EACH ROW
+            EXECUTE FUNCTION trigger_set_timestamp();
+    END IF;
+END $$;
