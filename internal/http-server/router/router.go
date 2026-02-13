@@ -70,6 +70,7 @@ import (
 	hrmRecruitingHandler "srmt-admin/internal/http-server/handlers/hrm/recruiting"
 	hrmSalaryHandler "srmt-admin/internal/http-server/handlers/hrm/salary"
 	hrmTimesheetHandler "srmt-admin/internal/http-server/handlers/hrm/timesheet"
+	hrmTrainingHandler "srmt-admin/internal/http-server/handlers/hrm/training"
 	hrmVacationHandler "srmt-admin/internal/http-server/handlers/hrm/vacation"
 	incidentsHandler "srmt-admin/internal/http-server/handlers/incidents-handler"
 	setIndicator "srmt-admin/internal/http-server/handlers/indicators/set"
@@ -150,6 +151,7 @@ import (
 	hrmrecruiting "srmt-admin/internal/lib/service/hrm/recruiting"
 	hrmsalary "srmt-admin/internal/lib/service/hrm/salary"
 	hrmtimesheet "srmt-admin/internal/lib/service/hrm/timesheet"
+	hrmtraining "srmt-admin/internal/lib/service/hrm/training"
 	hrmvacation "srmt-admin/internal/lib/service/hrm/vacation"
 	"srmt-admin/internal/lib/service/metrics"
 	"srmt-admin/internal/lib/service/reservoir"
@@ -186,6 +188,7 @@ type AppDependencies struct {
 	HRMTimesheetService        *hrmtimesheet.Service
 	HRMSalaryService           *hrmsalary.Service
 	HRMRecruitingService       *hrmrecruiting.Service
+	HRMTrainingService         *hrmtraining.Service
 }
 
 func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
@@ -660,6 +663,30 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 					r.Patch("/offers/{id}", hrmRecruitingHandler.UpdateOffer(deps.Log))
 					r.Post("/onboardings", hrmRecruitingHandler.CreateOnboarding(deps.Log))
 					r.Get("/stats", hrmRecruitingHandler.GetStats(deps.Log))
+				})
+
+				// Training
+				r.Route("/training", func(r chi.Router) {
+					// Trainings CRUD
+					r.Get("/trainings", hrmTrainingHandler.GetTrainings(deps.Log, deps.HRMTrainingService))
+					r.Post("/trainings", hrmTrainingHandler.CreateTraining(deps.Log, deps.HRMTrainingService))
+					r.Get("/trainings/{id}", hrmTrainingHandler.GetTraining(deps.Log, deps.HRMTrainingService))
+					r.Patch("/trainings/{id}", hrmTrainingHandler.UpdateTraining(deps.Log, deps.HRMTrainingService))
+					r.Delete("/trainings/{id}", hrmTrainingHandler.DeleteTraining(deps.Log, deps.HRMTrainingService))
+
+					// Participants
+					r.Get("/{id}/participants", hrmTrainingHandler.GetParticipants(deps.Log, deps.HRMTrainingService))
+					r.Post("/{id}/participants", hrmTrainingHandler.AddParticipant(deps.Log, deps.HRMTrainingService))
+					r.Post("/participants/{id}/complete", hrmTrainingHandler.CompleteParticipant(deps.Log, deps.HRMTrainingService))
+
+					// Employee trainings & certificates
+					r.Get("/employees/{id}/trainings", hrmTrainingHandler.GetEmployeeTrainings(deps.Log, deps.HRMTrainingService))
+					r.Get("/employees/{id}/certificates", hrmTrainingHandler.GetEmployeeCertificates(deps.Log, deps.HRMTrainingService))
+
+					// Development Plans
+					r.Get("/development-plans", hrmTrainingHandler.GetDevelopmentPlans(deps.Log, deps.HRMTrainingService))
+					r.Post("/development-plans", hrmTrainingHandler.CreateDevelopmentPlan(deps.Log, deps.HRMTrainingService))
+					r.Post("/development-plans/{planId}/goals", hrmTrainingHandler.AddDevelopmentGoal(deps.Log, deps.HRMTrainingService))
 				})
 			})
 		})
