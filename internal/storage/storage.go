@@ -59,4 +59,13 @@ var (
 	ErrCandidateNotFound   = errors.New("candidate not found")
 	ErrInterviewNotFound   = errors.New("interview not found")
 	ErrVacancyNotPublished = errors.New("vacancy is not in published status")
+
+	// Training errors
+	ErrTrainingNotFound        = errors.New("training not found")
+	ErrParticipantNotFound     = errors.New("training participant not found")
+	ErrCertificateNotFound     = errors.New("certificate not found")
+	ErrDevelopmentPlanNotFound = errors.New("development plan not found")
+	ErrDevelopmentGoalNotFound = errors.New("development goal not found")
+	ErrTrainingFull            = errors.New("training has reached maximum participants")
+	ErrAlreadyEnrolled         = errors.New("employee is already enrolled in this training")
 )

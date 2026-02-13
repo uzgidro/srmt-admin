@@ -11,6 +11,7 @@ import (
 	hrmrecruiting "srmt-admin/internal/lib/service/hrm/recruiting"
 	hrmsalary "srmt-admin/internal/lib/service/hrm/salary"
 	hrmtimesheet "srmt-admin/internal/lib/service/hrm/timesheet"
+	hrmtraining "srmt-admin/internal/lib/service/hrm/training"
 	hrmvacation "srmt-admin/internal/lib/service/hrm/vacation"
 	"srmt-admin/internal/lib/service/metrics"
 	"srmt-admin/internal/lib/service/reservoir"
@@ -36,6 +37,7 @@ var ServiceProviderSet = wire.NewSet(
 	ProvideHRMTimesheetService,
 	ProvideHRMSalaryService,
 	ProvideHRMRecruitingService,
+	ProvideHRMTrainingService,
 )
 
 // ProvideTokenService creates JWT token service
@@ -114,4 +116,9 @@ func ProvideHRMSalaryService(pgRepo *repo.Repo, log *slog.Logger) *hrmsalary.Ser
 // ProvideHRMRecruitingService creates the HRM recruiting service
 func ProvideHRMRecruitingService(pgRepo *repo.Repo, log *slog.Logger) *hrmrecruiting.Service {
 	return hrmrecruiting.NewService(pgRepo, log)
+}
+
+// ProvideHRMTrainingService creates the HRM training service
+func ProvideHRMTrainingService(pgRepo *repo.Repo, log *slog.Logger) *hrmtraining.Service {
+	return hrmtraining.NewService(pgRepo, log)
 }
