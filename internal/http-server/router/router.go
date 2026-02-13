@@ -67,6 +67,7 @@ import (
 	gesVisits "srmt-admin/internal/http-server/handlers/ges/visits"
 	hrmDashboardHandler "srmt-admin/internal/http-server/handlers/hrm/dashboard"
 	hrmPersonnelHandler "srmt-admin/internal/http-server/handlers/hrm/personnel"
+	hrmRecruitingHandler "srmt-admin/internal/http-server/handlers/hrm/recruiting"
 	hrmSalaryHandler "srmt-admin/internal/http-server/handlers/hrm/salary"
 	hrmTimesheetHandler "srmt-admin/internal/http-server/handlers/hrm/timesheet"
 	hrmVacationHandler "srmt-admin/internal/http-server/handlers/hrm/vacation"
@@ -146,6 +147,7 @@ import (
 	scExcelGen "srmt-admin/internal/lib/service/excel/sc"
 	hrmdashboard "srmt-admin/internal/lib/service/hrm/dashboard"
 	hrmpersonnel "srmt-admin/internal/lib/service/hrm/personnel"
+	hrmrecruiting "srmt-admin/internal/lib/service/hrm/recruiting"
 	hrmsalary "srmt-admin/internal/lib/service/hrm/salary"
 	hrmtimesheet "srmt-admin/internal/lib/service/hrm/timesheet"
 	hrmvacation "srmt-admin/internal/lib/service/hrm/vacation"
@@ -183,6 +185,7 @@ type AppDependencies struct {
 	HRMDashboardService        *hrmdashboard.Service
 	HRMTimesheetService        *hrmtimesheet.Service
 	HRMSalaryService           *hrmsalary.Service
+	HRMRecruitingService       *hrmrecruiting.Service
 }
 
 func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
@@ -626,6 +629,38 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 				r.Get("/holidays", hrmTimesheetHandler.GetHolidays(deps.Log, deps.HRMTimesheetService))
 				r.Post("/holidays", hrmTimesheetHandler.CreateHoliday(deps.Log, deps.HRMTimesheetService))
 				r.Delete("/holidays/{id}", hrmTimesheetHandler.DeleteHoliday(deps.Log, deps.HRMTimesheetService))
+
+				// Recruiting
+				r.Route("/recruiting", func(r chi.Router) {
+					// Vacancies
+					r.Get("/vacancies", hrmRecruitingHandler.GetVacancies(deps.Log, deps.HRMRecruitingService))
+					r.Post("/vacancies", hrmRecruitingHandler.CreateVacancy(deps.Log, deps.HRMRecruitingService))
+					r.Get("/vacancies/{id}", hrmRecruitingHandler.GetVacancy(deps.Log, deps.HRMRecruitingService))
+					r.Patch("/vacancies/{id}", hrmRecruitingHandler.UpdateVacancy(deps.Log, deps.HRMRecruitingService))
+					r.Delete("/vacancies/{id}", hrmRecruitingHandler.DeleteVacancy(deps.Log, deps.HRMRecruitingService))
+					r.Post("/vacancies/{id}/publish", hrmRecruitingHandler.PublishVacancy(deps.Log, deps.HRMRecruitingService))
+					r.Post("/vacancies/{id}/close", hrmRecruitingHandler.CloseVacancy(deps.Log, deps.HRMRecruitingService))
+
+					// Candidates
+					r.Get("/candidates", hrmRecruitingHandler.GetCandidates(deps.Log, deps.HRMRecruitingService))
+					r.Post("/candidates", hrmRecruitingHandler.CreateCandidate(deps.Log, deps.HRMRecruitingService))
+					r.Get("/candidates/{id}", hrmRecruitingHandler.GetCandidate(deps.Log, deps.HRMRecruitingService))
+					r.Patch("/candidates/{id}", hrmRecruitingHandler.UpdateCandidate(deps.Log, deps.HRMRecruitingService))
+					r.Delete("/candidates/{id}", hrmRecruitingHandler.DeleteCandidate(deps.Log, deps.HRMRecruitingService))
+					r.Patch("/candidates/{id}/status", hrmRecruitingHandler.ChangeCandidateStatus(deps.Log, deps.HRMRecruitingService))
+					r.Get("/candidates/{id}/interviews", hrmRecruitingHandler.GetCandidateInterviews(deps.Log, deps.HRMRecruitingService))
+
+					// Interviews
+					r.Get("/interviews", hrmRecruitingHandler.GetInterviews(deps.Log, deps.HRMRecruitingService))
+					r.Post("/interviews", hrmRecruitingHandler.CreateInterview(deps.Log, deps.HRMRecruitingService))
+					r.Patch("/interviews/{id}", hrmRecruitingHandler.UpdateInterview(deps.Log, deps.HRMRecruitingService))
+
+					// Stubs (501)
+					r.Post("/offers", hrmRecruitingHandler.CreateOffer(deps.Log))
+					r.Patch("/offers/{id}", hrmRecruitingHandler.UpdateOffer(deps.Log))
+					r.Post("/onboardings", hrmRecruitingHandler.CreateOnboarding(deps.Log))
+					r.Get("/stats", hrmRecruitingHandler.GetStats(deps.Log))
+				})
 			})
 		})
 

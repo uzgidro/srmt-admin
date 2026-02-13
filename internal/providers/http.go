@@ -10,6 +10,7 @@ import (
 	"srmt-admin/internal/lib/service/alarm"
 	hrmdashboard "srmt-admin/internal/lib/service/hrm/dashboard"
 	hrmpersonnel "srmt-admin/internal/lib/service/hrm/personnel"
+	hrmrecruiting "srmt-admin/internal/lib/service/hrm/recruiting"
 	hrmsalary "srmt-admin/internal/lib/service/hrm/salary"
 	hrmtimesheet "srmt-admin/internal/lib/service/hrm/timesheet"
 	hrmvacation "srmt-admin/internal/lib/service/hrm/vacation"
@@ -37,25 +38,26 @@ var HTTPProviderSet = wire.NewSet(
 // AppContainer holds all application dependencies
 // This replaces the 9 parameters in SetupRoutes
 type AppContainer struct {
-	Router              *chi.Mux
-	Server              *http.Server
-	Logger              *slog.Logger
-	Config              *config.Config
-	PgRepo              *pgRepo.Repo
-	MongoRepo           *mngRepo.Repo
-	MinioRepo           *minio.Repo
-	RedisRepo           *redisRepo.Repo
-	Token               *token.Token
-	Location            *time.Location
-	MetricsBlender      *metrics.MetricsBlender
-	ReservoirFetcher    *reservoir.Fetcher
-	HTTPClient          *http.Client
-	AlarmProcessor      *alarm.Processor
-	HRMPersonnelService *hrmpersonnel.Service
-	HRMVacationService  *hrmvacation.Service
-	HRMDashboardService *hrmdashboard.Service
-	HRMTimesheetService *hrmtimesheet.Service
-	HRMSalaryService    *hrmsalary.Service
+	Router               *chi.Mux
+	Server               *http.Server
+	Logger               *slog.Logger
+	Config               *config.Config
+	PgRepo               *pgRepo.Repo
+	MongoRepo            *mngRepo.Repo
+	MinioRepo            *minio.Repo
+	RedisRepo            *redisRepo.Repo
+	Token                *token.Token
+	Location             *time.Location
+	MetricsBlender       *metrics.MetricsBlender
+	ReservoirFetcher     *reservoir.Fetcher
+	HTTPClient           *http.Client
+	AlarmProcessor       *alarm.Processor
+	HRMPersonnelService  *hrmpersonnel.Service
+	HRMVacationService   *hrmvacation.Service
+	HRMDashboardService  *hrmdashboard.Service
+	HRMTimesheetService  *hrmtimesheet.Service
+	HRMSalaryService     *hrmsalary.Service
+	HRMRecruitingService *hrmrecruiting.Service
 }
 
 // ProvideAppContainer creates the application container
@@ -79,27 +81,29 @@ func ProvideAppContainer(
 	hrmDashboardSvc *hrmdashboard.Service,
 	hrmTimesheetSvc *hrmtimesheet.Service,
 	hrmSalarySvc *hrmsalary.Service,
+	hrmRecruitingSvc *hrmrecruiting.Service,
 ) *AppContainer {
 	return &AppContainer{
-		Router:              r,
-		Server:              srv,
-		Logger:              log,
-		Config:              cfg,
-		PgRepo:              pg,
-		MongoRepo:           mng,
-		MinioRepo:           minioRepo,
-		RedisRepo:           redis,
-		Token:               tkn,
-		Location:            loc,
-		MetricsBlender:      metricsBlender,
-		ReservoirFetcher:    reservoirFetcher,
-		HTTPClient:          httpClient,
-		AlarmProcessor:      alarmProcessor,
-		HRMPersonnelService: hrmPersonnelSvc,
-		HRMVacationService:  hrmVacationSvc,
-		HRMDashboardService: hrmDashboardSvc,
-		HRMTimesheetService: hrmTimesheetSvc,
-		HRMSalaryService:    hrmSalarySvc,
+		Router:               r,
+		Server:               srv,
+		Logger:               log,
+		Config:               cfg,
+		PgRepo:               pg,
+		MongoRepo:            mng,
+		MinioRepo:            minioRepo,
+		RedisRepo:            redis,
+		Token:                tkn,
+		Location:             loc,
+		MetricsBlender:       metricsBlender,
+		ReservoirFetcher:     reservoirFetcher,
+		HTTPClient:           httpClient,
+		AlarmProcessor:       alarmProcessor,
+		HRMPersonnelService:  hrmPersonnelSvc,
+		HRMVacationService:   hrmVacationSvc,
+		HRMDashboardService:  hrmDashboardSvc,
+		HRMTimesheetService:  hrmTimesheetSvc,
+		HRMSalaryService:     hrmSalarySvc,
+		HRMRecruitingService: hrmRecruitingSvc,
 	}
 }
 
@@ -122,6 +126,7 @@ func ProvideRouter(
 	hrmDashboardSvc *hrmdashboard.Service,
 	hrmTimesheetSvc *hrmtimesheet.Service,
 	hrmSalarySvc *hrmsalary.Service,
+	hrmRecruitingSvc *hrmrecruiting.Service,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -154,6 +159,7 @@ func ProvideRouter(
 		HRMDashboardService:        hrmDashboardSvc,
 		HRMTimesheetService:        hrmTimesheetSvc,
 		HRMSalaryService:           hrmSalarySvc,
+		HRMRecruitingService:       hrmRecruitingSvc,
 	}
 
 	router.SetupRoutes(r, deps)
