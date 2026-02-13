@@ -6,7 +6,13 @@ import (
 	"srmt-admin/internal/config"
 	"srmt-admin/internal/lib/service/alarm"
 	"srmt-admin/internal/lib/service/ascue"
+	hrmaccess "srmt-admin/internal/lib/service/hrm/access"
+	hrmanalytics "srmt-admin/internal/lib/service/hrm/analytics"
+	hrmcompetency "srmt-admin/internal/lib/service/hrm/competency"
 	hrmdashboard "srmt-admin/internal/lib/service/hrm/dashboard"
+	hrmdocument "srmt-admin/internal/lib/service/hrm/document"
+	hrmorgstructure "srmt-admin/internal/lib/service/hrm/orgstructure"
+	hrmperformance "srmt-admin/internal/lib/service/hrm/performance"
 	hrmpersonnel "srmt-admin/internal/lib/service/hrm/personnel"
 	hrmrecruiting "srmt-admin/internal/lib/service/hrm/recruiting"
 	hrmsalary "srmt-admin/internal/lib/service/hrm/salary"
@@ -38,6 +44,12 @@ var ServiceProviderSet = wire.NewSet(
 	ProvideHRMSalaryService,
 	ProvideHRMRecruitingService,
 	ProvideHRMTrainingService,
+	ProvideHRMDocumentService,
+	ProvideHRMAccessService,
+	ProvideHRMOrgStructureService,
+	ProvideHRMCompetencyService,
+	ProvideHRMPerformanceService,
+	ProvideHRMAnalyticsService,
 )
 
 // ProvideTokenService creates JWT token service
@@ -121,4 +133,34 @@ func ProvideHRMRecruitingService(pgRepo *repo.Repo, log *slog.Logger) *hrmrecrui
 // ProvideHRMTrainingService creates the HRM training service
 func ProvideHRMTrainingService(pgRepo *repo.Repo, log *slog.Logger) *hrmtraining.Service {
 	return hrmtraining.NewService(pgRepo, log)
+}
+
+// ProvideHRMDocumentService creates the HRM document service
+func ProvideHRMDocumentService(pgRepo *repo.Repo, log *slog.Logger) *hrmdocument.Service {
+	return hrmdocument.NewService(pgRepo, log)
+}
+
+// ProvideHRMAccessService creates the HRM access control service
+func ProvideHRMAccessService(pgRepo *repo.Repo, log *slog.Logger) *hrmaccess.Service {
+	return hrmaccess.NewService(pgRepo, log)
+}
+
+// ProvideHRMOrgStructureService creates the HRM org structure service
+func ProvideHRMOrgStructureService(pgRepo *repo.Repo, log *slog.Logger) *hrmorgstructure.Service {
+	return hrmorgstructure.NewService(pgRepo, log)
+}
+
+// ProvideHRMCompetencyService creates the HRM competency assessment service
+func ProvideHRMCompetencyService(pgRepo *repo.Repo, log *slog.Logger) *hrmcompetency.Service {
+	return hrmcompetency.NewService(pgRepo, log)
+}
+
+// ProvideHRMPerformanceService creates the HRM performance management service
+func ProvideHRMPerformanceService(pgRepo *repo.Repo, log *slog.Logger) *hrmperformance.Service {
+	return hrmperformance.NewService(pgRepo, log)
+}
+
+// ProvideHRMAnalyticsService creates the HRM analytics service
+func ProvideHRMAnalyticsService(pgRepo *repo.Repo, log *slog.Logger) *hrmanalytics.Service {
+	return hrmanalytics.NewService(pgRepo, log)
 }

@@ -8,7 +8,13 @@ import (
 	"srmt-admin/internal/http-server/middleware/logger"
 	"srmt-admin/internal/http-server/router"
 	"srmt-admin/internal/lib/service/alarm"
+	hrmaccess "srmt-admin/internal/lib/service/hrm/access"
+	hrmanalytics "srmt-admin/internal/lib/service/hrm/analytics"
+	hrmcompetency "srmt-admin/internal/lib/service/hrm/competency"
 	hrmdashboard "srmt-admin/internal/lib/service/hrm/dashboard"
+	hrmdocument "srmt-admin/internal/lib/service/hrm/document"
+	hrmorgstructure "srmt-admin/internal/lib/service/hrm/orgstructure"
+	hrmperformance "srmt-admin/internal/lib/service/hrm/performance"
 	hrmpersonnel "srmt-admin/internal/lib/service/hrm/personnel"
 	hrmrecruiting "srmt-admin/internal/lib/service/hrm/recruiting"
 	hrmsalary "srmt-admin/internal/lib/service/hrm/salary"
@@ -39,27 +45,33 @@ var HTTPProviderSet = wire.NewSet(
 // AppContainer holds all application dependencies
 // This replaces the 9 parameters in SetupRoutes
 type AppContainer struct {
-	Router               *chi.Mux
-	Server               *http.Server
-	Logger               *slog.Logger
-	Config               *config.Config
-	PgRepo               *pgRepo.Repo
-	MongoRepo            *mngRepo.Repo
-	MinioRepo            *minio.Repo
-	RedisRepo            *redisRepo.Repo
-	Token                *token.Token
-	Location             *time.Location
-	MetricsBlender       *metrics.MetricsBlender
-	ReservoirFetcher     *reservoir.Fetcher
-	HTTPClient           *http.Client
-	AlarmProcessor       *alarm.Processor
-	HRMPersonnelService  *hrmpersonnel.Service
-	HRMVacationService   *hrmvacation.Service
-	HRMDashboardService  *hrmdashboard.Service
-	HRMTimesheetService  *hrmtimesheet.Service
-	HRMSalaryService     *hrmsalary.Service
-	HRMRecruitingService *hrmrecruiting.Service
-	HRMTrainingService   *hrmtraining.Service
+	Router                 *chi.Mux
+	Server                 *http.Server
+	Logger                 *slog.Logger
+	Config                 *config.Config
+	PgRepo                 *pgRepo.Repo
+	MongoRepo              *mngRepo.Repo
+	MinioRepo              *minio.Repo
+	RedisRepo              *redisRepo.Repo
+	Token                  *token.Token
+	Location               *time.Location
+	MetricsBlender         *metrics.MetricsBlender
+	ReservoirFetcher       *reservoir.Fetcher
+	HTTPClient             *http.Client
+	AlarmProcessor         *alarm.Processor
+	HRMPersonnelService    *hrmpersonnel.Service
+	HRMVacationService     *hrmvacation.Service
+	HRMDashboardService    *hrmdashboard.Service
+	HRMTimesheetService    *hrmtimesheet.Service
+	HRMSalaryService       *hrmsalary.Service
+	HRMRecruitingService   *hrmrecruiting.Service
+	HRMTrainingService     *hrmtraining.Service
+	HRMDocumentService     *hrmdocument.Service
+	HRMAccessService       *hrmaccess.Service
+	HRMOrgStructureService *hrmorgstructure.Service
+	HRMCompetencyService   *hrmcompetency.Service
+	HRMPerformanceService  *hrmperformance.Service
+	HRMAnalyticsService    *hrmanalytics.Service
 }
 
 // ProvideAppContainer creates the application container
@@ -85,29 +97,41 @@ func ProvideAppContainer(
 	hrmSalarySvc *hrmsalary.Service,
 	hrmRecruitingSvc *hrmrecruiting.Service,
 	hrmTrainingSvc *hrmtraining.Service,
+	hrmDocumentSvc *hrmdocument.Service,
+	hrmAccessSvc *hrmaccess.Service,
+	hrmOrgStructureSvc *hrmorgstructure.Service,
+	hrmCompetencySvc *hrmcompetency.Service,
+	hrmPerformanceSvc *hrmperformance.Service,
+	hrmAnalyticsSvc *hrmanalytics.Service,
 ) *AppContainer {
 	return &AppContainer{
-		Router:               r,
-		Server:               srv,
-		Logger:               log,
-		Config:               cfg,
-		PgRepo:               pg,
-		MongoRepo:            mng,
-		MinioRepo:            minioRepo,
-		RedisRepo:            redis,
-		Token:                tkn,
-		Location:             loc,
-		MetricsBlender:       metricsBlender,
-		ReservoirFetcher:     reservoirFetcher,
-		HTTPClient:           httpClient,
-		AlarmProcessor:       alarmProcessor,
-		HRMPersonnelService:  hrmPersonnelSvc,
-		HRMVacationService:   hrmVacationSvc,
-		HRMDashboardService:  hrmDashboardSvc,
-		HRMTimesheetService:  hrmTimesheetSvc,
-		HRMSalaryService:     hrmSalarySvc,
-		HRMRecruitingService: hrmRecruitingSvc,
-		HRMTrainingService:   hrmTrainingSvc,
+		Router:                 r,
+		Server:                 srv,
+		Logger:                 log,
+		Config:                 cfg,
+		PgRepo:                 pg,
+		MongoRepo:              mng,
+		MinioRepo:              minioRepo,
+		RedisRepo:              redis,
+		Token:                  tkn,
+		Location:               loc,
+		MetricsBlender:         metricsBlender,
+		ReservoirFetcher:       reservoirFetcher,
+		HTTPClient:             httpClient,
+		AlarmProcessor:         alarmProcessor,
+		HRMPersonnelService:    hrmPersonnelSvc,
+		HRMVacationService:     hrmVacationSvc,
+		HRMDashboardService:    hrmDashboardSvc,
+		HRMTimesheetService:    hrmTimesheetSvc,
+		HRMSalaryService:       hrmSalarySvc,
+		HRMRecruitingService:   hrmRecruitingSvc,
+		HRMTrainingService:     hrmTrainingSvc,
+		HRMDocumentService:     hrmDocumentSvc,
+		HRMAccessService:       hrmAccessSvc,
+		HRMOrgStructureService: hrmOrgStructureSvc,
+		HRMCompetencyService:   hrmCompetencySvc,
+		HRMPerformanceService:  hrmPerformanceSvc,
+		HRMAnalyticsService:    hrmAnalyticsSvc,
 	}
 }
 
@@ -132,6 +156,12 @@ func ProvideRouter(
 	hrmSalarySvc *hrmsalary.Service,
 	hrmRecruitingSvc *hrmrecruiting.Service,
 	hrmTrainingSvc *hrmtraining.Service,
+	hrmDocumentSvc *hrmdocument.Service,
+	hrmAccessSvc *hrmaccess.Service,
+	hrmOrgStructureSvc *hrmorgstructure.Service,
+	hrmCompetencySvc *hrmcompetency.Service,
+	hrmPerformanceSvc *hrmperformance.Service,
+	hrmAnalyticsSvc *hrmanalytics.Service,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -166,6 +196,12 @@ func ProvideRouter(
 		HRMSalaryService:           hrmSalarySvc,
 		HRMRecruitingService:       hrmRecruitingSvc,
 		HRMTrainingService:         hrmTrainingSvc,
+		HRMDocumentService:         hrmDocumentSvc,
+		HRMAccessService:           hrmAccessSvc,
+		HRMOrgStructureService:     hrmOrgStructureSvc,
+		HRMCompetencyService:       hrmCompetencySvc,
+		HRMPerformanceService:      hrmPerformanceSvc,
+		HRMAnalyticsService:        hrmAnalyticsSvc,
 	}
 
 	router.SetupRoutes(r, deps)
