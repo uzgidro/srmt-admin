@@ -48,4 +48,9 @@ var (
 	ErrHolidayNotFound        = errors.New("holiday not found")
 	ErrHolidayAlreadyExists   = errors.New("holiday already exists for this date")
 	ErrCorrectionNotFound     = errors.New("timesheet correction not found")
+
+	// Salary errors
+	ErrSalaryNotFound          = errors.New("salary record not found")
+	ErrSalaryStructureNotFound = errors.New("salary structure not found")
+	ErrSalaryAlreadyExists     = errors.New("salary record already exists for this period")
 )

@@ -67,6 +67,7 @@ import (
 	gesVisits "srmt-admin/internal/http-server/handlers/ges/visits"
 	hrmDashboardHandler "srmt-admin/internal/http-server/handlers/hrm/dashboard"
 	hrmPersonnelHandler "srmt-admin/internal/http-server/handlers/hrm/personnel"
+	hrmSalaryHandler "srmt-admin/internal/http-server/handlers/hrm/salary"
 	hrmTimesheetHandler "srmt-admin/internal/http-server/handlers/hrm/timesheet"
 	hrmVacationHandler "srmt-admin/internal/http-server/handlers/hrm/vacation"
 	incidentsHandler "srmt-admin/internal/http-server/handlers/incidents-handler"
@@ -145,6 +146,7 @@ import (
 	scExcelGen "srmt-admin/internal/lib/service/excel/sc"
 	hrmdashboard "srmt-admin/internal/lib/service/hrm/dashboard"
 	hrmpersonnel "srmt-admin/internal/lib/service/hrm/personnel"
+	hrmsalary "srmt-admin/internal/lib/service/hrm/salary"
 	hrmtimesheet "srmt-admin/internal/lib/service/hrm/timesheet"
 	hrmvacation "srmt-admin/internal/lib/service/hrm/vacation"
 	"srmt-admin/internal/lib/service/metrics"
@@ -180,6 +182,7 @@ type AppDependencies struct {
 	HRMVacationService         *hrmvacation.Service
 	HRMDashboardService        *hrmdashboard.Service
 	HRMTimesheetService        *hrmtimesheet.Service
+	HRMSalaryService           *hrmsalary.Service
 }
 
 func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
@@ -603,6 +606,21 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 				r.Post("/timesheet/corrections/{id}/reject", hrmTimesheetHandler.RejectCorrection(deps.Log, deps.HRMTimesheetService))
 				r.Get("/timesheet/export", hrmTimesheetHandler.Export(deps.Log))
 				r.Patch("/timesheet/{id}", hrmTimesheetHandler.UpdateEntry(deps.Log, deps.HRMTimesheetService))
+
+				// Salaries — register specific routes BEFORE {id} routes
+				r.Post("/salaries/bulk-calculate", hrmSalaryHandler.BulkCalculate(deps.Log, deps.HRMSalaryService))
+				r.Get("/salaries/structure/{employeeId}", hrmSalaryHandler.GetStructure(deps.Log, deps.HRMSalaryService))
+				r.Get("/salaries/export", hrmSalaryHandler.Export(deps.Log))
+				r.Get("/salaries", hrmSalaryHandler.GetAll(deps.Log, deps.HRMSalaryService))
+				r.Post("/salaries", hrmSalaryHandler.Create(deps.Log, deps.HRMSalaryService))
+				r.Get("/salaries/{id}", hrmSalaryHandler.GetByID(deps.Log, deps.HRMSalaryService))
+				r.Patch("/salaries/{id}", hrmSalaryHandler.Update(deps.Log, deps.HRMSalaryService))
+				r.Delete("/salaries/{id}", hrmSalaryHandler.Delete(deps.Log, deps.HRMSalaryService))
+				r.Post("/salaries/{id}/calculate", hrmSalaryHandler.Calculate(deps.Log, deps.HRMSalaryService))
+				r.Post("/salaries/{id}/approve", hrmSalaryHandler.Approve(deps.Log, deps.HRMSalaryService))
+				r.Post("/salaries/{id}/pay", hrmSalaryHandler.MarkPaid(deps.Log, deps.HRMSalaryService))
+				r.Get("/salaries/{id}/deductions", hrmSalaryHandler.GetDeductions(deps.Log, deps.HRMSalaryService))
+				r.Get("/salaries/{id}/bonuses", hrmSalaryHandler.GetBonuses(deps.Log, deps.HRMSalaryService))
 
 				// Holidays
 				r.Get("/holidays", hrmTimesheetHandler.GetHolidays(deps.Log, deps.HRMTimesheetService))
