@@ -9,6 +9,7 @@ import (
 	"srmt-admin/internal/http-server/router"
 	"srmt-admin/internal/lib/service/alarm"
 	hrmaccess "srmt-admin/internal/lib/service/hrm/access"
+	hrmanalytics "srmt-admin/internal/lib/service/hrm/analytics"
 	hrmcompetency "srmt-admin/internal/lib/service/hrm/competency"
 	hrmdashboard "srmt-admin/internal/lib/service/hrm/dashboard"
 	hrmdocument "srmt-admin/internal/lib/service/hrm/document"
@@ -70,6 +71,7 @@ type AppContainer struct {
 	HRMOrgStructureService *hrmorgstructure.Service
 	HRMCompetencyService   *hrmcompetency.Service
 	HRMPerformanceService  *hrmperformance.Service
+	HRMAnalyticsService    *hrmanalytics.Service
 }
 
 // ProvideAppContainer creates the application container
@@ -100,6 +102,7 @@ func ProvideAppContainer(
 	hrmOrgStructureSvc *hrmorgstructure.Service,
 	hrmCompetencySvc *hrmcompetency.Service,
 	hrmPerformanceSvc *hrmperformance.Service,
+	hrmAnalyticsSvc *hrmanalytics.Service,
 ) *AppContainer {
 	return &AppContainer{
 		Router:                 r,
@@ -128,6 +131,7 @@ func ProvideAppContainer(
 		HRMOrgStructureService: hrmOrgStructureSvc,
 		HRMCompetencyService:   hrmCompetencySvc,
 		HRMPerformanceService:  hrmPerformanceSvc,
+		HRMAnalyticsService:    hrmAnalyticsSvc,
 	}
 }
 
@@ -157,6 +161,7 @@ func ProvideRouter(
 	hrmOrgStructureSvc *hrmorgstructure.Service,
 	hrmCompetencySvc *hrmcompetency.Service,
 	hrmPerformanceSvc *hrmperformance.Service,
+	hrmAnalyticsSvc *hrmanalytics.Service,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -196,6 +201,7 @@ func ProvideRouter(
 		HRMOrgStructureService:     hrmOrgStructureSvc,
 		HRMCompetencyService:       hrmCompetencySvc,
 		HRMPerformanceService:      hrmPerformanceSvc,
+		HRMAnalyticsService:        hrmAnalyticsSvc,
 	}
 
 	router.SetupRoutes(r, deps)

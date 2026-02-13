@@ -7,6 +7,7 @@ import (
 	"srmt-admin/internal/lib/service/alarm"
 	"srmt-admin/internal/lib/service/ascue"
 	hrmaccess "srmt-admin/internal/lib/service/hrm/access"
+	hrmanalytics "srmt-admin/internal/lib/service/hrm/analytics"
 	hrmcompetency "srmt-admin/internal/lib/service/hrm/competency"
 	hrmdashboard "srmt-admin/internal/lib/service/hrm/dashboard"
 	hrmdocument "srmt-admin/internal/lib/service/hrm/document"
@@ -48,6 +49,7 @@ var ServiceProviderSet = wire.NewSet(
 	ProvideHRMOrgStructureService,
 	ProvideHRMCompetencyService,
 	ProvideHRMPerformanceService,
+	ProvideHRMAnalyticsService,
 )
 
 // ProvideTokenService creates JWT token service
@@ -156,4 +158,9 @@ func ProvideHRMCompetencyService(pgRepo *repo.Repo, log *slog.Logger) *hrmcompet
 // ProvideHRMPerformanceService creates the HRM performance management service
 func ProvideHRMPerformanceService(pgRepo *repo.Repo, log *slog.Logger) *hrmperformance.Service {
 	return hrmperformance.NewService(pgRepo, log)
+}
+
+// ProvideHRMAnalyticsService creates the HRM analytics service
+func ProvideHRMAnalyticsService(pgRepo *repo.Repo, log *slog.Logger) *hrmanalytics.Service {
+	return hrmanalytics.NewService(pgRepo, log)
 }

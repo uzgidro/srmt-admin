@@ -66,6 +66,7 @@ import (
 	gesShutdowns "srmt-admin/internal/http-server/handlers/ges/shutdowns"
 	gesVisits "srmt-admin/internal/http-server/handlers/ges/visits"
 	hrmAccessHandler "srmt-admin/internal/http-server/handlers/hrm/access"
+	hrmAnalyticsHandler "srmt-admin/internal/http-server/handlers/hrm/analytics"
 	hrmCompetencyHandler "srmt-admin/internal/http-server/handlers/hrm/competency"
 	hrmDashboardHandler "srmt-admin/internal/http-server/handlers/hrm/dashboard"
 	hrmDocumentHandler "srmt-admin/internal/http-server/handlers/hrm/document"
@@ -152,6 +153,7 @@ import (
 	excelgen "srmt-admin/internal/lib/service/excel/reservoir-summary"
 	scExcelGen "srmt-admin/internal/lib/service/excel/sc"
 	hrmaccess "srmt-admin/internal/lib/service/hrm/access"
+	hrmanalytics "srmt-admin/internal/lib/service/hrm/analytics"
 	hrmcompetency "srmt-admin/internal/lib/service/hrm/competency"
 	hrmdashboard "srmt-admin/internal/lib/service/hrm/dashboard"
 	hrmdocument "srmt-admin/internal/lib/service/hrm/document"
@@ -204,6 +206,7 @@ type AppDependencies struct {
 	HRMOrgStructureService     *hrmorgstructure.Service
 	HRMCompetencyService       *hrmcompetency.Service
 	HRMPerformanceService      *hrmperformance.Service
+	HRMAnalyticsService        *hrmanalytics.Service
 }
 
 func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
@@ -795,6 +798,28 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 					r.Get("/ratings", hrmPerformanceHandler.GetRatings(deps.Log, deps.HRMPerformanceService))
 					r.Get("/ratings/employee/{id}", hrmPerformanceHandler.GetEmployeeRating(deps.Log, deps.HRMPerformanceService))
 					r.Get("/dashboard", hrmPerformanceHandler.GetDashboard(deps.Log, deps.HRMPerformanceService))
+				})
+
+				// Analytics
+				r.Route("/analytics", func(r chi.Router) {
+					r.Get("/dashboard", hrmAnalyticsHandler.GetDashboard(deps.Log, deps.HRMAnalyticsService))
+					r.Route("/reports", func(r chi.Router) {
+						r.Get("/headcount", hrmAnalyticsHandler.GetHeadcount(deps.Log, deps.HRMAnalyticsService))
+						r.Get("/headcount-trend", hrmAnalyticsHandler.GetHeadcountTrend(deps.Log, deps.HRMAnalyticsService))
+						r.Get("/turnover", hrmAnalyticsHandler.GetTurnover(deps.Log, deps.HRMAnalyticsService))
+						r.Get("/turnover-trend", hrmAnalyticsHandler.GetTurnoverTrend(deps.Log, deps.HRMAnalyticsService))
+						r.Get("/attendance", hrmAnalyticsHandler.GetAttendance(deps.Log, deps.HRMAnalyticsService))
+						r.Get("/salary", hrmAnalyticsHandler.GetSalaryReport(deps.Log, deps.HRMAnalyticsService))
+						r.Get("/salary-trend", hrmAnalyticsHandler.GetSalaryTrend(deps.Log, deps.HRMAnalyticsService))
+						r.Get("/performance", hrmAnalyticsHandler.GetPerformanceReport(deps.Log, deps.HRMAnalyticsService))
+						r.Get("/training", hrmAnalyticsHandler.GetTrainingReport(deps.Log, deps.HRMAnalyticsService))
+						r.Get("/demographics", hrmAnalyticsHandler.GetDemographics(deps.Log, deps.HRMAnalyticsService))
+						r.Get("/diversity", hrmAnalyticsHandler.GetDiversity(deps.Log, deps.HRMAnalyticsService))
+						r.Get("/custom", hrmAnalyticsHandler.ExportGeneric(deps.Log, deps.HRMAnalyticsService))
+					})
+					r.Get("/export", hrmAnalyticsHandler.ExportGeneric(deps.Log, deps.HRMAnalyticsService))
+					r.Get("/export/excel", hrmAnalyticsHandler.ExportExcel(deps.Log, deps.HRMAnalyticsService))
+					r.Get("/export/pdf", hrmAnalyticsHandler.ExportPDF(deps.Log))
 				})
 			})
 		})
