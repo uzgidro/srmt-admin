@@ -10,6 +10,7 @@ import (
 	"srmt-admin/internal/lib/service/alarm"
 	hrmdashboard "srmt-admin/internal/lib/service/hrm/dashboard"
 	hrmpersonnel "srmt-admin/internal/lib/service/hrm/personnel"
+	hrmsalary "srmt-admin/internal/lib/service/hrm/salary"
 	hrmtimesheet "srmt-admin/internal/lib/service/hrm/timesheet"
 	hrmvacation "srmt-admin/internal/lib/service/hrm/vacation"
 	"srmt-admin/internal/lib/service/metrics"
@@ -54,6 +55,7 @@ type AppContainer struct {
 	HRMVacationService  *hrmvacation.Service
 	HRMDashboardService *hrmdashboard.Service
 	HRMTimesheetService *hrmtimesheet.Service
+	HRMSalaryService    *hrmsalary.Service
 }
 
 // ProvideAppContainer creates the application container
@@ -76,6 +78,7 @@ func ProvideAppContainer(
 	hrmVacationSvc *hrmvacation.Service,
 	hrmDashboardSvc *hrmdashboard.Service,
 	hrmTimesheetSvc *hrmtimesheet.Service,
+	hrmSalarySvc *hrmsalary.Service,
 ) *AppContainer {
 	return &AppContainer{
 		Router:              r,
@@ -96,6 +99,7 @@ func ProvideAppContainer(
 		HRMVacationService:  hrmVacationSvc,
 		HRMDashboardService: hrmDashboardSvc,
 		HRMTimesheetService: hrmTimesheetSvc,
+		HRMSalaryService:    hrmSalarySvc,
 	}
 }
 
@@ -117,6 +121,7 @@ func ProvideRouter(
 	hrmVacationSvc *hrmvacation.Service,
 	hrmDashboardSvc *hrmdashboard.Service,
 	hrmTimesheetSvc *hrmtimesheet.Service,
+	hrmSalarySvc *hrmsalary.Service,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -148,6 +153,7 @@ func ProvideRouter(
 		HRMVacationService:         hrmVacationSvc,
 		HRMDashboardService:        hrmDashboardSvc,
 		HRMTimesheetService:        hrmTimesheetSvc,
+		HRMSalaryService:           hrmSalarySvc,
 	}
 
 	router.SetupRoutes(r, deps)
