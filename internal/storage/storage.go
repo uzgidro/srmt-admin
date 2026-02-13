@@ -53,4 +53,10 @@ var (
 	ErrSalaryNotFound          = errors.New("salary record not found")
 	ErrSalaryStructureNotFound = errors.New("salary structure not found")
 	ErrSalaryAlreadyExists     = errors.New("salary record already exists for this period")
+
+	// Recruiting errors
+	ErrVacancyNotFound     = errors.New("vacancy not found")
+	ErrCandidateNotFound   = errors.New("candidate not found")
+	ErrInterviewNotFound   = errors.New("interview not found")
+	ErrVacancyNotPublished = errors.New("vacancy is not in published status")
 )

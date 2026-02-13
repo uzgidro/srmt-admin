@@ -8,6 +8,7 @@ import (
 	"srmt-admin/internal/lib/service/ascue"
 	hrmdashboard "srmt-admin/internal/lib/service/hrm/dashboard"
 	hrmpersonnel "srmt-admin/internal/lib/service/hrm/personnel"
+	hrmrecruiting "srmt-admin/internal/lib/service/hrm/recruiting"
 	hrmsalary "srmt-admin/internal/lib/service/hrm/salary"
 	hrmtimesheet "srmt-admin/internal/lib/service/hrm/timesheet"
 	hrmvacation "srmt-admin/internal/lib/service/hrm/vacation"
@@ -34,6 +35,7 @@ var ServiceProviderSet = wire.NewSet(
 	ProvideHRMDashboardService,
 	ProvideHRMTimesheetService,
 	ProvideHRMSalaryService,
+	ProvideHRMRecruitingService,
 )
 
 // ProvideTokenService creates JWT token service
@@ -107,4 +109,9 @@ func ProvideHRMTimesheetService(pgRepo *repo.Repo, log *slog.Logger) *hrmtimeshe
 // ProvideHRMSalaryService creates the HRM salary service
 func ProvideHRMSalaryService(pgRepo *repo.Repo, log *slog.Logger) *hrmsalary.Service {
 	return hrmsalary.NewService(pgRepo, log)
+}
+
+// ProvideHRMRecruitingService creates the HRM recruiting service
+func ProvideHRMRecruitingService(pgRepo *repo.Repo, log *slog.Logger) *hrmrecruiting.Service {
+	return hrmrecruiting.NewService(pgRepo, log)
 }
