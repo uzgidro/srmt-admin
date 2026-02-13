@@ -76,6 +76,10 @@ var (
 	ErrCompetencyNotFound = errors.New("competency not found")
 	ErrAssessmentNotFound = errors.New("assessment session not found")
 
+	// Performance Management errors
+	ErrReviewNotFound = errors.New("performance review not found")
+	ErrGoalNotFound   = errors.New("performance goal not found")
+
 	// Training errors
 	ErrTrainingNotFound        = errors.New("training not found")
 	ErrParticipantNotFound     = errors.New("training participant not found")

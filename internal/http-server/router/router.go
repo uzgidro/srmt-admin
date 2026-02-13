@@ -70,6 +70,7 @@ import (
 	hrmDashboardHandler "srmt-admin/internal/http-server/handlers/hrm/dashboard"
 	hrmDocumentHandler "srmt-admin/internal/http-server/handlers/hrm/document"
 	hrmOrgStructureHandler "srmt-admin/internal/http-server/handlers/hrm/orgstructure"
+	hrmPerformanceHandler "srmt-admin/internal/http-server/handlers/hrm/performance"
 	hrmPersonnelHandler "srmt-admin/internal/http-server/handlers/hrm/personnel"
 	hrmRecruitingHandler "srmt-admin/internal/http-server/handlers/hrm/recruiting"
 	hrmSalaryHandler "srmt-admin/internal/http-server/handlers/hrm/salary"
@@ -155,6 +156,7 @@ import (
 	hrmdashboard "srmt-admin/internal/lib/service/hrm/dashboard"
 	hrmdocument "srmt-admin/internal/lib/service/hrm/document"
 	hrmorgstructure "srmt-admin/internal/lib/service/hrm/orgstructure"
+	hrmperformance "srmt-admin/internal/lib/service/hrm/performance"
 	hrmpersonnel "srmt-admin/internal/lib/service/hrm/personnel"
 	hrmrecruiting "srmt-admin/internal/lib/service/hrm/recruiting"
 	hrmsalary "srmt-admin/internal/lib/service/hrm/salary"
@@ -201,6 +203,7 @@ type AppDependencies struct {
 	HRMAccessService           *hrmaccess.Service
 	HRMOrgStructureService     *hrmorgstructure.Service
 	HRMCompetencyService       *hrmcompetency.Service
+	HRMPerformanceService      *hrmperformance.Service
 }
 
 func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
@@ -767,6 +770,31 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 					r.Post("/", hrmCompetencyHandler.CreateCompetency(deps.Log, deps.HRMCompetencyService))
 					r.Patch("/{id}", hrmCompetencyHandler.UpdateCompetency(deps.Log, deps.HRMCompetencyService))
 					r.Delete("/{id}", hrmCompetencyHandler.DeleteCompetency(deps.Log, deps.HRMCompetencyService))
+				})
+
+				// Performance Management
+				r.Route("/performance", func(r chi.Router) {
+					// Reviews
+					r.Get("/reviews", hrmPerformanceHandler.GetReviews(deps.Log, deps.HRMPerformanceService))
+					r.Post("/reviews", hrmPerformanceHandler.CreateReview(deps.Log, deps.HRMPerformanceService))
+					r.Get("/reviews/{id}", hrmPerformanceHandler.GetReview(deps.Log, deps.HRMPerformanceService))
+					r.Patch("/reviews/{id}", hrmPerformanceHandler.UpdateReview(deps.Log, deps.HRMPerformanceService))
+					r.Post("/reviews/{id}/self-review", hrmPerformanceHandler.SelfReview(deps.Log, deps.HRMPerformanceService))
+					r.Post("/reviews/{id}/manager-review", hrmPerformanceHandler.ManagerReview(deps.Log, deps.HRMPerformanceService))
+					r.Post("/reviews/{id}/complete", hrmPerformanceHandler.CompleteReview(deps.Log, deps.HRMPerformanceService))
+
+					// Goals
+					r.Get("/goals", hrmPerformanceHandler.GetGoals(deps.Log, deps.HRMPerformanceService))
+					r.Post("/goals", hrmPerformanceHandler.CreateGoal(deps.Log, deps.HRMPerformanceService))
+					r.Patch("/goals/{id}", hrmPerformanceHandler.UpdateGoal(deps.Log, deps.HRMPerformanceService))
+					r.Patch("/goals/{id}/progress", hrmPerformanceHandler.UpdateGoalProgress(deps.Log, deps.HRMPerformanceService))
+					r.Delete("/goals/{id}", hrmPerformanceHandler.DeleteGoal(deps.Log, deps.HRMPerformanceService))
+
+					// Analytics
+					r.Get("/kpis", hrmPerformanceHandler.GetKPIs(deps.Log, deps.HRMPerformanceService))
+					r.Get("/ratings", hrmPerformanceHandler.GetRatings(deps.Log, deps.HRMPerformanceService))
+					r.Get("/ratings/employee/{id}", hrmPerformanceHandler.GetEmployeeRating(deps.Log, deps.HRMPerformanceService))
+					r.Get("/dashboard", hrmPerformanceHandler.GetDashboard(deps.Log, deps.HRMPerformanceService))
 				})
 			})
 		})
