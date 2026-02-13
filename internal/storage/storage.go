@@ -60,6 +60,22 @@ var (
 	ErrInterviewNotFound   = errors.New("interview not found")
 	ErrVacancyNotPublished = errors.New("vacancy is not in published status")
 
+	// HR Document errors
+	ErrHRDocumentNotFound      = errors.New("hr document not found")
+	ErrDocumentRequestNotFound = errors.New("document request not found")
+
+	// Access Control errors
+	ErrAccessCardNotFound    = errors.New("access card not found")
+	ErrAccessZoneNotFound    = errors.New("access zone not found")
+	ErrAccessRequestNotFound = errors.New("access request not found")
+
+	// Org Structure errors
+	ErrOrgUnitNotFound = errors.New("org unit not found")
+
+	// Competency Assessment errors
+	ErrCompetencyNotFound = errors.New("competency not found")
+	ErrAssessmentNotFound = errors.New("assessment session not found")
+
 	// Training errors
 	ErrTrainingNotFound        = errors.New("training not found")
 	ErrParticipantNotFound     = errors.New("training participant not found")

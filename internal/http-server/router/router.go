@@ -65,7 +65,11 @@ import (
 	gesIncidents "srmt-admin/internal/http-server/handlers/ges/incidents"
 	gesShutdowns "srmt-admin/internal/http-server/handlers/ges/shutdowns"
 	gesVisits "srmt-admin/internal/http-server/handlers/ges/visits"
+	hrmAccessHandler "srmt-admin/internal/http-server/handlers/hrm/access"
+	hrmCompetencyHandler "srmt-admin/internal/http-server/handlers/hrm/competency"
 	hrmDashboardHandler "srmt-admin/internal/http-server/handlers/hrm/dashboard"
+	hrmDocumentHandler "srmt-admin/internal/http-server/handlers/hrm/document"
+	hrmOrgStructureHandler "srmt-admin/internal/http-server/handlers/hrm/orgstructure"
 	hrmPersonnelHandler "srmt-admin/internal/http-server/handlers/hrm/personnel"
 	hrmRecruitingHandler "srmt-admin/internal/http-server/handlers/hrm/recruiting"
 	hrmSalaryHandler "srmt-admin/internal/http-server/handlers/hrm/salary"
@@ -146,7 +150,11 @@ import (
 	dischargeExcelGen "srmt-admin/internal/lib/service/excel/discharge"
 	excelgen "srmt-admin/internal/lib/service/excel/reservoir-summary"
 	scExcelGen "srmt-admin/internal/lib/service/excel/sc"
+	hrmaccess "srmt-admin/internal/lib/service/hrm/access"
+	hrmcompetency "srmt-admin/internal/lib/service/hrm/competency"
 	hrmdashboard "srmt-admin/internal/lib/service/hrm/dashboard"
+	hrmdocument "srmt-admin/internal/lib/service/hrm/document"
+	hrmorgstructure "srmt-admin/internal/lib/service/hrm/orgstructure"
 	hrmpersonnel "srmt-admin/internal/lib/service/hrm/personnel"
 	hrmrecruiting "srmt-admin/internal/lib/service/hrm/recruiting"
 	hrmsalary "srmt-admin/internal/lib/service/hrm/salary"
@@ -189,6 +197,10 @@ type AppDependencies struct {
 	HRMSalaryService           *hrmsalary.Service
 	HRMRecruitingService       *hrmrecruiting.Service
 	HRMTrainingService         *hrmtraining.Service
+	HRMDocumentService         *hrmdocument.Service
+	HRMAccessService           *hrmaccess.Service
+	HRMOrgStructureService     *hrmorgstructure.Service
+	HRMCompetencyService       *hrmcompetency.Service
 }
 
 func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
@@ -687,6 +699,74 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 					r.Get("/development-plans", hrmTrainingHandler.GetDevelopmentPlans(deps.Log, deps.HRMTrainingService))
 					r.Post("/development-plans", hrmTrainingHandler.CreateDevelopmentPlan(deps.Log, deps.HRMTrainingService))
 					r.Post("/development-plans/{planId}/goals", hrmTrainingHandler.AddDevelopmentGoal(deps.Log, deps.HRMTrainingService))
+				})
+
+				// HR Documents
+				r.Route("/hr-documents", func(r chi.Router) {
+					r.Get("/requests", hrmDocumentHandler.GetRequests(deps.Log, deps.HRMDocumentService))
+					r.Post("/requests", hrmDocumentHandler.CreateRequest(deps.Log, deps.HRMDocumentService))
+					r.Post("/requests/{id}/approve", hrmDocumentHandler.ApproveRequest(deps.Log, deps.HRMDocumentService))
+					r.Post("/requests/{id}/reject", hrmDocumentHandler.RejectRequest(deps.Log, deps.HRMDocumentService))
+					r.Get("/", hrmDocumentHandler.GetDocuments(deps.Log, deps.HRMDocumentService))
+					r.Post("/", hrmDocumentHandler.CreateDocument(deps.Log, deps.HRMDocumentService))
+					r.Get("/{id}", hrmDocumentHandler.GetDocument(deps.Log, deps.HRMDocumentService))
+					r.Patch("/{id}", hrmDocumentHandler.UpdateDocument(deps.Log, deps.HRMDocumentService))
+					r.Delete("/{id}", hrmDocumentHandler.DeleteDocument(deps.Log, deps.HRMDocumentService))
+					r.Get("/{id}/download", hrmDocumentHandler.DownloadDocument(deps.Log, deps.HRMDocumentService))
+				})
+
+				// Access Control
+				r.Route("/access-control", func(r chi.Router) {
+					r.Get("/cards", hrmAccessHandler.GetCards(deps.Log, deps.HRMAccessService))
+					r.Post("/cards", hrmAccessHandler.CreateCard(deps.Log, deps.HRMAccessService))
+					r.Patch("/cards/{id}", hrmAccessHandler.UpdateCard(deps.Log, deps.HRMAccessService))
+					r.Post("/cards/{id}/block", hrmAccessHandler.BlockCard(deps.Log, deps.HRMAccessService))
+					r.Post("/cards/{id}/unblock", hrmAccessHandler.UnblockCard(deps.Log, deps.HRMAccessService))
+					r.Get("/zones", hrmAccessHandler.GetZones(deps.Log, deps.HRMAccessService))
+					r.Post("/zones", hrmAccessHandler.CreateZone(deps.Log, deps.HRMAccessService))
+					r.Patch("/zones/{id}", hrmAccessHandler.UpdateZone(deps.Log, deps.HRMAccessService))
+					r.Get("/logs", hrmAccessHandler.GetLogs(deps.Log, deps.HRMAccessService))
+					r.Get("/requests", hrmAccessHandler.GetRequests(deps.Log, deps.HRMAccessService))
+					r.Post("/requests", hrmAccessHandler.CreateRequest(deps.Log, deps.HRMAccessService))
+					r.Post("/requests/{id}/approve", hrmAccessHandler.ApproveRequest(deps.Log, deps.HRMAccessService))
+					r.Post("/requests/{id}/reject", hrmAccessHandler.RejectRequest(deps.Log, deps.HRMAccessService))
+				})
+
+				// Org Structure
+				r.Route("/org-structure", func(r chi.Router) {
+					r.Get("/employees", hrmOrgStructureHandler.GetEmployees(deps.Log, deps.HRMOrgStructureService))
+					r.Get("/units", hrmOrgStructureHandler.GetUnits(deps.Log, deps.HRMOrgStructureService))
+					r.Post("/units", hrmOrgStructureHandler.CreateUnit(deps.Log, deps.HRMOrgStructureService))
+					r.Patch("/units/{id}", hrmOrgStructureHandler.UpdateUnit(deps.Log, deps.HRMOrgStructureService))
+					r.Delete("/units/{id}", hrmOrgStructureHandler.DeleteUnit(deps.Log, deps.HRMOrgStructureService))
+					r.Get("/units/{id}/employees", hrmOrgStructureHandler.GetUnitEmployees(deps.Log, deps.HRMOrgStructureService))
+				})
+
+				// Competency Assessment
+				r.Route("/competencies", func(r chi.Router) {
+					// Assessments (specific routes before {id})
+					r.Get("/assessments", hrmCompetencyHandler.GetAssessments(deps.Log, deps.HRMCompetencyService))
+					r.Post("/assessments", hrmCompetencyHandler.CreateAssessment(deps.Log, deps.HRMCompetencyService))
+					r.Patch("/assessments/{id}", hrmCompetencyHandler.UpdateAssessment(deps.Log, deps.HRMCompetencyService))
+					r.Post("/assessments/{id}/complete", hrmCompetencyHandler.CompleteAssessment(deps.Log, deps.HRMCompetencyService))
+					r.Post("/assessments/{id}/scores", hrmCompetencyHandler.SubmitScores(deps.Log, deps.HRMCompetencyService))
+
+					// Employee-scoped
+					r.Get("/employees/{id}/assessments", hrmCompetencyHandler.GetEmployeeAssessments(deps.Log, deps.HRMCompetencyService))
+					r.Get("/employees/{id}/gap-analysis", hrmCompetencyHandler.GetGapAnalysis(deps.Log, deps.HRMCompetencyService))
+
+					// Matrices
+					r.Get("/matrices", hrmCompetencyHandler.GetMatrices(deps.Log, deps.HRMCompetencyService))
+					r.Get("/matrices/position/{id}", hrmCompetencyHandler.GetPositionMatrix(deps.Log, deps.HRMCompetencyService))
+
+					// Reports
+					r.Get("/reports", hrmCompetencyHandler.GetReports(deps.Log, deps.HRMCompetencyService))
+
+					// Competency CRUD (generic {id} last)
+					r.Get("/", hrmCompetencyHandler.GetCompetencies(deps.Log, deps.HRMCompetencyService))
+					r.Post("/", hrmCompetencyHandler.CreateCompetency(deps.Log, deps.HRMCompetencyService))
+					r.Patch("/{id}", hrmCompetencyHandler.UpdateCompetency(deps.Log, deps.HRMCompetencyService))
+					r.Delete("/{id}", hrmCompetencyHandler.DeleteCompetency(deps.Log, deps.HRMCompetencyService))
 				})
 			})
 		})
