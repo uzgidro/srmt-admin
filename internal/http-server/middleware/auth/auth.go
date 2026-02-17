@@ -56,6 +56,20 @@ func RequireAnyRole(roles ...string) func(http.Handler) http.Handler {
 	}
 }
 
+// RequireAnyRoleForWrite allows GET requests to pass through, but requires
+// at least one of the specified roles for non-GET (write) requests.
+func RequireAnyRoleForWrite(roles ...string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet && !hasAnyRole(r.Context(), roles...) {
+				http.Error(w, "Forbidden: insufficient permissions", http.StatusForbidden)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 func ClaimsFromContext(ctx context.Context) (*token.Claims, bool) {
 	claims, ok := ctx.Value(claimsKey).(*token.Claims)
 	return claims, ok

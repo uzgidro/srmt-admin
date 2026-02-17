@@ -590,7 +590,8 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 
 		// HRM Module
 		r.Group(func(r chi.Router) {
-			r.Use(mwauth.RequireAnyRole("hrm_admin", "hrm_manager", "hrm_employee"))
+			r.Use(mwauth.RequireAnyRole("hrm_admin", "hrm_manager", "hrm_employee", "rais"))
+			r.Use(mwauth.RequireAnyRoleForWrite("hrm_admin", "hrm_manager", "hrm_employee"))
 
 			r.Route("/hrm", func(r chi.Router) {
 				// Dashboard
