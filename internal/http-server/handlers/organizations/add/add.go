@@ -3,21 +3,17 @@ package add
 import (
 	"context"
 	"errors"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/render"
-	"github.com/go-playground/validator/v10"
 	"log/slog"
 	"net/http"
 	resp "srmt-admin/internal/lib/api/response"
+	"srmt-admin/internal/lib/dto"
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/storage"
-)
 
-type Request struct {
-	Name                 string  `json:"name" validate:"required"`
-	ParentOrganizationID *int64  `json:"parent_organization_id,omitempty"`
-	TypeIDs              []int64 `json:"type_ids" validate:"required,min=1"`
-}
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/render"
+	"github.com/go-playground/validator/v10"
+)
 
 type Response struct {
 	resp.Response
@@ -25,7 +21,7 @@ type Response struct {
 }
 
 type OrganizationAdder interface {
-	AddOrganization(ctx context.Context, name string, parentID *int64, typeIDs []int64) (int64, error)
+	AddOrganization(ctx context.Context, req dto.AddOrganizationRequest) (int64, error)
 }
 
 func New(log *slog.Logger, adder OrganizationAdder) http.HandlerFunc {
@@ -33,7 +29,7 @@ func New(log *slog.Logger, adder OrganizationAdder) http.HandlerFunc {
 		const op = "handlers.organizations.add.New"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
 
-		var req Request
+		var req dto.AddOrganizationRequest
 		if err := render.DecodeJSON(r.Body, &req); err != nil {
 			log.Error("failed to decode request", sl.Err(err))
 			render.Status(r, http.StatusBadRequest)
@@ -50,7 +46,7 @@ func New(log *slog.Logger, adder OrganizationAdder) http.HandlerFunc {
 			return
 		}
 
-		id, err := adder.AddOrganization(r.Context(), req.Name, req.ParentOrganizationID, req.TypeIDs)
+		id, err := adder.AddOrganization(r.Context(), req)
 		if err != nil {
 			if errors.Is(err, storage.ErrDuplicate) {
 				log.Warn("organization already exists", "name", req.Name)

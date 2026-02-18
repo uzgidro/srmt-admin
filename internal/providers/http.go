@@ -16,6 +16,7 @@ import (
 	"srmt-admin/internal/lib/service/alarm"
 	assistantevent "srmt-admin/internal/lib/service/assistant/event"
 	assistantfastcall "srmt-admin/internal/lib/service/assistant/fast_call"
+	"srmt-admin/internal/lib/service/auth"
 	chancellerydecree "srmt-admin/internal/lib/service/chancellery/decree"
 	chancellerydocstatus "srmt-admin/internal/lib/service/chancellery/document_status"
 	chancelleryinstruction "srmt-admin/internal/lib/service/chancellery/instruction"
@@ -97,6 +98,7 @@ type AppContainer struct {
 	AdminOrganizationService *adminorganization.Service
 	AdminContactService      *admincontact.Service
 	AdminUserService         *adminuser.Service
+	AuthService              *auth.Service
 
 	// Assistant services
 	AssistantFastCallService *assistantfastcall.Service
@@ -183,6 +185,7 @@ func ProvideAppContainer(
 	adminOrgSvc *adminorganization.Service,
 	adminContactSvc *admincontact.Service,
 	adminUserSvc *adminuser.Service,
+	authSvc *auth.Service,
 	fastCallSvc *assistantfastcall.Service,
 	eventSvc *assistantevent.Service,
 	receptionSvc *receptionsvc.Service,
@@ -243,6 +246,7 @@ func ProvideAppContainer(
 		AdminOrganizationService:      adminOrgSvc,
 		AdminContactService:           adminContactSvc,
 		AdminUserService:              adminUserSvc,
+		AuthService:                   authSvc,
 		AssistantFastCallService:      fastCallSvc,
 		AssistantEventService:         eventSvc,
 		ReceptionService:              receptionSvc,
@@ -304,6 +308,7 @@ func ProvideRouter(
 	adminOrgSvc *adminorganization.Service,
 	adminContactSvc *admincontact.Service,
 	adminUserSvc *adminuser.Service,
+	authSvc *auth.Service,
 	fastCallSvc *assistantfastcall.Service,
 	eventSvc *assistantevent.Service,
 	receptionSvc *receptionsvc.Service,
@@ -375,6 +380,7 @@ func ProvideRouter(
 		AdminOrganizationService:      adminOrgSvc,
 		AdminContactService:           adminContactSvc,
 		AdminUserService:              adminUserSvc,
+		AuthService:                   authSvc,
 		AssistantFastCallService:      fastCallSvc,
 		AssistantEventService:         eventSvc,
 		ReceptionService:              receptionSvc,

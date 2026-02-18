@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"srmt-admin/internal/config"
+	"srmt-admin/internal/lib/service/fileupload"
 	"srmt-admin/internal/storage"
 	mongoDriver "srmt-admin/internal/storage/driver/mongo"
 	pgDriver "srmt-admin/internal/storage/driver/postgres"
@@ -26,6 +27,9 @@ var StorageProviderSet = wire.NewSet(
 	ProvideMinioRepo,
 	ProvideRedisClient,
 	ProvideRedisRepo,
+
+	// Bindings
+	wire.Bind(new(fileupload.FileUploader), new(*minio.Repo)),
 )
 
 // ProvidePostgresDriver creates PostgreSQL driver with migrations

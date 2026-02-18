@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"strconv"
 
@@ -25,7 +26,7 @@ type changeStatusRequest struct {
 }
 
 type decreeStatusChanger interface {
-	EditDecree(ctx context.Context, id int64, req dto.EditDecreeRequest, updatedByID int64) error
+	EditDecree(ctx context.Context, id int64, req dto.EditDecreeRequest, files []*multipart.FileHeader, updatedByID int64) error
 	AddDecreeStatusHistoryComment(ctx context.Context, decreeID int64, comment string) error
 }
 
@@ -72,7 +73,7 @@ func ChangeStatus(log *slog.Logger, changer decreeStatusChanger) http.HandlerFun
 			StatusID: &req.StatusID,
 		}
 
-		err = changer.EditDecree(r.Context(), id, editReq, userID)
+		err = changer.EditDecree(r.Context(), id, editReq, nil, userID)
 		if err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
 				log.Warn("decree not found", slog.Int64("id", id))

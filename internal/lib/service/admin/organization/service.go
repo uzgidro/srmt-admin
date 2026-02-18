@@ -3,6 +3,7 @@ package organization
 import (
 	"context"
 	"log/slog"
+	"srmt-admin/internal/lib/dto"
 	"srmt-admin/internal/lib/model/organization"
 	organization_type "srmt-admin/internal/lib/model/organization-type"
 )
@@ -41,8 +42,8 @@ func (s *Service) GetFlatOrganizations(ctx context.Context, orgType *string) ([]
 	return s.repo.GetFlatOrganizations(ctx, orgType)
 }
 
-func (s *Service) AddOrganization(ctx context.Context, name string, parentID *int64, typeIDs []int64) (int64, error) {
-	return s.repo.AddOrganization(ctx, name, parentID, typeIDs)
+func (s *Service) AddOrganization(ctx context.Context, req dto.AddOrganizationRequest) (int64, error) {
+	return s.repo.AddOrganization(ctx, req.Name, req.ParentOrganizationID, req.TypeIDs)
 }
 
 func (s *Service) EditOrganization(ctx context.Context, id int64, name *string, parentID **int64, typeIDs []int64) error {

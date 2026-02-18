@@ -14,6 +14,7 @@ import (
 	"srmt-admin/internal/lib/service/ascue"
 	assistantevent "srmt-admin/internal/lib/service/assistant/event"
 	assistantfastcall "srmt-admin/internal/lib/service/assistant/fast_call"
+	"srmt-admin/internal/lib/service/auth"
 	chancellerydecree "srmt-admin/internal/lib/service/chancellery/decree"
 	chancellerydocstatus "srmt-admin/internal/lib/service/chancellery/document_status"
 	chancelleryinstruction "srmt-admin/internal/lib/service/chancellery/instruction"
@@ -25,6 +26,7 @@ import (
 	dashboardcalendar "srmt-admin/internal/lib/service/dashboard/calendar"
 	dataanalytics "srmt-admin/internal/lib/service/data/analytics"
 	filesvc "srmt-admin/internal/lib/service/file"
+	"srmt-admin/internal/lib/service/fileupload"
 	gessvc "srmt-admin/internal/lib/service/ges"
 	hrmaccess "srmt-admin/internal/lib/service/hrm/access"
 	hrmanalytics "srmt-admin/internal/lib/service/hrm/analytics"
@@ -52,6 +54,7 @@ import (
 	receptionsvc "srmt-admin/internal/lib/service/reception"
 	"srmt-admin/internal/lib/service/reservoir"
 	scdata "srmt-admin/internal/lib/service/sc/data"
+	"srmt-admin/internal/storage/minio"
 	"srmt-admin/internal/storage/redis"
 	"srmt-admin/internal/storage/repo"
 	"srmt-admin/internal/token"
@@ -138,6 +141,9 @@ var ServiceProviderSet = wire.NewSet(
 	// Ingestion services
 	ProvideIngestionSensorService,
 	ProvideIngestionTelemetryService,
+
+	// Auth service
+	ProvideAuthService,
 )
 
 // ProvideTokenService creates JWT token service
@@ -291,12 +297,16 @@ func ProvideInvestActiveProjectService(pgRepo *repo.Repo, log *slog.Logger) *inv
 
 // --- Admin services (file-bearing) ---
 
-func ProvideAdminContactService(pgRepo *repo.Repo, log *slog.Logger) *admincontact.Service {
-	return admincontact.NewService(pgRepo, log)
+func ProvideAdminContactService(pgRepo *repo.Repo, minioRepo *minio.Repo, log *slog.Logger) *admincontact.Service {
+	return admincontact.NewService(pgRepo, minioRepo, log)
 }
 
-func ProvideAdminUserService(pgRepo *repo.Repo, log *slog.Logger) *adminuser.Service {
-	return adminuser.NewService(pgRepo, log)
+func ProvideAuthService(pgRepo *repo.Repo, token *token.Token, log *slog.Logger) *auth.Service {
+	return auth.NewService(pgRepo, token, log)
+}
+
+func ProvideAdminUserService(pgRepo *repo.Repo, uploader fileupload.FileUploader, log *slog.Logger) *adminuser.Service {
+	return adminuser.NewService(pgRepo, uploader, log)
 }
 
 // --- Assistant services (file-bearing) ---
@@ -335,8 +345,8 @@ func ProvideChancelleryDocStatusService(pgRepo *repo.Repo, log *slog.Logger) *ch
 	return chancellerydocstatus.NewService(pgRepo, log)
 }
 
-func ProvideChancelleryDecreeService(pgRepo *repo.Repo, log *slog.Logger) *chancellerydecree.Service {
-	return chancellerydecree.NewService(pgRepo, log)
+func ProvideChancelleryDecreeService(pgRepo *repo.Repo, minioRepo *minio.Repo, log *slog.Logger) *chancellerydecree.Service {
+	return chancellerydecree.NewService(pgRepo, minioRepo, log)
 }
 
 func ProvideChancelleryReportService(pgRepo *repo.Repo, log *slog.Logger) *chancelleryreport.Service {

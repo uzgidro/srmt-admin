@@ -19,11 +19,11 @@ type GetAllDecreesFilters struct {
 
 // AddDecreeRequest is the DTO for creating a decree
 type AddDecreeRequest struct {
-	Name                 string                  `json:"name"`
+	Name                 string                  `json:"name" validate:"required"`
 	Number               *string                 `json:"number,omitempty"`
-	DocumentDate         time.Time               `json:"document_date"`
+	DocumentDate         time.Time               `json:"document_date" validate:"required"`
 	Description          *string                 `json:"description,omitempty"`
-	TypeID               int                     `json:"type_id"`
+	TypeID               int                     `json:"type_id" validate:"required,min=1"`
 	StatusID             *int                    `json:"status_id,omitempty"`
 	ResponsibleContactID *int64                  `json:"responsible_contact_id,omitempty"`
 	OrganizationID       *int64                  `json:"organization_id,omitempty"`

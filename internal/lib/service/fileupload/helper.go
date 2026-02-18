@@ -102,7 +102,7 @@ func ProcessFormFiles(
 
 	// Upload each file
 	for _, fileHeader := range files {
-		fileInfo, err := uploadSingleFile(
+		fileInfo, err := UploadFileHeader(
 			ctx,
 			log,
 			uploader,
@@ -135,8 +135,8 @@ func ProcessFormFiles(
 	}, nil
 }
 
-// uploadSingleFile handles uploading a single file
-func uploadSingleFile(
+// UploadFileHeader handles uploading a single file (Public version of uploadSingleFile)
+func UploadFileHeader(
 	ctx context.Context,
 	log *slog.Logger,
 	uploader FileUploader,

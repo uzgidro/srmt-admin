@@ -5,15 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
-	"time"
 
 	"srmt-admin/internal/lib/api/formparser"
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/dto"
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/lib/service/auth"
-	"srmt-admin/internal/lib/service/fileupload"
 	"srmt-admin/internal/storage"
 
 	"github.com/go-chi/chi/v5/middleware"
@@ -21,35 +20,16 @@ import (
 	"github.com/go-playground/validator/v10"
 )
 
-type addRequest struct {
-	Name                 string                      `json:"name" validate:"required"`
-	Number               *string                     `json:"number,omitempty"`
-	DocumentDate         time.Time                   `json:"document_date" validate:"required"`
-	Description          *string                     `json:"description,omitempty"`
-	TypeID               int                         `json:"type_id" validate:"required,min=1"`
-	StatusID             *int                        `json:"status_id,omitempty"`
-	ResponsibleContactID *int64                      `json:"responsible_contact_id,omitempty"`
-	OrganizationID       *int64                      `json:"organization_id,omitempty"`
-	ExecutorContactID    *int64                      `json:"executor_contact_id,omitempty"`
-	DueDate              *time.Time                  `json:"due_date,omitempty"`
-	ParentDocumentID     *int64                      `json:"parent_document_id,omitempty"`
-	FileIDs              []int64                     `json:"file_ids,omitempty"`
-	LinkedDocuments      []dto.LinkedDocumentRequest `json:"linked_documents,omitempty"`
-}
-
 type addResponse struct {
 	resp.Response
-	ID            int64                         `json:"id"`
-	UploadedFiles []fileupload.UploadedFileInfo `json:"uploaded_files,omitempty"`
+	ID int64 `json:"id"`
 }
 
 type decreeAdder interface {
-	AddDecree(ctx context.Context, req dto.AddDecreeRequest, createdByID int64) (int64, error)
-	LinkDecreeFiles(ctx context.Context, decreeID int64, fileIDs []int64) error
-	LinkDecreeDocuments(ctx context.Context, decreeID int64, links []dto.LinkedDocumentRequest, userID int64) error
+	AddDecree(ctx context.Context, req dto.AddDecreeRequest, files []*multipart.FileHeader, createdByID int64) (int64, error)
 }
 
-func Add(log *slog.Logger, adder decreeAdder, uploader fileupload.FileUploader, saver fileupload.FileMetaSaver, categoryGetter fileupload.CategoryGetter) http.HandlerFunc {
+func Add(log *slog.Logger, adder decreeAdder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.decrees.add"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
@@ -62,23 +42,28 @@ func Add(log *slog.Logger, adder decreeAdder, uploader fileupload.FileUploader, 
 			return
 		}
 
-		var req addRequest
-		var fileIDs []int64
-		var uploadResult *fileupload.UploadResult
+		var req dto.AddDecreeRequest
+		var files []*multipart.FileHeader
 
 		if formparser.IsMultipartForm(r) {
 			log.Info("processing multipart/form-data request")
 
-			req, uploadResult, err = parseMultipartAddRequest(r, log, uploader, saver, categoryGetter)
+			// Set max size for parsing
+			err := r.ParseMultipartForm(100 << 20) // 100MB
+			if err != nil {
+				log.Error("failed to parse multipart form", sl.Err(err))
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest("Invalid form data"))
+				return
+			}
+
+			req, files, err = parseMultipartAddRequest(r)
 			if err != nil {
 				log.Error("failed to parse multipart request", sl.Err(err))
 				render.Status(r, http.StatusBadRequest)
 				render.JSON(w, r, resp.BadRequest(err.Error()))
 				return
 			}
-
-			existingFileIDs, _ := formparser.GetFormFileIDs(r, "file_ids")
-			fileIDs = append(existingFileIDs, uploadResult.FileIDs...)
 		} else {
 			log.Info("processing application/json request")
 
@@ -88,47 +73,22 @@ func Add(log *slog.Logger, adder decreeAdder, uploader fileupload.FileUploader, 
 				render.JSON(w, r, resp.BadRequest("Invalid request format"))
 				return
 			}
-
-			fileIDs = req.FileIDs
 		}
 
 		if err := validator.New().Struct(req); err != nil {
 			var vErrs validator.ValidationErrors
 			errors.As(err, &vErrs)
 			log.Error("validation failed", sl.Err(err))
-
-			if uploadResult != nil {
-				fileupload.CompensateEntityUpload(r.Context(), log, uploader, saver, uploadResult)
-			}
-
 			render.Status(r, http.StatusBadRequest)
 			render.JSON(w, r, resp.ValidationErrors(vErrs))
 			return
 		}
 
-		storageReq := dto.AddDecreeRequest{
-			Name:                 req.Name,
-			Number:               req.Number,
-			DocumentDate:         req.DocumentDate,
-			Description:          req.Description,
-			TypeID:               req.TypeID,
-			StatusID:             req.StatusID,
-			ResponsibleContactID: req.ResponsibleContactID,
-			OrganizationID:       req.OrganizationID,
-			ExecutorContactID:    req.ExecutorContactID,
-			DueDate:              req.DueDate,
-			ParentDocumentID:     req.ParentDocumentID,
-			FileIDs:              fileIDs,
-			LinkedDocuments:      req.LinkedDocuments,
-		}
+		// Check if we need to map linked docs or anything else?
+		// DTO matches service requirement, so we can pass it directly.
 
-		id, err := adder.AddDecree(r.Context(), storageReq, userID)
+		id, err := adder.AddDecree(r.Context(), req, files, userID)
 		if err != nil {
-			if uploadResult != nil {
-				log.Warn("decree creation failed, compensating uploaded files")
-				fileupload.CompensateEntityUpload(r.Context(), log, uploader, saver, uploadResult)
-			}
-
 			if errors.Is(err, storage.ErrForeignKeyViolation) {
 				log.Warn("foreign key violation")
 				render.Status(r, http.StatusBadRequest)
@@ -141,78 +101,41 @@ func Add(log *slog.Logger, adder decreeAdder, uploader fileupload.FileUploader, 
 			return
 		}
 
-		if len(fileIDs) > 0 {
-			if err := adder.LinkDecreeFiles(r.Context(), id, fileIDs); err != nil {
-				log.Error("failed to link files", sl.Err(err))
-			}
-		}
-
-		if len(req.LinkedDocuments) > 0 {
-			if err := adder.LinkDecreeDocuments(r.Context(), id, req.LinkedDocuments, userID); err != nil {
-				log.Error("failed to link documents", sl.Err(err))
-			}
-		}
-
-		uploadedFilesCount := 0
-		if uploadResult != nil {
-			uploadedFilesCount = len(uploadResult.FileIDs)
-		}
-		log.Info("decree added successfully",
-			slog.Int64("id", id),
-			slog.Int("total_files", len(fileIDs)),
-			slog.Int("uploaded_files", uploadedFilesCount),
-		)
+		log.Info("decree added successfully", slog.Int64("id", id))
 
 		render.Status(r, http.StatusCreated)
-		response := addResponse{
+		render.JSON(w, r, addResponse{
 			Response: resp.Created(),
 			ID:       id,
-		}
-		if uploadResult != nil && len(uploadResult.UploadedFiles) > 0 {
-			response.UploadedFiles = uploadResult.UploadedFiles
-		}
-		render.JSON(w, r, response)
+		})
 	}
 }
 
-func parseMultipartAddRequest(
-	r *http.Request,
-	log *slog.Logger,
-	uploader fileupload.FileUploader,
-	saver fileupload.FileMetaSaver,
-	categoryGetter fileupload.CategoryGetter,
-) (addRequest, *fileupload.UploadResult, error) {
-	const op = "decrees.parseMultipartAddRequest"
-
+func parseMultipartAddRequest(r *http.Request) (dto.AddDecreeRequest, []*multipart.FileHeader, error) {
 	name, err := formparser.GetFormStringRequired(r, "name")
 	if err != nil {
-		return addRequest{}, nil, err
+		return dto.AddDecreeRequest{}, nil, err
 	}
 
-	number := formparser.GetFormString(r, "number")
-	description := formparser.GetFormString(r, "description")
-
-	documentDateStr, err := formparser.GetFormStringRequired(r, "document_date")
+	// Document date
+	// formparser has GetFormTime which expects RF3339 by default or custom layout
+	// Existing handler used "2006-01-02"
+	documentDate, err := formparser.GetFormTimeRequired(r, "document_date", "2006-01-02")
 	if err != nil {
-		return addRequest{}, nil, fmt.Errorf("missing document_date: %w", err)
-	}
-	documentDate, err := time.Parse("2006-01-02", documentDateStr)
-	if err != nil {
-		return addRequest{}, nil, fmt.Errorf("invalid document_date format (use YYYY-MM-DD): %w", err)
+		return dto.AddDecreeRequest{}, nil, fmt.Errorf("invalid document_date (use YYYY-MM-DD): %w", err)
 	}
 
 	typeIDInt64, err := formparser.GetFormInt64Required(r, "type_id")
 	if err != nil {
-		return addRequest{}, nil, fmt.Errorf("invalid or missing type_id: %w", err)
+		return dto.AddDecreeRequest{}, nil, fmt.Errorf("invalid or missing type_id: %w", err)
 	}
-	typeID := int(typeIDInt64)
 
-	req := addRequest{
+	req := dto.AddDecreeRequest{
 		Name:         name,
-		Number:       number,
-		Description:  description,
+		Number:       formparser.GetFormString(r, "number"),
+		Description:  formparser.GetFormString(r, "description"),
 		DocumentDate: documentDate,
-		TypeID:       typeID,
+		TypeID:       int(typeIDInt64),
 	}
 
 	// Optional fields
@@ -220,45 +143,35 @@ func parseMultipartAddRequest(
 		statusIDInt := int(*statusID)
 		req.StatusID = &statusIDInt
 	}
-	if responsibleContactID, err := formparser.GetFormInt64(r, "responsible_contact_id"); err == nil {
-		req.ResponsibleContactID = responsibleContactID
+	if contactID, err := formparser.GetFormInt64(r, "responsible_contact_id"); err == nil {
+		req.ResponsibleContactID = contactID
 	}
-	if organizationID, err := formparser.GetFormInt64(r, "organization_id"); err == nil {
-		req.OrganizationID = organizationID
+	if orgID, err := formparser.GetFormInt64(r, "organization_id"); err == nil {
+		req.OrganizationID = orgID
 	}
-	if executorContactID, err := formparser.GetFormInt64(r, "executor_contact_id"); err == nil {
-		req.ExecutorContactID = executorContactID
+	if executorID, err := formparser.GetFormInt64(r, "executor_contact_id"); err == nil {
+		req.ExecutorContactID = executorID
 	}
-	if parentDocumentID, err := formparser.GetFormInt64(r, "parent_document_id"); err == nil {
-		req.ParentDocumentID = parentDocumentID
+	if parentID, err := formparser.GetFormInt64(r, "parent_document_id"); err == nil {
+		req.ParentDocumentID = parentID
 	}
 
-	if dueDateStr := formparser.GetFormString(r, "due_date"); dueDateStr != nil {
-		dueDate, err := time.Parse("2006-01-02", *dueDateStr)
-		if err != nil {
-			return addRequest{}, nil, fmt.Errorf("invalid due_date format (use YYYY-MM-DD): %w", err)
+	if dueDate, err := formparser.GetFormTime(r, "due_date", "2006-01-02"); err != nil {
+		return dto.AddDecreeRequest{}, nil, fmt.Errorf("invalid due_date (use YYYY-MM-DD): %w", err)
+	} else if dueDate != nil {
+		req.DueDate = dueDate
+	}
+
+	// Files
+	var files []*multipart.FileHeader
+	if r.MultipartForm != nil && r.MultipartForm.File != nil {
+		if fhs, ok := r.MultipartForm.File["files"]; ok {
+			files = fhs
 		}
-		req.DueDate = &dueDate
 	}
 
-	uploadResult, err := fileupload.ProcessFormFiles(
-		r.Context(),
-		r,
-		log,
-		uploader,
-		saver,
-		categoryGetter,
-		"decrees",
-		"Приказы",
-		documentDate,
-	)
-	if err != nil {
-		return addRequest{}, nil, fmt.Errorf("%s: failed to process file uploads: %w", op, err)
-	}
+	existingFileIDs, _ := formparser.GetFormFileIDs(r, "file_ids")
+	req.FileIDs = existingFileIDs
 
-	log.Info("multipart form parsed successfully",
-		slog.Int("uploaded_files", len(uploadResult.FileIDs)),
-	)
-
-	return req, uploadResult, nil
+	return req, files, nil
 }

@@ -8,17 +8,18 @@ type GetAllContactsFilters struct {
 }
 
 // AddContactRequest - DTO для создания контакта
+// AddContactRequest - DTO для создания контакта
 type AddContactRequest struct {
-	Name            string
-	Email           *string
-	Phone           *string
-	IPPhone         *string
-	DOB             *time.Time
-	ExternalOrgName *string
-	IconID          *int64
-	OrganizationID  *int64 // Nullable
-	DepartmentID    *int64 // Nullable
-	PositionID      *int64 // Nullable
+	Name            string     `json:"name" validate:"required"`
+	Email           *string    `json:"email,omitempty" validate:"omitempty,email"`
+	Phone           *string    `json:"phone,omitempty"`
+	IPPhone         *string    `json:"ip_phone,omitempty"`
+	DOB             *time.Time `json:"dob,omitempty"`
+	ExternalOrgName *string    `json:"external_organization_name,omitempty"`
+	IconID          *int64     `json:"icon_id,omitempty"`
+	OrganizationID  *int64     `json:"organization_id,omitempty"` // Nullable
+	DepartmentID    *int64     `json:"department_id,omitempty"`   // Nullable
+	PositionID      *int64     `json:"position_id,omitempty"`     // Nullable
 }
 
 // EditContactRequest - DTO для обновления контакта

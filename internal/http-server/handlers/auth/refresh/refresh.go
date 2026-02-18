@@ -1,35 +1,24 @@
 package refresh
 
 import (
-	"context"
 	"errors"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/render"
 	"log/slog"
 	"net/http"
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
-	"srmt-admin/internal/lib/model/user"
-	"srmt-admin/internal/token"
-	"time"
+	"srmt-admin/internal/lib/service/auth"
+	"srmt-admin/internal/storage"
+
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/render"
 )
 
 type Response struct {
 	AccessToken string `json:"access_token"`
 }
 
-type UserGetter interface {
-	GetUserByID(ctx context.Context, id int64) (*user.Model, error)
-}
-
-type TokenRefresher interface {
-	Verify(token string) (*token.Claims, error)
-	Create(u *user.Model) (token.Pair, error)
-	GetRefreshTTL() time.Duration
-}
-
 // New создает новый HTTP-хендлер для обновления токенов.
-func New(log *slog.Logger, userService UserGetter, refresher TokenRefresher) http.HandlerFunc {
+func New(log *slog.Logger, authProvider *auth.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.auth.refresh.New"
 		log := log.With(
@@ -54,27 +43,20 @@ func New(log *slog.Logger, userService UserGetter, refresher TokenRefresher) htt
 
 		refreshToken := cookie.Value
 
-		claims, err := refresher.Verify(refreshToken)
+		// Refresh via service
+		pair, refreshTTL, err := authProvider.Refresh(r.Context(), refreshToken)
 		if err != nil {
-			log.Warn("failed to verify token", sl.Err(err))
+			// TODO: handle generic invalid token error vs valid but expired vs server error if needed
+			// For now, assuming most errors here mean unauthorized
+			if errors.Is(err, storage.ErrUserNotFound) {
+				log.Warn("user not found during refresh", sl.Err(err))
+				render.Status(r, http.StatusInternalServerError)
+				render.JSON(w, r, resp.InternalServerError("Internal server error"))
+				return
+			}
+			log.Warn("failed to refresh token", sl.Err(err))
 			render.Status(r, http.StatusUnauthorized)
 			render.JSON(w, r, resp.Unauthorized("Invalid or expired refresh token"))
-			return
-		}
-
-		u, err := userService.GetUserByID(r.Context(), claims.UserID)
-		if err != nil {
-			log.Warn("failed to get user", sl.Err(err))
-			render.Status(r, http.StatusInternalServerError)
-			render.JSON(w, r, resp.InternalServerError("Internal server error"))
-			return
-		}
-
-		pair, err := refresher.Create(u)
-		if err != nil {
-			log.Warn("failed to create pair", sl.Err(err))
-			render.Status(r, http.StatusInternalServerError)
-			render.JSON(w, r, resp.InternalServerError("Internal server error"))
 			return
 		}
 
@@ -86,7 +68,7 @@ func New(log *slog.Logger, userService UserGetter, refresher TokenRefresher) htt
 			Secure:      true,                  // Отправлять только по HTTPS (в продакшене)
 			SameSite:    http.SameSiteNoneMode, // Защита от CSRF
 			Partitioned: true,
-			MaxAge:      int(refresher.GetRefreshTTL()), // Время жизни cookie
+			MaxAge:      int(refreshTTL.Seconds()), // Время жизни cookie
 		})
 
 		log.Info("token refreshed successfully")

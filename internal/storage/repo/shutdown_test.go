@@ -313,6 +313,11 @@ func timePtr(t time.Time) *time.Time {
 	return &t
 }
 
+func timeDoublePtr(t time.Time) **time.Time {
+	p := &t
+	return &p
+}
+
 // TestEditShutdownIdleDischargeCreation specifically tests the fix for creating
 // idle discharge when editing a shutdown that didn't have one
 func TestEditShutdownIdleDischargeCreation(t *testing.T) {
@@ -361,7 +366,7 @@ func TestEditShutdownIdleDischargeCreation(t *testing.T) {
 			currentIdleID:         sql.NullInt64{Valid: false},
 			currentEndTime:        sql.NullTime{Valid: false},
 			reqIdleVolume:         float64Ptr(10.0),
-			reqEndTime:            ptrTimePtr(time.Now().Add(3 * time.Hour)),
+			reqEndTime:            timeDoublePtr(time.Now().Add(3 * time.Hour)),
 			expectCreateDischarge: true,
 			expectUpdateDischarge: false,
 			expectError:           false,

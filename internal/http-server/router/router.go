@@ -157,6 +157,7 @@ import (
 	"srmt-admin/internal/lib/service/alarm"
 	assistantevent "srmt-admin/internal/lib/service/assistant/event"
 	assistantfastcall "srmt-admin/internal/lib/service/assistant/fast_call"
+	"srmt-admin/internal/lib/service/auth"
 	chancellerydecree "srmt-admin/internal/lib/service/chancellery/decree"
 	chancellerydocstatus "srmt-admin/internal/lib/service/chancellery/document_status"
 	chancelleryinstruction "srmt-admin/internal/lib/service/chancellery/instruction"
@@ -233,6 +234,7 @@ type AppDependencies struct {
 	AdminOrganizationService *adminorganization.Service
 	AdminContactService      *admincontact.Service
 	AdminUserService         *adminuser.Service
+	AuthService              *auth.Service
 
 	// Assistant services
 	AssistantFastCallService *assistantfastcall.Service
@@ -300,8 +302,8 @@ type AppDependencies struct {
 func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 	loc := deps.Location
 
-	router.Post("/auth/sign-in", signIn.New(deps.Log, deps.PgRepo, deps.Token))
-	router.Post("/auth/refresh", refresh.New(deps.Log, deps.PgRepo, deps.Token))
+	router.Post("/auth/sign-in", signIn.New(deps.Log, deps.AuthService))
+	router.Post("/auth/refresh", refresh.New(deps.Log, deps.AuthService))
 	router.Post("/auth/sign-out", signOut.New(deps.Log))
 
 	router.Route("/api/v3", func(r chi.Router) {
@@ -390,8 +392,8 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 		// Contacts
 		r.Get("/contacts", contactGetAll.New(deps.Log, deps.AdminContactService, deps.MinioRepo))
 		r.Get("/contacts/{id}", contactGetById.New(deps.Log, deps.AdminContactService, deps.MinioRepo))
-		r.Post("/contacts", contactAdd.New(deps.Log, deps.AdminContactService, deps.MinioRepo, deps.AdminContactService))
-		r.Patch("/contacts/{id}", contactEdit.New(deps.Log, deps.AdminContactService, deps.MinioRepo, deps.AdminContactService))
+		r.Post("/contacts", contactAdd.New(deps.Log, deps.AdminContactService))
+		r.Patch("/contacts/{id}", contactEdit.New(deps.Log, deps.AdminContactService))
 		r.Delete("/contacts/{id}", contactDelete.New(deps.Log, deps.AdminContactService))
 
 		// Dashboard
@@ -441,8 +443,8 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 
 			// Users
 			r.Get("/users", usersGet.New(deps.Log, deps.AdminUserService))
-			r.Post("/users", usersAdd.New(deps.Log, deps.AdminUserService, deps.MinioRepo, deps.AdminUserService))
-			r.Patch("/users/{userID}", usersEdit.New(deps.Log, deps.AdminUserService, deps.MinioRepo, deps.AdminUserService))
+			r.Post("/users", usersAdd.New(deps.Log, deps.AdminUserService))
+			r.Patch("/users/{userID}", usersEdit.New(deps.Log, deps.AdminUserService))
 			r.Get("/users/{userID}", usersGetById.New(deps.Log, deps.AdminUserService))
 			r.Delete("/users/{userID}", usersDelete.New(deps.Log, deps.AdminUserService))
 			r.Post("/users/{userID}/roles", assignRole.New(deps.Log, deps.AdminUserService))
@@ -593,8 +595,8 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Get("/decrees/types", decrees.GetTypes(deps.Log, deps.ChancelleryDecreeService))
 			r.Get("/decrees/{id}", decrees.GetByID(deps.Log, deps.ChancelleryDecreeService, deps.MinioRepo))
 			r.Get("/decrees/{id}/history", decrees.GetStatusHistory(deps.Log, deps.ChancelleryDecreeService))
-			r.Post("/decrees", decrees.Add(deps.Log, deps.ChancelleryDecreeService, deps.MinioRepo, deps.ChancelleryDecreeService, deps.ChancelleryDecreeService))
-			r.Patch("/decrees/{id}", decrees.Edit(deps.Log, deps.ChancelleryDecreeService, deps.MinioRepo, deps.ChancelleryDecreeService, deps.ChancelleryDecreeService))
+			r.Post("/decrees", decrees.Add(deps.Log, deps.ChancelleryDecreeService))
+			r.Patch("/decrees/{id}", decrees.Edit(deps.Log, deps.ChancelleryDecreeService))
 			r.Patch("/decrees/{id}/status", decrees.ChangeStatus(deps.Log, deps.ChancelleryDecreeService))
 			r.Delete("/decrees/{id}", decrees.Delete(deps.Log, deps.ChancelleryDecreeService))
 

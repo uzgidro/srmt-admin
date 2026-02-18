@@ -29,8 +29,10 @@ var (
 
 	ErrUniqueViolation = errors.New("unique violation")
 
-	ErrNotFound      = errors.New("not found")
-	ErrInvalidStatus = errors.New("invalid status for operation")
+	ErrNotFound           = errors.New("not found")
+	ErrInvalidStatus      = errors.New("invalid status for operation")
+	ErrInvalidCredentials = errors.New("invalid credentials")
+	ErrUserDeactivated    = errors.New("user account is not active")
 
 	// HRM errors
 	ErrPersonnelRecordNotFound = errors.New("personnel record not found")
