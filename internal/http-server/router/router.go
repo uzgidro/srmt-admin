@@ -152,6 +152,7 @@ import (
 	"srmt-admin/internal/lib/service/alarm"
 	dischargeExcelGen "srmt-admin/internal/lib/service/excel/discharge"
 	excelgen "srmt-admin/internal/lib/service/excel/reservoir-summary"
+	reservoirHourlyExcelGen "srmt-admin/internal/lib/service/excel/reservoir-summary-hourly"
 	scExcelGen "srmt-admin/internal/lib/service/excel/sc"
 	hrmaccess "srmt-admin/internal/lib/service/hrm/access"
 	hrmanalytics "srmt-admin/internal/lib/service/hrm/analytics"
@@ -195,6 +196,7 @@ type AppDependencies struct {
 	ExcelTemplatePath          string
 	DischargeExcelTemplatePath string
 	SCExcelTemplatePath        string
+	HourlyExcelTemplatePath    string
 	AlarmProcessor             *alarm.Processor
 	HRMPersonnelService        *hrmpersonnel.Service
 	HRMVacationService         *hrmvacation.Service
@@ -218,7 +220,11 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 	router.Post("/auth/sign-in", signIn.New(deps.Log, deps.PgRepo, deps.Token))
 	router.Post("/auth/refresh", refresh.New(deps.Log, deps.PgRepo, deps.Token))
 	router.Post("/auth/sign-out", signOut.New(deps.Log))
-	router.Get("/reservoir-summary-hourly/export", reservoirsummaryhourly.GetExport(deps.Log, deps.ReservoirHourlyService))
+	router.Get("/reservoir-summary-hourly/export", reservoirsummaryhourly.GetExport(
+		deps.Log,
+		deps.ReservoirHourlyService,
+		reservoirHourlyExcelGen.New(deps.HourlyExcelTemplatePath),
+	))
 
 	router.Route("/api/v3", func(r chi.Router) {
 		r.Get("/modsnow", table.Get(deps.Log, deps.MongoRepo))

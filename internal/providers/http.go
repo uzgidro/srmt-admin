@@ -193,6 +193,7 @@ func ProvideRouter(
 		ExcelTemplatePath:          cfg.TemplatePath + "/res-summary.xlsx",
 		DischargeExcelTemplatePath: cfg.TemplatePath + "/discharge.xlsx",
 		SCExcelTemplatePath:        cfg.TemplatePath + "/sc.xlsx",
+		HourlyExcelTemplatePath:    cfg.TemplatePath + "/res-summary-hourly.xlsx",
 		AlarmProcessor:             alarmProcessor,
 		HRMPersonnelService:        hrmPersonnelSvc,
 		HRMVacationService:         hrmVacationSvc,
