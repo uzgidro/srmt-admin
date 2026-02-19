@@ -118,6 +118,7 @@ import (
 	"srmt-admin/internal/http-server/handlers/reports"
 	reservoirdevicesummary "srmt-admin/internal/http-server/handlers/reservoir-device-summary"
 	reservoirsummary "srmt-admin/internal/http-server/handlers/reservoir-summary"
+	reservoirsummaryhourly "srmt-admin/internal/http-server/handlers/reservoir-summary-hourly"
 	resAdd "srmt-admin/internal/http-server/handlers/reservoirs/add"
 	roleAdd "srmt-admin/internal/http-server/handlers/role/add"
 	roleDelete "srmt-admin/internal/http-server/handlers/role/delete"
@@ -151,6 +152,7 @@ import (
 	"srmt-admin/internal/lib/service/alarm"
 	dischargeExcelGen "srmt-admin/internal/lib/service/excel/discharge"
 	excelgen "srmt-admin/internal/lib/service/excel/reservoir-summary"
+	reservoirHourlyExcelGen "srmt-admin/internal/lib/service/excel/reservoir-summary-hourly"
 	scExcelGen "srmt-admin/internal/lib/service/excel/sc"
 	hrmaccess "srmt-admin/internal/lib/service/hrm/access"
 	hrmanalytics "srmt-admin/internal/lib/service/hrm/analytics"
@@ -167,6 +169,7 @@ import (
 	hrmvacation "srmt-admin/internal/lib/service/hrm/vacation"
 	"srmt-admin/internal/lib/service/metrics"
 	"srmt-admin/internal/lib/service/reservoir"
+	reservoirhourly "srmt-admin/internal/lib/service/reservoir-hourly"
 	"srmt-admin/internal/storage/minio"
 	"srmt-admin/internal/storage/mongo"
 	redisRepo "srmt-admin/internal/storage/redis"
@@ -193,6 +196,7 @@ type AppDependencies struct {
 	ExcelTemplatePath          string
 	DischargeExcelTemplatePath string
 	SCExcelTemplatePath        string
+	HourlyExcelTemplatePath    string
 	AlarmProcessor             *alarm.Processor
 	HRMPersonnelService        *hrmpersonnel.Service
 	HRMVacationService         *hrmvacation.Service
@@ -207,6 +211,7 @@ type AppDependencies struct {
 	HRMCompetencyService       *hrmcompetency.Service
 	HRMPerformanceService      *hrmperformance.Service
 	HRMAnalyticsService        *hrmanalytics.Service
+	ReservoirHourlyService     *reservoirhourly.Service
 }
 
 func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
@@ -429,12 +434,17 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Patch("/reservoir-device", reservoirdevicesummary.Patch(deps.Log, deps.PgRepo))
 
 			r.Get("/reservoir-summary", reservoirsummary.Get(deps.Log, deps.PgRepo, deps.ReservoirFetcher))
-			router.Get("/reservoir-summary/export", reservoirsummary.GetExport(
+			r.Get("/reservoir-summary/export", reservoirsummary.GetExport(
 				deps.Log,
 				deps.PgRepo,
 				excelgen.New(deps.ExcelTemplatePath),
 			))
 			r.Post("/reservoir-summary", reservoirsummary.New(deps.Log, deps.PgRepo))
+			r.Get("/reservoir-summary-hourly/export", reservoirsummaryhourly.GetExport(
+				deps.Log,
+				deps.ReservoirHourlyService,
+				reservoirHourlyExcelGen.New(deps.HourlyExcelTemplatePath),
+			))
 
 			r.Get("/visits", visit.Get(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
 			r.Post("/visits", visit.Add(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))

@@ -21,6 +21,7 @@ import (
 	hrmvacation "srmt-admin/internal/lib/service/hrm/vacation"
 	"srmt-admin/internal/lib/service/metrics"
 	"srmt-admin/internal/lib/service/reservoir"
+	reservoirhourly "srmt-admin/internal/lib/service/reservoir-hourly"
 	"srmt-admin/internal/storage/redis"
 	"srmt-admin/internal/storage/repo"
 	"srmt-admin/internal/token"
@@ -50,6 +51,7 @@ var ServiceProviderSet = wire.NewSet(
 	ProvideHRMCompetencyService,
 	ProvideHRMPerformanceService,
 	ProvideHRMAnalyticsService,
+	ProvideReservoirHourlyService,
 )
 
 // ProvideTokenService creates JWT token service
@@ -163,4 +165,12 @@ func ProvideHRMPerformanceService(pgRepo *repo.Repo, log *slog.Logger) *hrmperfo
 // ProvideHRMAnalyticsService creates the HRM analytics service
 func ProvideHRMAnalyticsService(pgRepo *repo.Repo, log *slog.Logger) *hrmanalytics.Service {
 	return hrmanalytics.NewService(pgRepo, log)
+}
+
+// ProvideReservoirHourlyService creates the reservoir-hourly report service
+func ProvideReservoirHourlyService(fetcher *reservoir.Fetcher, pgRepo *repo.Repo, log *slog.Logger) *reservoirhourly.Service {
+	if fetcher == nil {
+		return nil
+	}
+	return reservoirhourly.NewService(fetcher, pgRepo, log)
 }

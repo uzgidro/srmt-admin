@@ -23,6 +23,7 @@ import (
 	hrmvacation "srmt-admin/internal/lib/service/hrm/vacation"
 	"srmt-admin/internal/lib/service/metrics"
 	"srmt-admin/internal/lib/service/reservoir"
+	reservoirhourly "srmt-admin/internal/lib/service/reservoir-hourly"
 	"srmt-admin/internal/storage/minio"
 	mngRepo "srmt-admin/internal/storage/mongo"
 	redisRepo "srmt-admin/internal/storage/redis"
@@ -72,6 +73,7 @@ type AppContainer struct {
 	HRMCompetencyService   *hrmcompetency.Service
 	HRMPerformanceService  *hrmperformance.Service
 	HRMAnalyticsService    *hrmanalytics.Service
+	ReservoirHourlyService *reservoirhourly.Service
 }
 
 // ProvideAppContainer creates the application container
@@ -103,6 +105,7 @@ func ProvideAppContainer(
 	hrmCompetencySvc *hrmcompetency.Service,
 	hrmPerformanceSvc *hrmperformance.Service,
 	hrmAnalyticsSvc *hrmanalytics.Service,
+	reservoirHourlySvc *reservoirhourly.Service,
 ) *AppContainer {
 	return &AppContainer{
 		Router:                 r,
@@ -132,6 +135,7 @@ func ProvideAppContainer(
 		HRMCompetencyService:   hrmCompetencySvc,
 		HRMPerformanceService:  hrmPerformanceSvc,
 		HRMAnalyticsService:    hrmAnalyticsSvc,
+		ReservoirHourlyService: reservoirHourlySvc,
 	}
 }
 
@@ -162,6 +166,7 @@ func ProvideRouter(
 	hrmCompetencySvc *hrmcompetency.Service,
 	hrmPerformanceSvc *hrmperformance.Service,
 	hrmAnalyticsSvc *hrmanalytics.Service,
+	reservoirHourlySvc *reservoirhourly.Service,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -188,6 +193,7 @@ func ProvideRouter(
 		ExcelTemplatePath:          cfg.TemplatePath + "/res-summary.xlsx",
 		DischargeExcelTemplatePath: cfg.TemplatePath + "/discharge.xlsx",
 		SCExcelTemplatePath:        cfg.TemplatePath + "/sc.xlsx",
+		HourlyExcelTemplatePath:    cfg.TemplatePath + "/res-summary-hourly.xlsx",
 		AlarmProcessor:             alarmProcessor,
 		HRMPersonnelService:        hrmPersonnelSvc,
 		HRMVacationService:         hrmVacationSvc,
@@ -202,6 +208,7 @@ func ProvideRouter(
 		HRMCompetencyService:       hrmCompetencySvc,
 		HRMPerformanceService:      hrmPerformanceSvc,
 		HRMAnalyticsService:        hrmAnalyticsSvc,
+		ReservoirHourlyService:     reservoirHourlySvc,
 	}
 
 	router.SetupRoutes(r, deps)
