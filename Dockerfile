@@ -45,6 +45,7 @@ RUN apk upgrade --no-cache && \
     apk --no-cache add ca-certificates tzdata libreoffice \
     font-dejavu font-liberation font-noto \
     msttcorefonts-installer fontconfig && \
+    apk add --no-cache --repository=https://dl-cdn.alpinelinux.org/alpine/edge/main libpq && \
     update-ms-fonts && \
     fc-cache -f
 
