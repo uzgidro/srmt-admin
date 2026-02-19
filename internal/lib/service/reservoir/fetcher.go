@@ -375,6 +375,102 @@ func (f *Fetcher) extractDataWithTimestamp(item *APIResponseItem) *dto.Reservoir
 	return data
 }
 
+// FetchLast12 fetches the last 12 records per reservoir from all configured sources
+func (f *Fetcher) FetchLast12(ctx context.Context, date string) (map[int64][]*dto.ReservoirData, error) {
+	const op = "reservoir.fetcher.FetchLast12"
+
+	result := make(map[int64][]*dto.ReservoirData)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
+	for _, source := range f.config.Sources {
+		wg.Add(1)
+		go func(src config.ReservoirSource) {
+			defer wg.Done()
+
+			data, err := f.fetchSourceRange(ctx, src.APIID, date)
+			if err != nil {
+				f.log.Error("failed to fetch last 12 reservoir data",
+					slog.String("op", op),
+					slog.Int("api_id", src.APIID),
+					slog.Any("error", err))
+				return
+			}
+
+			items := f.filterLast12(data, date)
+
+			mu.Lock()
+			result[src.OrganizationID] = items
+			mu.Unlock()
+		}(source)
+	}
+
+	wg.Wait()
+	return result, nil
+}
+
+// filterLast12 filters API response data and returns the last 12 data points
+func (f *Fetcher) filterLast12(data *APIResponse, givenDate string) []*dto.ReservoirData {
+	if data == nil || len(data.Items) == 0 {
+		return []*dto.ReservoirData{}
+	}
+
+	// Parse the given date in local timezone
+	parsedDate, err := time.ParseInLocation("2006-01-02", givenDate, time.Local)
+	if err != nil {
+		f.log.Error("failed to parse given date", slog.String("date", givenDate), slog.Any("error", err))
+		return []*dto.ReservoirData{}
+	}
+
+	// Calculate cutoff time: given_date + 1 day at 00:00
+	cutoffTime := parsedDate.AddDate(0, 0, 1)
+
+	// Find cutoff index
+	cutoffIndex := -1
+	for i, item := range data.Items {
+		itemDate, err := time.ParseInLocation("2006-01-02", item.Date, time.Local)
+		if err != nil {
+			f.log.Error("failed to parse item date", slog.String("date", item.Date), slog.Any("error", err))
+			continue
+		}
+
+		itemTimestamp := time.Date(
+			itemDate.Year(), itemDate.Month(), itemDate.Day(),
+			item.Time, 0, 0, 0, time.Local,
+		)
+
+		if itemTimestamp.Equal(cutoffTime) {
+			cutoffIndex = i
+			break
+		}
+	}
+
+	// Slice the items if cutoff was found
+	items := data.Items
+	if cutoffIndex != -1 {
+		items = items[:cutoffIndex+1]
+	}
+
+	// Take the last 12 elements (no hour%6 filtering unlike filterHourlyData)
+	startIndex := 0
+	if len(items) > 12 {
+		startIndex = len(items) - 12
+	}
+	last12Items := items[startIndex:]
+
+	// Convert to ReservoirData array
+	result := make([]*dto.ReservoirData, 0, len(last12Items))
+	for i := range last12Items {
+		item := &last12Items[i]
+		reservoirData := f.extractDataWithTimestamp(item)
+		if reservoirData != nil {
+			result = append(result, reservoirData)
+		}
+	}
+
+	return result
+}
+
 // calculateMetrics calculates current and diff metrics from the API response
 // For today: Current is taken from the last (newest) element, Diff is calculated as (current - element at time==6)
 // For historical dates: Current is taken from element with time==6 (or last if 6 doesn't exist), Diff is not calculated

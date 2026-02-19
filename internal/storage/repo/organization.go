@@ -805,3 +805,36 @@ func (r *Repo) GetOrganizationsWithReservoir(ctx context.Context, orgIDs []int64
 
 	return result, nil
 }
+
+// GetOrganizationNamesByIDs returns a map of organization ID -> name for the given IDs
+func (r *Repo) GetOrganizationNamesByIDs(ctx context.Context, ids []int64) (map[int64]string, error) {
+	const op = "storage.repo.GetOrganizationNamesByIDs"
+
+	if len(ids) == 0 {
+		return map[int64]string{}, nil
+	}
+
+	const q = `SELECT id, name FROM organizations WHERE id = ANY($1)`
+
+	rows, err := r.db.QueryContext(ctx, q, pq.Array(ids))
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+	defer rows.Close()
+
+	result := make(map[int64]string, len(ids))
+	for rows.Next() {
+		var id int64
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, fmt.Errorf("%s: scan: %w", op, err)
+		}
+		result[id] = name
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: rows: %w", op, err)
+	}
+
+	return result, nil
+}
