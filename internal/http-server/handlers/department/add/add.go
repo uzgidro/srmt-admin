@@ -3,30 +3,26 @@ package add
 import (
 	"context"
 	"errors"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/render"
-	"github.com/go-playground/validator/v10"
 	"log/slog"
 	"net/http"
 	resp "srmt-admin/internal/lib/api/response"
+	"srmt-admin/internal/lib/dto"
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/storage"
-)
 
-type Request struct {
-	Name           string  `json:"name" validate:"required"`
-	Description    *string `json:"description,omitempty"`
-	OrganizationID int64   `json:"organization_id" validate:"required"`
-}
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/render"
+	"github.com/go-playground/validator/v10"
+)
 
 type Response struct {
 	resp.Response
 	ID int64 `json:"id"`
 }
 
-// DepartmentAdder - интерфейс, который должен реализовать репозиторий
+// DepartmentAdder - интерфейс, который должен реализовать репозиторий (Service)
 type DepartmentAdder interface {
-	AddDepartment(ctx context.Context, name string, description *string, orgID int64) (int64, error)
+	AddDepartment(ctx context.Context, req dto.AddDepartmentRequest) (int64, error)
 }
 
 func New(log *slog.Logger, adder DepartmentAdder) http.HandlerFunc {
@@ -34,7 +30,7 @@ func New(log *slog.Logger, adder DepartmentAdder) http.HandlerFunc {
 		const op = "handlers.department.add.New"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
 
-		var req Request
+		var req dto.AddDepartmentRequest
 		if err := render.DecodeJSON(r.Body, &req); err != nil {
 			log.Error("failed to decode request", sl.Err(err))
 			render.Status(r, http.StatusBadRequest)
@@ -51,7 +47,7 @@ func New(log *slog.Logger, adder DepartmentAdder) http.HandlerFunc {
 			return
 		}
 
-		id, err := adder.AddDepartment(r.Context(), req.Name, req.Description, req.OrganizationID)
+		id, err := adder.AddDepartment(r.Context(), req)
 		if err != nil {
 			if errors.Is(err, storage.ErrForeignKeyViolation) {
 				log.Warn("organization not found for department", "org_id", req.OrganizationID)

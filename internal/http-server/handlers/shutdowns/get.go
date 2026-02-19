@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"srmt-admin/internal/lib/api/formparser"
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/helpers"
 	"srmt-admin/internal/lib/logger/sl"
@@ -27,23 +28,23 @@ func Get(log *slog.Logger, getter shutdownGetter, minioRepo helpers.MinioURLGene
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
 
 		var day time.Time
-		dateStr := r.URL.Query().Get("date")
 
-		if dateStr == "" {
+		// Parse date using formparser with location support
+		dateVal, err := formparser.GetFormDateInLocation(r, "date", loc)
+		if err != nil {
+			log.Warn("invalid 'date' parameter", sl.Err(err))
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, resp.BadRequest("Invalid 'date' format, use YYYY-MM-DD"))
+			return
+		}
+
+		if dateVal == nil {
 			now := time.Now().In(loc)
 			// День начинается в 07:00 местного времени
 			day = time.Date(now.Year(), now.Month(), now.Day(), 7, 0, 0, 0, loc)
 		} else {
-			var err error
-			// Parse the date in the configured timezone
-			t, err := time.ParseInLocation(layout, dateStr, loc)
-			if err != nil {
-				log.Warn("invalid 'date' parameter", sl.Err(err))
-				render.Status(r, http.StatusBadRequest)
-				render.JSON(w, r, resp.BadRequest("Invalid 'date' format, use YYYY-MM-DD"))
-				return
-			}
 			// День начинается в 07:00 местного времени
+			t := *dateVal
 			day = time.Date(t.Year(), t.Month(), t.Day(), 7, 0, 0, 0, loc)
 		}
 

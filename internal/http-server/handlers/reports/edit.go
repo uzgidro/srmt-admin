@@ -194,12 +194,10 @@ func parseMultipartEditRequest(
 		req.Description = description
 	}
 
-	if documentDateStr := formparser.GetFormString(r, "document_date"); documentDateStr != nil {
-		documentDate, err := time.Parse("2006-01-02", *documentDateStr)
-		if err != nil {
-			return editRequest{}, nil, fmt.Errorf("invalid document_date format (use YYYY-MM-DD): %w", err)
-		}
-		req.DocumentDate = &documentDate
+	if documentDate, err := formparser.GetFormDate(r, "document_date"); err != nil {
+		return editRequest{}, nil, fmt.Errorf("invalid document_date: %w", err)
+	} else {
+		req.DocumentDate = documentDate
 	}
 
 	if typeID, err := formparser.GetFormInt64(r, "type_id"); err == nil && typeID != nil {
@@ -223,12 +221,10 @@ func parseMultipartEditRequest(
 		req.ParentDocumentID = parentDocumentID
 	}
 
-	if dueDateStr := formparser.GetFormString(r, "due_date"); dueDateStr != nil {
-		dueDate, err := time.Parse("2006-01-02", *dueDateStr)
-		if err != nil {
-			return editRequest{}, nil, fmt.Errorf("invalid due_date format (use YYYY-MM-DD): %w", err)
-		}
-		req.DueDate = &dueDate
+	if dueDate, err := formparser.GetFormDate(r, "due_date"); err != nil {
+		return editRequest{}, nil, fmt.Errorf("invalid due_date: %w", err)
+	} else {
+		req.DueDate = dueDate
 	}
 
 	targetDate := time.Now()

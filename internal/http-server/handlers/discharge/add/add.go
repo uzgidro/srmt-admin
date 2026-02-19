@@ -4,9 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/render"
-	"github.com/go-playground/validator/v10"
 	"log/slog"
 	"net/http"
 	"srmt-admin/internal/lib/api/formparser"
@@ -16,6 +13,10 @@ import (
 	"srmt-admin/internal/lib/service/fileupload"
 	"srmt-admin/internal/storage"
 	"time"
+
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/render"
+	"github.com/go-playground/validator/v10"
 )
 
 type Request struct {
@@ -170,15 +171,15 @@ func parseMultipartAddRequest(
 	}
 
 	// Parse started_at (required)
-	startedAt, err := formparser.GetFormTimeRequired(r, "started_at", time.RFC3339)
+	startedAt, err := formparser.GetFormDateTimeRequired(r, "started_at")
 	if err != nil {
-		return Request{}, nil, fmt.Errorf("invalid or missing started_at (use RFC3339 format): %w", err)
+		return Request{}, nil, fmt.Errorf("invalid or missing started_at: %w", err)
 	}
 
 	// Parse ended_at (optional)
-	endedAt, err := formparser.GetFormTime(r, "ended_at", time.RFC3339)
+	endedAt, err := formparser.GetFormDateTime(r, "ended_at")
 	if err != nil {
-		return Request{}, nil, fmt.Errorf("invalid ended_at format (use RFC3339): %w", err)
+		return Request{}, nil, fmt.Errorf("invalid ended_at format: %w", err)
 	}
 
 	// Parse flow_rate (required)

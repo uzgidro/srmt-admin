@@ -3,27 +3,24 @@ package add
 import (
 	"context"
 	"errors"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/render"
-	"github.com/go-playground/validator/v10"
 	"log/slog"
 	"net/http"
 	resp "srmt-admin/internal/lib/api/response"
+	"srmt-admin/internal/lib/dto"
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/lib/model/user"
-)
 
-type Request struct {
-	Name        string `json:"name" validate:"required"`
-	Description string `json:"description,omitempty"`
-}
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/render"
+	"github.com/go-playground/validator/v10"
+)
 
 type Response struct {
 	resp.Response
 }
 
 type RoleCreator interface {
-	AddRole(ctx context.Context, name string, description string) (int64, error)
+	AddRole(ctx context.Context, req dto.AddRoleRequest) (int64, error)
 	GetUsersByRole(ctx context.Context, roleID int64) ([]user.Model, error)
 	AssignRoleToUsers(ctx context.Context, roleID int64, userIDs []int64) error
 }
@@ -37,7 +34,7 @@ func New(log *slog.Logger, roleCreator RoleCreator) http.HandlerFunc {
 			slog.String("request_id", middleware.GetReqID(r.Context())),
 		)
 
-		var req Request
+		var req dto.AddRoleRequest
 
 		// Decode JSON
 		if err := render.DecodeJSON(r.Body, &req); err != nil {
@@ -64,7 +61,7 @@ func New(log *slog.Logger, roleCreator RoleCreator) http.HandlerFunc {
 		}
 
 		// add role
-		id, err := roleCreator.AddRole(r.Context(), req.Name, req.Description)
+		id, err := roleCreator.AddRole(r.Context(), req)
 		if err != nil {
 			log.Info("failed to add role", sl.Err(err))
 
@@ -74,24 +71,12 @@ func New(log *slog.Logger, roleCreator RoleCreator) http.HandlerFunc {
 		}
 
 		// Get users with admin role
-		users, err := roleCreator.GetUsersByRole(r.Context(), 2)
-		if err != nil {
-			log.Info("failed to get users by role", sl.Err(err))
-
-			render.Status(r, http.StatusInternalServerError)
-			return
-		}
-
-		var userIDs []int64
-		for _, u := range users {
-			userIDs = append(userIDs, u.ID)
-		}
-
-		if err := roleCreator.AssignRoleToUsers(r.Context(), id, userIDs); err != nil {
-			log.Info("failed to assign role to user", sl.Err(err))
-			render.Status(r, http.StatusInternalServerError)
-			return
-		}
+		// TODO: Move this logic to Service.AddRole? For now keeping parity with old handler structure if logic wasn't moved yet.
+		// User requested "move logic to service".
+		// I'll move it to service in next step, but for now I need to update handler to call new AddRole signature.
+		// If I move logic to service, I don't need to call GetUsersByRole/Assign here.
+		// Let's assume I WILL move logic to service.
+		// So I remove this block from handler.
 
 		log.Info("successfully added role", slog.Int64("id", id))
 

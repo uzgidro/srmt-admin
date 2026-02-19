@@ -3,21 +3,17 @@ package add
 import (
 	"context"
 	"errors"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/render"
-	"github.com/go-playground/validator/v10"
 	"log/slog"
 	"net/http"
 	resp "srmt-admin/internal/lib/api/response"
+	"srmt-admin/internal/lib/dto"
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/storage"
-)
 
-// Request определяет структуру для входящего JSON-запроса.
-type Request struct {
-	Name        string  `json:"name" validate:"required"`
-	Description *string `json:"description,omitempty"`
-}
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/render"
+	"github.com/go-playground/validator/v10"
+)
 
 // Response определяет структуру для успешного ответа.
 type Response struct {
@@ -27,7 +23,7 @@ type Response struct {
 
 // PositionAdder определяет интерфейс для добавления должности.
 type PositionAdder interface {
-	AddPosition(ctx context.Context, name string, description *string) (int64, error)
+	AddPosition(ctx context.Context, req dto.AddPositionRequest) (int64, error)
 }
 
 func New(log *slog.Logger, adder PositionAdder) http.HandlerFunc {
@@ -35,7 +31,7 @@ func New(log *slog.Logger, adder PositionAdder) http.HandlerFunc {
 		const op = "handlers.position.add.New"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
 
-		var req Request
+		var req dto.AddPositionRequest
 		if err := render.DecodeJSON(r.Body, &req); err != nil {
 			log.Error("failed to decode request", sl.Err(err))
 			render.Status(r, http.StatusBadRequest)
@@ -52,12 +48,12 @@ func New(log *slog.Logger, adder PositionAdder) http.HandlerFunc {
 			return
 		}
 
-		id, err := adder.AddPosition(r.Context(), req.Name, req.Description)
+		id, err := adder.AddPosition(r.Context(), req)
 		if err != nil {
 			if errors.Is(err, storage.ErrDuplicate) {
 				log.Warn("position name duplicate", "name", req.Name)
-				render.Status(r, http.StatusBadRequest)
-				render.JSON(w, r, resp.BadRequest("Position with this name already exists"))
+				render.Status(r, http.StatusConflict)
+				render.JSON(w, r, resp.Conflict("Position with this name already exists"))
 				return
 			}
 			log.Error("failed to add position", sl.Err(err))

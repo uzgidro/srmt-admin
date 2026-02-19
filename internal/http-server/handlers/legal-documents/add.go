@@ -183,13 +183,9 @@ func parseMultipartAddRequest(
 	number := formparser.GetFormString(r, "number")
 
 	// Parse document_date (required)
-	documentDateStr, err := formparser.GetFormStringRequired(r, "document_date")
+	documentDate, err := formparser.GetFormDateRequired(r, "document_date")
 	if err != nil {
-		return addRequest{}, nil, fmt.Errorf("missing document_date: %w", err)
-	}
-	documentDate, err := time.Parse("2006-01-02", documentDateStr)
-	if err != nil {
-		return addRequest{}, nil, fmt.Errorf("invalid document_date format (use YYYY-MM-DD): %w", err)
+		return addRequest{}, nil, err
 	}
 
 	// Parse type_id (required)

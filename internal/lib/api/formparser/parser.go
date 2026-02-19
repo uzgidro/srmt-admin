@@ -1,11 +1,15 @@
 package formparser
 
 import (
+	"errors"
 	"fmt"
+	"mime/multipart"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/go-chi/chi/v5"
 )
 
 // GetFormInt64 safely parses int64 from form field
@@ -192,4 +196,67 @@ func IsMultipartForm(r *http.Request) bool {
 func IsJSONRequest(r *http.Request) bool {
 	contentType := r.Header.Get("Content-Type")
 	return strings.HasPrefix(contentType, "application/json")
+}
+
+// GetFormInt64Slice parses comma-separated int64 list from form field
+func GetFormInt64Slice(r *http.Request, key string) ([]int64, error) {
+	return GetFormFileIDs(r, key) // Re-use existing logic as it does exactly this
+}
+
+// GetFormDate parses date in "2006-01-02" format
+func GetFormDate(r *http.Request, key string) (*time.Time, error) {
+	return GetFormTime(r, key, time.DateOnly)
+}
+
+// GetFormDateRequired parses required date in "2006-01-02" format
+func GetFormDateRequired(r *http.Request, key string) (time.Time, error) {
+	return GetFormTimeRequired(r, key, time.DateOnly)
+}
+
+// GetFormDateTime parses datetime in RFC3339 format
+func GetFormDateTime(r *http.Request, key string) (*time.Time, error) {
+	return GetFormTime(r, key, time.RFC3339)
+}
+
+// GetFormDateTimeRequired parses required datetime in RFC3339 format
+func GetFormDateTimeRequired(r *http.Request, key string) (time.Time, error) {
+	return GetFormTimeRequired(r, key, time.RFC3339)
+}
+
+// GetFormFile retrieves a file from multipart form, validates existence
+// Returns nil, nil if file is optional and missing (http.ErrMissingFile)
+func GetFormFile(r *http.Request, key string) (*multipart.FileHeader, error) {
+	_, fileHeader, err := r.FormFile(key)
+	if err != nil {
+		if errors.Is(err, http.ErrMissingFile) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get file %s: %w", key, err)
+	}
+	return fileHeader, nil
+}
+
+// GetURLParamInt64 parses int64 from chi URL param
+func GetURLParamInt64(r *http.Request, key string) (int64, error) {
+	valStr := chi.URLParam(r, key)
+	if valStr == "" {
+		return 0, fmt.Errorf("url param %s is required", key)
+	}
+	val, err := strconv.ParseInt(valStr, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s param: %w", key, err)
+	}
+	return val, nil
+}
+
+func GetFormDateInLocation(r *http.Request, key string, loc *time.Location) (*time.Time, error) {
+	val := r.FormValue(key)
+	if val == "" {
+		return nil, nil
+	}
+	t, err := time.ParseInLocation("2006-01-02", val, loc)
+	if err != nil {
+		return nil, fmt.Errorf("invalid %s param: %w", key, err)
+	}
+	return &t, nil
 }

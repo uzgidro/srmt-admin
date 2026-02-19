@@ -5,11 +5,13 @@ import (
 	"log/slog"
 	"mime/multipart"
 	"net/http"
+	"strconv"
+	"strings"
+
+	"srmt-admin/internal/lib/api/formparser"
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/dto"
 	"srmt-admin/internal/lib/logger/sl"
-	"strconv"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -36,16 +38,12 @@ func New(log *slog.Logger, updater UserUpdater) http.HandlerFunc {
 			return
 		}
 
-		contentType := r.Header.Get("Content-Type")
-		isMultipart := strings.Contains(contentType, "multipart/form-data")
-
 		var req dto.UpdateUserRequest
 		var iconFile *multipart.FileHeader
 
-		if isMultipart {
+		if formparser.IsMultipartForm(r) {
 			// Parse multipart form
 			const maxUploadSize = 10 * 1024 * 1024 // 10 MB for icon
-			r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
 			if err := r.ParseMultipartForm(maxUploadSize); err != nil {
 				log.Error("failed to parse multipart form", sl.Err(err))
 				render.Status(r, http.StatusBadRequest)
@@ -53,13 +51,10 @@ func New(log *slog.Logger, updater UserUpdater) http.HandlerFunc {
 				return
 			}
 
-			// Parse form fields (all optional for PATCH)
-			if login := r.FormValue("login"); login != "" {
-				req.Login = &login
-			}
-			if password := r.FormValue("password"); password != "" {
-				req.Password = &password
-			}
+			// Parse form fields
+			req.Login = formparser.GetFormString(r, "login")
+			req.Password = formparser.GetFormString(r, "password")
+
 			if isActiveStr := r.FormValue("is_active"); isActiveStr != "" {
 				isActive, err := strconv.ParseBool(isActiveStr)
 				if err != nil {
@@ -72,71 +67,39 @@ func New(log *slog.Logger, updater UserUpdater) http.HandlerFunc {
 			}
 
 			// Parse role_ids
-			if rolesStr := r.FormValue("role_ids"); rolesStr != "" {
-				var roles []int64
-				rolesStrs := strings.Split(rolesStr, ",")
-				for _, roleStr := range rolesStrs {
-					roleID, err := strconv.ParseInt(strings.TrimSpace(roleStr), 10, 64)
-					if err != nil {
-						log.Error("invalid role_id", sl.Err(err), "value", roleStr)
-						render.Status(r, http.StatusBadRequest)
-						render.JSON(w, r, resp.BadRequest("Invalid role_ids format"))
-						return
-					}
-					roles = append(roles, roleID)
+			if formparser.HasFormField(r, "role_ids") {
+				roles, err := formparser.GetFormInt64Slice(r, "role_ids")
+				if err != nil {
+					log.Error("invalid role_ids", sl.Err(err))
+					render.Status(r, http.StatusBadRequest)
+					render.JSON(w, r, resp.BadRequest("Invalid role_ids format"))
+					return
 				}
 				req.RoleIDs = &roles
 			}
 
 			// Get icon file
-			// We don't process it here, just pass the header to service
-			var err error
-			_, iconFile, err = r.FormFile("icon")
+			iconFile, err = formparser.GetFormFile(r, "icon")
 			if err != nil {
-				if err != http.ErrMissingFile {
-					log.Error("failed to get icon file", sl.Err(err))
-					render.Status(r, http.StatusBadRequest)
-					render.JSON(w, r, resp.BadRequest("Invalid icon file"))
-					return
-				}
-				iconFile = nil // No file
+				log.Error("failed to get icon file", sl.Err(err))
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest(err.Error()))
+				return
 			}
-
 		} else {
 			// Parse JSON
-			// Temporary struct to match JSON payload (role_ids omitempty)
-			type jsonRequest struct {
-				Login    *string `json:"login,omitempty"`
-				Password *string `json:"password,omitempty"`
-				IsActive *bool   `json:"is_active,omitempty"`
-				RoleIDs  []int64 `json:"role_ids,omitempty"`
-			}
-			var jReq jsonRequest
-			if err := render.DecodeJSON(r.Body, &jReq); err != nil {
+			// Reuse DTO directly? dto.UpdateUserRequest matches JSON structure exactly?
+			// `type UpdateUserRequest struct { Login *string ... RoleIDs *[]int64 ... }`
+			// This matches JSON structure IF `role_ids` is passed as array.
+			if err := render.DecodeJSON(r.Body, &req); err != nil {
 				log.Error("failed to decode request", sl.Err(err))
 				render.Status(r, http.StatusBadRequest)
 				render.JSON(w, r, resp.BadRequest("Invalid request format"))
 				return
 			}
-
-			req.Login = jReq.Login
-			req.Password = jReq.Password
-			req.IsActive = jReq.IsActive
-			// Check if RoleIDs was present (len 0 can mean clear, but nil means no change)
-			// Wait, jsonRequest.RoleIDs is a slice. If key missing -> nil. If key present "role_ids": [] -> empty slice.
-			// Perfect, using pointer in DTO.
-			if jReq.RoleIDs != nil {
-				req.RoleIDs = &jReq.RoleIDs
-			}
 		}
 
-		// Validation (Basic constraints can be checked here or in service, but handlers usually validate format)
-		// DTO `UpdateUserRequest` doesn't have tags? Use `Request` struct if needed for validation tags.
-		// For now, minimal validation logic as fields are pointers (optional).
-		// If we want validation tags, we should have used a dedicated Request struct or tagged DTO.
-		// Existing code used `Request` struct with tags.
-		// Let's assume validation is minimal or service handles business validation.
-		// The `min=8` for password was in handler.
+		// Validation
 		if req.Password != nil && len(*req.Password) < 8 {
 			render.Status(r, http.StatusBadRequest)
 			render.JSON(w, r, resp.BadRequest("Password must be at least 8 characters"))
@@ -160,7 +123,7 @@ func New(log *slog.Logger, updater UserUpdater) http.HandlerFunc {
 			if strings.Contains(err.Error(), "duplicate") {
 				log.Warn("duplicate login", slog.Int64("id", id))
 				render.Status(r, http.StatusConflict)
-				render.JSON(w, r, resp.BadRequest("Login already exists"))
+				render.JSON(w, r, resp.Conflict("Login already exists"))
 				return
 			}
 			if strings.Contains(err.Error(), "invalid role_id") {

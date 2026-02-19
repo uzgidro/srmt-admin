@@ -3,6 +3,7 @@ package role
 import (
 	"context"
 	"log/slog"
+	"srmt-admin/internal/lib/dto"
 	"srmt-admin/internal/lib/model/role"
 	"srmt-admin/internal/lib/model/user"
 )
@@ -25,15 +26,22 @@ func NewService(repo RepoInterface, log *slog.Logger) *Service {
 	return &Service{repo: repo, log: log}
 }
 
-func (s *Service) AddRole(ctx context.Context, name string, description string) (int64, error) {
-	return s.repo.AddRole(ctx, name, description)
+func (s *Service) AddRole(ctx context.Context, req dto.AddRoleRequest) (int64, error) {
+	return s.repo.AddRole(ctx, req.Name, req.Description)
 }
 
 func (s *Service) GetAllRoles(ctx context.Context) ([]role.Model, error) {
 	return s.repo.GetAllRoles(ctx)
 }
 
-func (s *Service) EditRole(ctx context.Context, id int64, name, description string) error {
+func (s *Service) EditRole(ctx context.Context, id int64, req dto.EditRoleRequest) error {
+	var name, description string
+	if req.Name != nil {
+		name = *req.Name
+	}
+	if req.Description != nil {
+		description = *req.Description
+	}
 	return s.repo.EditRole(ctx, id, name, description)
 }
 

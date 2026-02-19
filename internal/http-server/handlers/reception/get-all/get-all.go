@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"srmt-admin/internal/lib/api/formparser"
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/dto"
 	"srmt-admin/internal/lib/logger/sl"
@@ -33,38 +34,37 @@ func New(log *slog.Logger, getter receptionGetter, loc *time.Location) http.Hand
 		filters := dto.GetAllReceptionsFilters{}
 
 		// Parse date filter (start_date) - using local timezone
-		if startDateStr := r.URL.Query().Get("start_date"); startDateStr != "" {
-			startDate, err := time.ParseInLocation(layout, startDateStr, loc)
-			if err != nil {
-				log.Error("invalid start_date format", sl.Err(err))
-				render.Status(r, http.StatusBadRequest)
-				render.JSON(w, r, resp.BadRequest(fmt.Sprintf("Invalid start_date format, use YYYY-MM-DD: %v", err)))
-				return
+		if startDateVal, err := formparser.GetFormDateInLocation(r, "start_date", loc); err != nil {
+			log.Warn("invalid start_date format", sl.Err(err))
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, resp.BadRequest(fmt.Sprintf("Invalid start_date format, use YYYY-MM-DD: %v", err)))
+			return
+		} else {
+			filters.StartDate = startDateVal
+			if startDateVal != nil {
+				log.Info("parsed start_date", "date", startDateVal.Format(layout))
 			}
-			filters.StartDate = &startDate
-			log.Info("parsed start_date", "date", startDateStr, "timezone", loc.String())
 		}
 
 		// Parse date filter (end_date) - using local timezone
-		if endDateStr := r.URL.Query().Get("end_date"); endDateStr != "" {
-			endDate, err := time.ParseInLocation(layout, endDateStr, loc)
-			if err != nil {
-				log.Error("invalid end_date format", sl.Err(err))
-				render.Status(r, http.StatusBadRequest)
-				render.JSON(w, r, resp.BadRequest(fmt.Sprintf("Invalid end_date format, use YYYY-MM-DD: %v", err)))
-				return
-			}
+		if endDateVal, err := formparser.GetFormDateInLocation(r, "end_date", loc); err != nil {
+			log.Warn("invalid end_date format", sl.Err(err))
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, resp.BadRequest(fmt.Sprintf("Invalid end_date format, use YYYY-MM-DD: %v", err)))
+			return
+		} else if endDateVal != nil {
 			// Set to end of day in local timezone
-			endDate = endDate.Add(23*time.Hour + 59*time.Minute + 59*time.Second)
+			endDate := endDateVal.Add(23*time.Hour + 59*time.Minute + 59*time.Second)
 			filters.EndDate = &endDate
-			log.Info("parsed end_date", "date", endDateStr, "timezone", loc.String())
+			log.Info("parsed end_date", "date", endDateVal.Format(layout))
 		}
 
 		// Parse status filter
-		if statusStr := r.URL.Query().Get("status"); statusStr != "" {
+		if statusVal := formparser.GetFormString(r, "status"); statusVal != nil && *statusVal != "" {
+			statusStr := *statusVal
 			// Validate status value
 			if statusStr != "default" && statusStr != "true" && statusStr != "false" {
-				log.Error("invalid status value", slog.String("status", statusStr))
+				log.Warn("invalid status value", slog.String("status", statusStr))
 				render.Status(r, http.StatusBadRequest)
 				render.JSON(w, r, resp.BadRequest("Invalid status, must be 'default', 'true', or 'false'"))
 				return

@@ -14,10 +14,8 @@ import (
 	"srmt-admin/internal/lib/service/auth"
 	"srmt-admin/internal/lib/service/fileupload"
 	"srmt-admin/internal/storage"
-	"strconv"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
 )
@@ -57,8 +55,7 @@ func New(log *slog.Logger, editor eventEditor, uploader fileupload.FileUploader,
 		)
 
 		// 1. Get event ID from URL
-		idStr := chi.URLParam(r, "id")
-		eventID, err := strconv.ParseInt(idStr, 10, 64)
+		eventID, err := formparser.GetURLParamInt64(r, "id")
 		if err != nil {
 			log.Error("invalid event ID", sl.Err(err))
 			render.Status(r, http.StatusBadRequest)
@@ -222,9 +219,9 @@ func parseMultipartEditRequest(
 	description := formparser.GetFormString(r, "description")
 	location := formparser.GetFormString(r, "location")
 
-	eventDate, err := formparser.GetFormTime(r, "event_date", time.RFC3339)
+	eventDate, err := formparser.GetFormDateTime(r, "event_date")
 	if err != nil {
-		return editRequest{}, nil, fmt.Errorf("invalid event_date format (use RFC3339): %w", err)
+		return editRequest{}, nil, fmt.Errorf("invalid event_date: %w", err)
 	}
 
 	responsibleContactID, err := formparser.GetFormInt64(r, "responsible_contact_id")
@@ -234,21 +231,19 @@ func parseMultipartEditRequest(
 
 	// Parse event_status_id (optional)
 	var eventStatusID *int
-	if eventStatusIDStr := r.FormValue("event_status_id"); eventStatusIDStr != "" {
-		statusID, err := strconv.Atoi(eventStatusIDStr)
-		if err != nil {
-			return editRequest{}, nil, fmt.Errorf("invalid event_status_id: %w", err)
-		}
+	if eventStatusIDInt64, err := formparser.GetFormInt64(r, "event_status_id"); err != nil {
+		return editRequest{}, nil, fmt.Errorf("invalid event_status_id: %w", err)
+	} else if eventStatusIDInt64 != nil {
+		statusID := int(*eventStatusIDInt64)
 		eventStatusID = &statusID
 	}
 
 	// Parse event_type_id (optional)
 	var eventTypeID *int
-	if eventTypeIDStr := r.FormValue("event_type_id"); eventTypeIDStr != "" {
-		typeID, err := strconv.Atoi(eventTypeIDStr)
-		if err != nil {
-			return editRequest{}, nil, fmt.Errorf("invalid event_type_id: %w", err)
-		}
+	if eventTypeIDInt64, err := formparser.GetFormInt64(r, "event_type_id"); err != nil {
+		return editRequest{}, nil, fmt.Errorf("invalid event_type_id: %w", err)
+	} else if eventTypeIDInt64 != nil {
+		typeID := int(*eventTypeIDInt64)
 		eventTypeID = &typeID
 	}
 

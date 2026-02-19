@@ -5,15 +5,13 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"strconv"
-
+	"srmt-admin/internal/lib/api/formparser"
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/helpers"
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/lib/model/report"
 	"srmt-admin/internal/storage"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
 )
@@ -27,8 +25,7 @@ func GetByID(log *slog.Logger, getter reportByIDGetter, minioRepo helpers.MinioU
 		const op = "handlers.reports.get-by-id"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
 
-		idStr := chi.URLParam(r, "id")
-		id, err := strconv.ParseInt(idStr, 10, 64)
+		id, err := formparser.GetURLParamInt64(r, "id")
 		if err != nil {
 			log.Warn("invalid 'id' parameter", sl.Err(err))
 			render.Status(r, http.StatusBadRequest)

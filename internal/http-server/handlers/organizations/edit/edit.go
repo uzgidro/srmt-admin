@@ -3,25 +3,22 @@ package edit
 import (
 	"context"
 	"errors"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/render"
 	"log/slog"
 	"net/http"
 	resp "srmt-admin/internal/lib/api/response"
+	"srmt-admin/internal/lib/dto"
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/storage"
 	"strconv"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/render"
+	"github.com/go-playground/validator/v10"
 )
 
-type Request struct {
-	Name                 *string `json:"name,omitempty"`
-	ParentOrganizationID **int64 `json:"parent_organization_id,omitempty"`
-	TypeIDs              []int64 `json:"type_ids,omitempty"`
-}
-
 type OrganizationEditor interface {
-	EditOrganization(ctx context.Context, id int64, name *string, parentID **int64, typeIDs []int64) error
+	EditOrganization(ctx context.Context, id int64, req dto.EditOrganizationRequest) error
 }
 
 func New(log *slog.Logger, editor OrganizationEditor) http.HandlerFunc {
@@ -37,7 +34,7 @@ func New(log *slog.Logger, editor OrganizationEditor) http.HandlerFunc {
 			return
 		}
 
-		var req Request
+		var req dto.EditOrganizationRequest
 		if err := render.DecodeJSON(r.Body, &req); err != nil {
 			log.Error("failed to decode request body", sl.Err(err))
 			render.Status(r, http.StatusBadRequest)
@@ -45,7 +42,16 @@ func New(log *slog.Logger, editor OrganizationEditor) http.HandlerFunc {
 			return
 		}
 
-		err = editor.EditOrganization(r.Context(), orgID, req.Name, req.ParentOrganizationID, req.TypeIDs)
+		if err := validator.New().Struct(req); err != nil {
+			var validationErrors validator.ValidationErrors
+			errors.As(err, &validationErrors)
+			log.Error("validation failed", sl.Err(err))
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, resp.ValidationErrors(validationErrors))
+			return
+		}
+
+		err = editor.EditOrganization(r.Context(), orgID, req)
 		if err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
 				log.Warn("organization not found", "id", orgID)

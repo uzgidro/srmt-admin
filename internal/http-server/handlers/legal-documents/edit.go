@@ -190,13 +190,11 @@ func parseMultipartEditRequest(
 	number := formparser.GetFormString(r, "number")
 
 	var documentDate *time.Time
-	documentDateStr := formparser.GetFormString(r, "document_date")
-	if documentDateStr != nil {
-		parsed, err := time.Parse("2006-01-02", *documentDateStr)
-		if err != nil {
-			return editRequest{}, nil, fmt.Errorf("invalid document_date format (use YYYY-MM-DD): %w", err)
-		}
-		documentDate = &parsed
+	// Parse document_date if present
+	if parsed, err := formparser.GetFormDate(r, "document_date"); err != nil {
+		return editRequest{}, nil, fmt.Errorf("invalid document_date: %w", err)
+	} else {
+		documentDate = parsed
 	}
 
 	var typeID *int

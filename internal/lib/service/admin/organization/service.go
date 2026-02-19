@@ -46,8 +46,8 @@ func (s *Service) AddOrganization(ctx context.Context, req dto.AddOrganizationRe
 	return s.repo.AddOrganization(ctx, req.Name, req.ParentOrganizationID, req.TypeIDs)
 }
 
-func (s *Service) EditOrganization(ctx context.Context, id int64, name *string, parentID **int64, typeIDs []int64) error {
-	return s.repo.EditOrganization(ctx, id, name, parentID, typeIDs)
+func (s *Service) EditOrganization(ctx context.Context, id int64, req dto.EditOrganizationRequest) error {
+	return s.repo.EditOrganization(ctx, id, req.Name, req.ParentOrganizationID, req.TypeIDs)
 }
 
 func (s *Service) DeleteOrganization(ctx context.Context, id int64) error {

@@ -2,27 +2,26 @@ package edit
 
 import (
 	"context"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/render"
+	"errors"
 	"log/slog"
 	"net/http"
 	resp "srmt-admin/internal/lib/api/response"
+	"srmt-admin/internal/lib/dto"
 	"srmt-admin/internal/lib/logger/sl"
 	"strconv"
-)
 
-type Request struct {
-	Name        *string `json:"name,omitempty"`
-	Description *string `json:"description,omitempty"`
-}
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/render"
+	"github.com/go-playground/validator/v10"
+)
 
 type Response struct {
 	resp.Response
 }
 
 type RoleEditor interface {
-	EditRole(ctx context.Context, id int64, name, description string) error
+	EditRole(ctx context.Context, id int64, req dto.EditRoleRequest) error
 }
 
 func New(log *slog.Logger, editor RoleEditor) http.HandlerFunc {
@@ -42,7 +41,7 @@ func New(log *slog.Logger, editor RoleEditor) http.HandlerFunc {
 			return
 		}
 
-		var req Request
+		var req dto.EditRoleRequest
 
 		// Decode JSON
 		if err := render.DecodeJSON(r.Body, &req); err != nil {
@@ -55,26 +54,32 @@ func New(log *slog.Logger, editor RoleEditor) http.HandlerFunc {
 
 		log.Info("request parsed", slog.Any("req", req))
 
-		var newName, newDescription string
-		if req.Name != nil {
-			newName = *req.Name
-		}
-		if req.Description != nil {
-			newDescription = *req.Description
+		// Validate fields
+		if err := validator.New().Struct(req); err != nil {
+			var validationErrors validator.ValidationErrors
+			errors.As(err, &validationErrors)
+
+			log.Error("failed to validate request", sl.Err(err))
+
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, resp.BadRequest("failed to validate request"))
+
+			return
 		}
 
 		// edit role
-		err = editor.EditRole(r.Context(), roleID, newName, newDescription)
+		err = editor.EditRole(r.Context(), roleID, req)
 		if err != nil {
 			log.Info("failed to edit role", sl.Err(err))
 
 			render.Status(r, http.StatusInternalServerError)
-			render.JSON(w, r, resp.InternalServerError("failed to add role"))
+			render.JSON(w, r, resp.InternalServerError("failed to edit role"))
 			return
 		}
 
 		log.Info("role successfully edited", slog.Int64("id", roleID))
 
 		render.Status(r, http.StatusOK)
+		render.JSON(w, r, resp.OK())
 	}
 }

@@ -81,8 +81,26 @@ func ProcessFormFiles(
 
 	// Get files from form
 	files := r.MultipartForm.File[FormFieldFiles]
+
+	// Create a new op for the delegate
+	// Actually we can just call ProcessFileHeaders
+	return ProcessFileHeaders(ctx, log, uploader, saver, categoryGetter, files, categoryName, uploadDate)
+}
+
+// ProcessFileHeaders handles file uploads from slice of FileHeader
+func ProcessFileHeaders(
+	ctx context.Context,
+	log *slog.Logger,
+	uploader FileUploader,
+	saver FileMetaSaver,
+	categoryGetter CategoryGetter,
+	files []*multipart.FileHeader,
+	categoryName string,
+	uploadDate time.Time,
+) (*UploadResult, error) {
+	const op = "fileupload.ProcessFileHeaders"
+
 	if len(files) == 0 {
-		// No files to upload, return empty result
 		return &UploadResult{
 			UploadedFiles: []UploadedFileInfo{},
 			FileIDs:       []int64{},

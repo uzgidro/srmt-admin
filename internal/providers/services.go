@@ -323,16 +323,16 @@ func ProvideInvestmentInvestmentService(pgRepo *repo.Repo, log *slog.Logger) *in
 
 // --- Operations services ---
 
-func ProvideOperationsIncidentService(pgRepo *repo.Repo, log *slog.Logger) *opsincident.Service {
-	return opsincident.NewService(pgRepo, log)
+func ProvideOperationsIncidentService(pgRepo *repo.Repo, minioRepo *minio.Repo, log *slog.Logger) *opsincident.Service {
+	return opsincident.NewService(pgRepo, minioRepo, log)
 }
 
-func ProvideOperationsShutdownService(pgRepo *repo.Repo, log *slog.Logger) *opsshutdown.Service {
-	return opsshutdown.NewService(pgRepo, log)
+func ProvideOperationsShutdownService(pgRepo *repo.Repo, minioRepo *minio.Repo, log *slog.Logger) *opsshutdown.Service {
+	return opsshutdown.NewService(pgRepo, minioRepo, log)
 }
 
-func ProvideOperationsVisitService(pgRepo *repo.Repo, log *slog.Logger) *opsvisit.Service {
-	return opsvisit.NewService(pgRepo, log)
+func ProvideOperationsVisitService(pgRepo *repo.Repo, minioRepo *minio.Repo, log *slog.Logger) *opsvisit.Service {
+	return opsvisit.NewService(pgRepo, minioRepo, log)
 }
 
 func ProvideOperationsDischargeService(pgRepo *repo.Repo, log *slog.Logger) *opsdischarge.Service {

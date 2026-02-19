@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	resp "srmt-admin/internal/lib/api/response"
+	"srmt-admin/internal/lib/dto"
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/lib/service/auth"
 	"srmt-admin/internal/storage"
@@ -16,11 +17,6 @@ import (
 	"github.com/go-chi/render"
 	"github.com/go-playground/validator/v10"
 )
-
-type Request struct {
-	Name     string `json:"name" validate:"required"`
-	Password string `json:"password" validate:"required,min=8"`
-}
 
 type Response struct {
 	resp.Response
@@ -40,7 +36,7 @@ func New(log *slog.Logger, authProvider *auth.Service) http.HandlerFunc {
 			slog.String("request_id", middleware.GetReqID(r.Context())),
 		)
 
-		var req Request
+		var req dto.LoginRequest
 
 		// Decode JSON
 		if err := render.DecodeJSON(r.Body, &req); err != nil {

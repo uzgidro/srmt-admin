@@ -4,9 +4,8 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
-	"strconv"
-	"time"
 
+	"srmt-admin/internal/lib/api/formparser"
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/dto"
 	"srmt-admin/internal/lib/helpers"
@@ -27,125 +26,104 @@ func GetAll(log *slog.Logger, getter reportGetter, minioRepo helpers.MinioURLGen
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
 
 		filters := dto.GetAllReportsFilters{}
-		q := r.URL.Query()
 
 		// Filter by type_id
-		if typeIDStr := q.Get("type_id"); typeIDStr != "" {
-			typeID, err := strconv.Atoi(typeIDStr)
-			if err != nil {
-				log.Warn("invalid 'type_id' parameter", sl.Err(err))
-				render.Status(r, http.StatusBadRequest)
-				render.JSON(w, r, resp.BadRequest("Invalid 'type_id' parameter"))
-				return
-			}
-			filters.TypeID = &typeID
+		if typeIDVal, err := formparser.GetFormInt64(r, "type_id"); err != nil {
+			log.Warn("invalid 'type_id' parameter", sl.Err(err))
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, resp.BadRequest("Invalid 'type_id' parameter"))
+			return
+		} else if typeIDVal != nil {
+			val := int(*typeIDVal)
+			filters.TypeID = &val
 		}
 
 		// Filter by status_id
-		if statusIDStr := q.Get("status_id"); statusIDStr != "" {
-			statusID, err := strconv.Atoi(statusIDStr)
-			if err != nil {
-				log.Warn("invalid 'status_id' parameter", sl.Err(err))
-				render.Status(r, http.StatusBadRequest)
-				render.JSON(w, r, resp.BadRequest("Invalid 'status_id' parameter"))
-				return
-			}
-			filters.StatusID = &statusID
+		if statusIDVal, err := formparser.GetFormInt64(r, "status_id"); err != nil {
+			log.Warn("invalid 'status_id' parameter", sl.Err(err))
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, resp.BadRequest("Invalid 'status_id' parameter"))
+			return
+		} else if statusIDVal != nil {
+			val := int(*statusIDVal)
+			filters.StatusID = &val
 		}
 
 		// Filter by organization_id
-		if orgIDStr := q.Get("organization_id"); orgIDStr != "" {
-			orgID, err := strconv.ParseInt(orgIDStr, 10, 64)
-			if err != nil {
-				log.Warn("invalid 'organization_id' parameter", sl.Err(err))
-				render.Status(r, http.StatusBadRequest)
-				render.JSON(w, r, resp.BadRequest("Invalid 'organization_id' parameter"))
-				return
-			}
-			filters.OrganizationID = &orgID
+		if orgIDVal, err := formparser.GetFormInt64(r, "organization_id"); err != nil {
+			log.Warn("invalid 'organization_id' parameter", sl.Err(err))
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, resp.BadRequest("Invalid 'organization_id' parameter"))
+			return
+		} else {
+			filters.OrganizationID = orgIDVal
 		}
 
 		// Filter by responsible_contact_id
-		if contactIDStr := q.Get("responsible_contact_id"); contactIDStr != "" {
-			contactID, err := strconv.ParseInt(contactIDStr, 10, 64)
-			if err != nil {
-				log.Warn("invalid 'responsible_contact_id' parameter", sl.Err(err))
-				render.Status(r, http.StatusBadRequest)
-				render.JSON(w, r, resp.BadRequest("Invalid 'responsible_contact_id' parameter"))
-				return
-			}
-			filters.ResponsibleContactID = &contactID
+		if contactIDVal, err := formparser.GetFormInt64(r, "responsible_contact_id"); err != nil {
+			log.Warn("invalid 'responsible_contact_id' parameter", sl.Err(err))
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, resp.BadRequest("Invalid 'responsible_contact_id' parameter"))
+			return
+		} else {
+			filters.ResponsibleContactID = contactIDVal
 		}
 
 		// Filter by executor_contact_id
-		if contactIDStr := q.Get("executor_contact_id"); contactIDStr != "" {
-			contactID, err := strconv.ParseInt(contactIDStr, 10, 64)
-			if err != nil {
-				log.Warn("invalid 'executor_contact_id' parameter", sl.Err(err))
-				render.Status(r, http.StatusBadRequest)
-				render.JSON(w, r, resp.BadRequest("Invalid 'executor_contact_id' parameter"))
-				return
-			}
-			filters.ExecutorContactID = &contactID
+		if contactIDVal, err := formparser.GetFormInt64(r, "executor_contact_id"); err != nil {
+			log.Warn("invalid 'executor_contact_id' parameter", sl.Err(err))
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, resp.BadRequest("Invalid 'executor_contact_id' parameter"))
+			return
+		} else {
+			filters.ExecutorContactID = contactIDVal
 		}
 
 		// Filter by start_date
-		if startDateStr := q.Get("start_date"); startDateStr != "" {
-			startDate, err := time.Parse("2006-01-02", startDateStr)
-			if err != nil {
-				log.Warn("invalid 'start_date' parameter", sl.Err(err))
-				render.Status(r, http.StatusBadRequest)
-				render.JSON(w, r, resp.BadRequest("Invalid 'start_date' parameter (use YYYY-MM-DD format)"))
-				return
-			}
-			filters.StartDate = &startDate
+		if startDateVal, err := formparser.GetFormDate(r, "start_date"); err != nil {
+			log.Warn("invalid 'start_date' parameter", sl.Err(err))
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, resp.BadRequest("Invalid 'start_date' parameter (use YYYY-MM-DD format)"))
+			return
+		} else {
+			filters.StartDate = startDateVal
 		}
 
 		// Filter by end_date
-		if endDateStr := q.Get("end_date"); endDateStr != "" {
-			endDate, err := time.Parse("2006-01-02", endDateStr)
-			if err != nil {
-				log.Warn("invalid 'end_date' parameter", sl.Err(err))
-				render.Status(r, http.StatusBadRequest)
-				render.JSON(w, r, resp.BadRequest("Invalid 'end_date' parameter (use YYYY-MM-DD format)"))
-				return
-			}
-			filters.EndDate = &endDate
+		if endDateVal, err := formparser.GetFormDate(r, "end_date"); err != nil {
+			log.Warn("invalid 'end_date' parameter", sl.Err(err))
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, resp.BadRequest("Invalid 'end_date' parameter (use YYYY-MM-DD format)"))
+			return
+		} else {
+			filters.EndDate = endDateVal
 		}
 
 		// Filter by due_date_from
-		if dueDateFromStr := q.Get("due_date_from"); dueDateFromStr != "" {
-			dueDateFrom, err := time.Parse("2006-01-02", dueDateFromStr)
-			if err != nil {
-				log.Warn("invalid 'due_date_from' parameter", sl.Err(err))
-				render.Status(r, http.StatusBadRequest)
-				render.JSON(w, r, resp.BadRequest("Invalid 'due_date_from' parameter (use YYYY-MM-DD format)"))
-				return
-			}
-			filters.DueDateFrom = &dueDateFrom
+		if dueDateFromVal, err := formparser.GetFormDate(r, "due_date_from"); err != nil {
+			log.Warn("invalid 'due_date_from' parameter", sl.Err(err))
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, resp.BadRequest("Invalid 'due_date_from' parameter (use YYYY-MM-DD format)"))
+			return
+		} else {
+			filters.DueDateFrom = dueDateFromVal
 		}
 
 		// Filter by due_date_to
-		if dueDateToStr := q.Get("due_date_to"); dueDateToStr != "" {
-			dueDateTo, err := time.Parse("2006-01-02", dueDateToStr)
-			if err != nil {
-				log.Warn("invalid 'due_date_to' parameter", sl.Err(err))
-				render.Status(r, http.StatusBadRequest)
-				render.JSON(w, r, resp.BadRequest("Invalid 'due_date_to' parameter (use YYYY-MM-DD format)"))
-				return
-			}
-			filters.DueDateTo = &dueDateTo
+		if dueDateToVal, err := formparser.GetFormDate(r, "due_date_to"); err != nil {
+			log.Warn("invalid 'due_date_to' parameter", sl.Err(err))
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, resp.BadRequest("Invalid 'due_date_to' parameter (use YYYY-MM-DD format)"))
+			return
+		} else {
+			filters.DueDateTo = dueDateToVal
 		}
 
 		// Search by name
-		if nameSearch := q.Get("name"); nameSearch != "" {
-			filters.NameSearch = &nameSearch
-		}
+		filters.NameSearch = formparser.GetFormString(r, "name")
 
 		// Search by number
-		if numberSearch := q.Get("number"); numberSearch != "" {
-			filters.NumberSearch = &numberSearch
-		}
+		filters.NumberSearch = formparser.GetFormString(r, "number")
 
 		documents, err := getter.GetAllReports(r.Context(), filters)
 		if err != nil {

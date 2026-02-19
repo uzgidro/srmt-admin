@@ -13,7 +13,6 @@ import (
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/storage"
 	"strings"
-	"time"
 
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
@@ -60,14 +59,13 @@ func New(log *slog.Logger, adder ContactAdder) http.HandlerFunc {
 			req = parsedReq
 
 			// Handle icon file upload if present
-			_, iconFile, err = r.FormFile("icon")
-			if err != nil && !errors.Is(err, http.ErrMissingFile) {
+			iconFile, err = formparser.GetFormFile(r, "icon")
+			if err != nil {
 				log.Error("failed to get icon file", sl.Err(err))
 				render.Status(r, http.StatusBadRequest)
-				render.JSON(w, r, resp.BadRequest("Invalid icon file"))
+				render.JSON(w, r, resp.BadRequest(err.Error()))
 				return
 			}
-			// If ErrMissingFile, iconFile remains nil, which is fine
 
 		} else {
 			// Parse JSON directly into DTO
@@ -130,11 +128,10 @@ func parseMultipartRequest(r *http.Request) (dto.AddContactRequest, error) {
 	}
 
 	// Parse optional fields
-	if dob, err := formparser.GetFormTime(r, "dob", time.DateOnly); err == nil {
-		req.DOB = dob
-	} else if err != nil && r.FormValue("dob") != "" {
-		// Only return error if field IS present but invalid. GetFormTime checks this.
+	if dob, err := formparser.GetFormDate(r, "dob"); err != nil {
 		return dto.AddContactRequest{}, fmt.Errorf("dob: %w", err)
+	} else {
+		req.DOB = dob
 	}
 
 	if orgID, err := formparser.GetFormInt64(r, "organization_id"); err == nil {

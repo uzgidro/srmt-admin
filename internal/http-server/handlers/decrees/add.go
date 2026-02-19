@@ -118,11 +118,10 @@ func parseMultipartAddRequest(r *http.Request) (dto.AddDecreeRequest, []*multipa
 	}
 
 	// Document date
-	// formparser has GetFormTime which expects RF3339 by default or custom layout
 	// Existing handler used "2006-01-02"
-	documentDate, err := formparser.GetFormTimeRequired(r, "document_date", "2006-01-02")
+	documentDate, err := formparser.GetFormDateRequired(r, "document_date")
 	if err != nil {
-		return dto.AddDecreeRequest{}, nil, fmt.Errorf("invalid document_date (use YYYY-MM-DD): %w", err)
+		return dto.AddDecreeRequest{}, nil, err
 	}
 
 	typeIDInt64, err := formparser.GetFormInt64Required(r, "type_id")
@@ -156,8 +155,8 @@ func parseMultipartAddRequest(r *http.Request) (dto.AddDecreeRequest, []*multipa
 		req.ParentDocumentID = parentID
 	}
 
-	if dueDate, err := formparser.GetFormTime(r, "due_date", "2006-01-02"); err != nil {
-		return dto.AddDecreeRequest{}, nil, fmt.Errorf("invalid due_date (use YYYY-MM-DD): %w", err)
+	if dueDate, err := formparser.GetFormDate(r, "due_date"); err != nil {
+		return dto.AddDecreeRequest{}, nil, fmt.Errorf("invalid due_date: %w", err)
 	} else if dueDate != nil {
 		req.DueDate = dueDate
 	}

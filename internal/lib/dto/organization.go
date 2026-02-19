@@ -6,3 +6,10 @@ type AddOrganizationRequest struct {
 	ParentOrganizationID *int64  `json:"parent_organization_id,omitempty"`
 	TypeIDs              []int64 `json:"type_ids" validate:"required,min=1"`
 }
+
+// EditOrganizationRequest is the DTO for editing an organization
+type EditOrganizationRequest struct {
+	Name                 *string `json:"name,omitempty"`
+	ParentOrganizationID **int64 `json:"parent_organization_id,omitempty"`
+	TypeIDs              []int64 `json:"type_ids,omitempty" validate:"omitempty,min=1"`
+}

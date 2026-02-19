@@ -3,11 +3,8 @@ package shutdowns
 import (
 	"context"
 	"errors"
-	"fmt"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/render"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"srmt-admin/internal/lib/api/formparser"
 	resp "srmt-admin/internal/lib/api/response"
@@ -17,21 +14,11 @@ import (
 	"srmt-admin/internal/lib/service/fileupload"
 	"srmt-admin/internal/storage"
 	"strconv"
-	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/render"
 )
-
-// Request (JSON DTO)
-type editRequest struct {
-	OrganizationID      *int64     `json:"organization_id,omitempty"`
-	StartTime           *time.Time `json:"start_time,omitempty"`
-	EndTime             *time.Time `json:"end_time,omitempty"`
-	Reason              *string    `json:"reason,omitempty"`
-	GenerationLossMwh   *float64   `json:"generation_loss,omitempty"`
-	ReportedByContactID *int64     `json:"reported_by_contact_id,omitempty"`
-
-	IdleDischargeVolume *float64 `json:"idle_discharge_volume,omitempty"`
-	FileIDs             []int64  `json:"file_ids,omitempty"`
-}
 
 type editResponse struct {
 	resp.Response
@@ -39,12 +26,10 @@ type editResponse struct {
 }
 
 type shutdownEditor interface {
-	EditShutdown(ctx context.Context, id int64, req dto.EditShutdownRequest) error
-	UnlinkShutdownFiles(ctx context.Context, shutdownID int64) error
-	LinkShutdownFiles(ctx context.Context, shutdownID int64, fileIDs []int64) error
+	EditShutdown(ctx context.Context, id int64, req dto.EditShutdownRequest, files []*multipart.FileHeader) ([]fileupload.UploadedFileInfo, error)
 }
 
-func Edit(log *slog.Logger, editor shutdownEditor, uploader fileupload.FileUploader, saver fileupload.FileMetaSaver, categoryGetter fileupload.CategoryGetter) http.HandlerFunc {
+func Edit(log *slog.Logger, editor shutdownEditor, _ fileupload.FileUploader, _ fileupload.FileMetaSaver, _ fileupload.CategoryGetter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.shutdown.Edit"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
@@ -66,73 +51,97 @@ func Edit(log *slog.Logger, editor shutdownEditor, uploader fileupload.FileUploa
 			return
 		}
 
-		var req editRequest
-		var fileIDs []int64
-		var shouldUpdateFiles bool
-		var uploadResult *fileupload.UploadResult
+		var req dto.EditShutdownRequest
+		var files []*multipart.FileHeader
 
 		// Check content type and parse accordingly
 		if formparser.IsMultipartForm(r) {
-			log.Info("processing multipart/form-data request")
-
-			// Parse request from multipart form
-			req, uploadResult, err = parseMultipartEditRequest(r, log, uploader, saver, categoryGetter)
-			if err != nil {
-				log.Error("failed to parse multipart request", sl.Err(err))
+			const maxUploadSize = 10 * 1024 * 1024 * 10 // 100 MB
+			if err := r.ParseMultipartForm(maxUploadSize); err != nil {
+				log.Error("failed to parse multipart form", sl.Err(err))
 				render.Status(r, http.StatusBadRequest)
-				render.JSON(w, r, resp.BadRequest(err.Error()))
+				render.JSON(w, r, resp.BadRequest("Invalid request"))
 				return
 			}
 
-			// Check if files field is present in form
-			if formparser.HasFormField(r, "file_ids") || len(uploadResult.FileIDs) > 0 {
-				shouldUpdateFiles = true
-				// Get existing file IDs from form
-				existingFileIDs, _ := formparser.GetFormFileIDs(r, "file_ids")
-				// Combine uploaded + existing
-				fileIDs = append(existingFileIDs, uploadResult.FileIDs...)
+			// Parse fields
+			req.OrganizationID, err = formparser.GetFormInt64(r, "organization_id")
+			if err != nil {
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest("Invalid organization_id"))
+				return
 			}
 
-		} else {
-			log.Info("processing application/json request")
+			if formparser.HasFormField(r, "start_time") {
+				date, err := formparser.GetFormDateTime(r, "start_time")
+				if err != nil {
+					render.Status(r, http.StatusBadRequest)
+					render.JSON(w, r, resp.BadRequest("Invalid start_time"))
+					return
+				}
+				req.StartTime = date
+			}
 
-			// Parse JSON (current behavior)
+			if formparser.HasFormField(r, "end_time") {
+				date, err := formparser.GetFormDateTime(r, "end_time")
+				if err != nil {
+					render.Status(r, http.StatusBadRequest)
+					render.JSON(w, r, resp.BadRequest("Invalid end_time"))
+					return
+				}
+				req.EndTime = date
+			}
+
+			req.Reason = formparser.GetFormString(r, "reason")
+
+			req.GenerationLossMwh, err = formparser.GetFormFloat64(r, "generation_loss")
+			if err != nil {
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest("Invalid generation_loss"))
+				return
+			}
+
+			req.ReportedByContactID, err = formparser.GetFormInt64(r, "reported_by_contact_id")
+			if err != nil {
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest("Invalid reported_by_contact_id"))
+				return
+			}
+
+			req.IdleDischargeVolumeThousandM3, err = formparser.GetFormFloat64(r, "idle_discharge_volume")
+			if err != nil {
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest("Invalid idle_discharge_volume"))
+				return
+			}
+
+			if formparser.HasFormField(r, "file_ids") {
+				fIDs, err := formparser.GetFormFileIDs(r, "file_ids")
+				if err != nil {
+					render.Status(r, http.StatusBadRequest)
+					render.JSON(w, r, resp.BadRequest("Invalid file_ids"))
+					return
+				}
+				req.FileIDs = fIDs
+			}
+
+			files = r.MultipartForm.File["files"]
+
+		} else {
+			// Parse JSON
 			if err := render.DecodeJSON(r.Body, &req); err != nil {
 				log.Error("failed to decode request", sl.Err(err))
 				render.Status(r, http.StatusBadRequest)
 				render.JSON(w, r, resp.BadRequest("Invalid request format"))
 				return
 			}
-
-			// In JSON, if file_ids is present (even empty array), update files
-			// This fixes the issue where you couldn't remove all files
-			if req.FileIDs != nil {
-				shouldUpdateFiles = true
-				fileIDs = req.FileIDs
-			}
 		}
 
-		storageReq := dto.EditShutdownRequest{
-			OrganizationID:      req.OrganizationID,
-			StartTime:           req.StartTime,
-			EndTime:             req.EndTime,
-			Reason:              req.Reason,
-			GenerationLossMwh:   req.GenerationLossMwh,
-			ReportedByContactID: req.ReportedByContactID,
+		req.CreatedByUserID = userID
 
-			IdleDischargeVolumeThousandM3: req.IdleDischargeVolume,
-			CreatedByUserID:               userID,
-			FileIDs:                       fileIDs,
-		}
-
-		err = editor.EditShutdown(r.Context(), id, storageReq)
+		// Update shutdown
+		uploadedFiles, err := editor.EditShutdown(r.Context(), id, req, files)
 		if err != nil {
-			// Cleanup uploaded files if update fails
-			if uploadResult != nil {
-				log.Warn("shutdown update failed, compensating uploaded files")
-				fileupload.CompensateEntityUpload(r.Context(), log, uploader, saver, uploadResult)
-			}
-
 			if errors.Is(err, storage.ErrNotFound) {
 				log.Warn("shutdown not found", slog.Int64("id", id))
 				render.Status(r, http.StatusNotFound)
@@ -140,9 +149,9 @@ func Edit(log *slog.Logger, editor shutdownEditor, uploader fileupload.FileUploa
 				return
 			}
 			if errors.Is(err, storage.ErrForeignKeyViolation) {
-				log.Warn("FK violation on update (org_id not found)")
+				log.Warn("FK violation on update (org or contact not found)")
 				render.Status(r, http.StatusBadRequest)
-				render.JSON(w, r, resp.BadRequest("Organization not found"))
+				render.JSON(w, r, resp.BadRequest("Organization or Contact not found"))
 				return
 			}
 			log.Error("failed to update shutdown", sl.Err(err))
@@ -151,110 +160,15 @@ func Edit(log *slog.Logger, editor shutdownEditor, uploader fileupload.FileUploa
 			return
 		}
 
-		// Update file links if explicitly requested
-		if shouldUpdateFiles {
-			// Remove old links
-			if err := editor.UnlinkShutdownFiles(r.Context(), id); err != nil {
-				log.Error("failed to unlink old files", sl.Err(err))
-			}
-
-			// Add new links (if any)
-			if len(fileIDs) > 0 {
-				if err := editor.LinkShutdownFiles(r.Context(), id, fileIDs); err != nil {
-					log.Error("failed to link new files", sl.Err(err))
-				}
-			}
-		}
-
 		log.Info("shutdown updated successfully",
 			slog.Int64("id", id),
-			slog.Bool("files_updated", shouldUpdateFiles),
-			slog.Int("total_files", len(fileIDs)),
+			slog.Bool("files_updated", req.FileIDs != nil || len(files) > 0),
 		)
 
 		response := editResponse{
-			Response: resp.OK(),
-		}
-		if uploadResult != nil && len(uploadResult.UploadedFiles) > 0 {
-			response.UploadedFiles = uploadResult.UploadedFiles
+			Response:      resp.OK(),
+			UploadedFiles: uploadedFiles,
 		}
 		render.JSON(w, r, response)
 	}
-}
-
-// parseMultipartEditRequest parses shutdown data from multipart form and handles file uploads
-func parseMultipartEditRequest(
-	r *http.Request,
-	log *slog.Logger,
-	uploader fileupload.FileUploader,
-	saver fileupload.FileMetaSaver,
-	categoryGetter fileupload.CategoryGetter,
-) (editRequest, *fileupload.UploadResult, error) {
-	const op = "shutdowns.parseMultipartEditRequest"
-
-	// Parse optional fields
-	orgID, err := formparser.GetFormInt64(r, "organization_id")
-	if err != nil {
-		return editRequest{}, nil, fmt.Errorf("invalid organization_id: %w", err)
-	}
-
-	startTime, err := formparser.GetFormTime(r, "start_time", time.RFC3339)
-	if err != nil {
-		return editRequest{}, nil, fmt.Errorf("invalid start_time format (use RFC3339): %w", err)
-	}
-
-	endTime, err := formparser.GetFormTime(r, "end_time", time.RFC3339)
-	if err != nil {
-		return editRequest{}, nil, fmt.Errorf("invalid end_time format (use RFC3339): %w", err)
-	}
-
-	reason := formparser.GetFormString(r, "reason")
-
-	generationLoss, err := formparser.GetFormFloat64(r, "generation_loss")
-	if err != nil {
-		return editRequest{}, nil, fmt.Errorf("invalid generation_loss: %w", err)
-	}
-
-	reportedByContactID, err := formparser.GetFormInt64(r, "reported_by_contact_id")
-	if err != nil {
-		return editRequest{}, nil, fmt.Errorf("invalid reported_by_contact_id: %w", err)
-	}
-
-	idleDischargeVolume, err := formparser.GetFormFloat64(r, "idle_discharge_volume")
-	if err != nil {
-		return editRequest{}, nil, fmt.Errorf("invalid idle_discharge_volume: %w", err)
-	}
-
-	// Create request object
-	req := editRequest{
-		OrganizationID:      orgID,
-		StartTime:           startTime,
-		EndTime:             endTime,
-		Reason:              reason,
-		GenerationLossMwh:   generationLoss,
-		ReportedByContactID: reportedByContactID,
-		IdleDischargeVolume: idleDischargeVolume,
-	}
-
-	// Process file uploads (use current time as upload date for edits)
-	uploadResult, err := fileupload.ProcessFormFiles(
-		r.Context(),
-		r,
-		log,
-		uploader,
-		saver,
-		categoryGetter,
-		"shutdowns", // category name for MinIO path
-		"Аварийные отключения", // category display name
-		time.Now(), // For edits, use current time
-	)
-	if err != nil {
-		return editRequest{}, nil, fmt.Errorf("%s: failed to process file uploads: %w", op, err)
-	}
-
-	log.Info("multipart edit form parsed successfully",
-		slog.Int("uploaded_files", len(uploadResult.FileIDs)),
-	)
-
-	return req, uploadResult, nil
 }

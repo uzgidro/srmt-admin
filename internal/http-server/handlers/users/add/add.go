@@ -2,54 +2,32 @@ package add
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"mime/multipart"
 	"net/http"
+	"strings"
+
+	"srmt-admin/internal/lib/api/formparser"
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/dto"
 	"srmt-admin/internal/lib/logger/sl"
-	"strconv"
-	"strings"
-	"time"
 
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
+	"github.com/go-playground/validator/v10"
 )
-
-type newContactRequest struct {
-	Name            string     `json:"name" validate:"required"`
-	Email           *string    `json:"email,omitempty" validate:"omitempty,email"`
-	Phone           *string    `json:"phone,omitempty"`
-	IPPhone         *string    `json:"ip_phone,omitempty"`
-	DOB             *time.Time `json:"dob,omitempty"`
-	ExternalOrgName *string    `json:"external_organization_name,omitempty"`
-	OrganizationID  *int64     `json:"organization_id,omitempty"`
-	DepartmentID    *int64     `json:"department_id,omitempty"`
-	PositionID      *int64     `json:"position_id,omitempty"`
-}
-
-// Request - DTO хендлера (гибридный)
-type Request struct {
-	Login    string  `json:"login" validate:"required"`
-	Password string  `json:"password" validate:"required,min=8"`
-	Roles    []int64 `json:"role_ids" validate:"required,min=1"`
-
-	// XOR: Либо `contact_id`, либо `contact`
-	ContactID *int64             `json:"contact_id,omitempty" validate:"omitempty,gt=0"`
-	Contact   *newContactRequest `json:"contact,omitempty" validate:"omitempty"`
-}
 
 type Response struct {
 	resp.Response
-	ID int64 `json:"id"` // ID нового пользователя (из users)
+	ID int64 `json:"id"`
 }
 
-// UserCreator - interface for creating users
 type UserCreator interface {
 	CreateUser(ctx context.Context, req dto.CreateUserRequest, iconFile *multipart.FileHeader) (int64, error)
 }
 
-// New - Фабрика хендлера
 func New(log *slog.Logger, userCreator UserCreator) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.user.add.New"
@@ -57,193 +35,72 @@ func New(log *slog.Logger, userCreator UserCreator) http.HandlerFunc {
 
 		var req dto.CreateUserRequest
 		var iconFile *multipart.FileHeader
+		var err error
 
-		contentType := r.Header.Get("Content-Type")
-		isMultipart := strings.Contains(contentType, "multipart/form-data")
-
-		if isMultipart {
-			// Parse multipart form
-			const maxUploadSize = 10 * 1024 * 1024 // 10 MB for icon
-			r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
-			if err := r.ParseMultipartForm(maxUploadSize); err != nil {
+		if formparser.IsMultipartForm(r) {
+			// 10 MB limit for icon
+			if err := r.ParseMultipartForm(10 << 20); err != nil {
 				log.Error("failed to parse multipart form", sl.Err(err))
 				render.Status(r, http.StatusBadRequest)
 				render.JSON(w, r, resp.BadRequest("Invalid request or file is too large"))
 				return
 			}
 
-			// Parse basic fields
-			req.Login = r.FormValue("login")
-			req.Password = r.FormValue("password")
-
-			// Parse role_ids
-			rolesStr := r.FormValue("role_ids")
-			if rolesStr != "" {
-				rolesStrs := strings.Split(rolesStr, ",")
-				for _, roleStr := range rolesStrs {
-					roleID, err := strconv.ParseInt(strings.TrimSpace(roleStr), 10, 64)
-					if err != nil {
-						log.Error("invalid role_id", sl.Err(err), "value", roleStr)
-						render.Status(r, http.StatusBadRequest)
-						render.JSON(w, r, resp.BadRequest("Invalid role_ids format"))
-						return
-					}
-					req.RoleIDs = append(req.RoleIDs, roleID)
-				}
-			}
-
-			// Parse contact_id if provided
-			if contactIDStr := r.FormValue("contact_id"); contactIDStr != "" {
-				contactID, err := strconv.ParseInt(contactIDStr, 10, 64)
-				if err != nil {
-					log.Error("invalid contact_id", sl.Err(err))
-					render.Status(r, http.StatusBadRequest)
-					render.JSON(w, r, resp.BadRequest("Invalid contact_id"))
-					return
-				}
-				req.ContactID = &contactID
-			}
-
-			// Parse contact object if provided
-			// Note: This manual parsing is tedious. Ideally we use a form decoder library.
-			// Keeping legacy parsing for now but mapping to DTO.
-			if r.FormValue("contact.name") != "" {
-				contact := &dto.AddContactRequest{
-					Name: r.FormValue("contact.name"),
-				}
-				if email := r.FormValue("contact.email"); email != "" {
-					contact.Email = &email
-				}
-				if phone := r.FormValue("contact.phone"); phone != "" {
-					contact.Phone = &phone
-				}
-				if ipPhone := r.FormValue("contact.ip_phone"); ipPhone != "" {
-					contact.IPPhone = &ipPhone
-				}
-				if dobStr := r.FormValue("contact.dob"); dobStr != "" {
-					dob, err := time.Parse(time.DateOnly, dobStr)
-					if err != nil {
-						log.Error("invalid contact.dob format", sl.Err(err))
-						render.Status(r, http.StatusBadRequest)
-						render.JSON(w, r, resp.BadRequest("Invalid contact.dob format, use RFC3339"))
-						return
-					}
-					contact.DOB = &dob
-				}
-				if extOrg := r.FormValue("contact.external_organization_name"); extOrg != "" {
-					contact.ExternalOrgName = &extOrg
-				}
-				if orgIDStr := r.FormValue("contact.organization_id"); orgIDStr != "" {
-					orgID, err := strconv.ParseInt(orgIDStr, 10, 64)
-					if err != nil {
-						log.Error("invalid contact.organization_id", sl.Err(err))
-						render.Status(r, http.StatusBadRequest)
-						render.JSON(w, r, resp.BadRequest("Invalid contact.organization_id"))
-						return
-					}
-					contact.OrganizationID = &orgID
-				}
-				if deptIDStr := r.FormValue("contact.department_id"); deptIDStr != "" {
-					deptID, err := strconv.ParseInt(deptIDStr, 10, 64)
-					if err != nil {
-						log.Error("invalid contact.department_id", sl.Err(err))
-						render.Status(r, http.StatusBadRequest)
-						render.JSON(w, r, resp.BadRequest("Invalid contact.department_id"))
-						return
-					}
-					contact.DepartmentID = &deptID
-				}
-				if posIDStr := r.FormValue("contact.position_id"); posIDStr != "" {
-					posID, err := strconv.ParseInt(posIDStr, 10, 64)
-					if err != nil {
-						log.Error("invalid contact.position_id", sl.Err(err))
-						render.Status(r, http.StatusBadRequest)
-						render.JSON(w, r, resp.BadRequest("Invalid contact.position_id"))
-						return
-					}
-					contact.PositionID = &posID
-				}
-				req.Contact = contact
-			}
-
-			// Get icon file
-			// We don't process it here, just pass the header to service
-			var err error
-			_, iconFile, err = r.FormFile("icon")
+			req, err = parseMultipartRequest(r)
 			if err != nil {
-				if err != http.ErrMissingFile {
-					log.Error("failed to get icon file", sl.Err(err))
-					render.Status(r, http.StatusBadRequest)
-					render.JSON(w, r, resp.BadRequest("Invalid icon file"))
-					return
-				}
-				iconFile = nil // No file
+				log.Error("failed to parse multipart request", sl.Err(err))
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest(err.Error()))
+				return
 			}
 
+			iconFile, err = formparser.GetFormFile(r, "icon")
+			if err != nil {
+				log.Error("failed to get icon file", sl.Err(err))
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest(err.Error()))
+				return
+			}
 		} else {
-			// Parse JSON
-			// We need a temporary struct because `dto.CreateUserRequest` uses different json tags or structure?
-			// `dto.CreateUserRequest` matches the fields.
-			// But wait, the original handler used `Request` struct with `role_ids` json tag.
-			// `dto.CreateUserRequest` in my thought (Step 96) used `RoleIDs` but no json tags were shown?
-			// I should check `user.go` content again or assume standard naming.
-			// Actually `dto/user.go` had `EditUserRequest` with `json` tags? No, Step 60 showed:
-			// `RoleIDs  []int64 // Optional...` without tags.
-			// Provide custom struct for JSON parsing to match API contract.
-
-			type jsonRequest struct {
-				Login     string             `json:"login" validate:"required"`
-				Password  string             `json:"password" validate:"required,min=8"`
-				Roles     []int64            `json:"role_ids" validate:"required,min=1"`
-				ContactID *int64             `json:"contact_id,omitempty" validate:"omitempty,gt=0"`
-				Contact   *newContactRequest `json:"contact,omitempty" validate:"omitempty"`
-			}
-			var jReq jsonRequest
-			if err := render.DecodeJSON(r.Body, &jReq); err != nil {
+			if err := render.DecodeJSON(r.Body, &req); err != nil {
 				log.Error("failed to decode request", sl.Err(err))
 				render.Status(r, http.StatusBadRequest)
 				render.JSON(w, r, resp.BadRequest("Invalid request format"))
 				return
 			}
-
-			// Map to DTO
-			req.Login = jReq.Login
-			req.Password = jReq.Password
-			req.RoleIDs = jReq.Roles
-			req.ContactID = jReq.ContactID
-
-			if jReq.Contact != nil {
-				req.Contact = &dto.AddContactRequest{
-					Name:            jReq.Contact.Name,
-					Email:           jReq.Contact.Email,
-					Phone:           jReq.Contact.Phone,
-					IPPhone:         jReq.Contact.IPPhone,
-					DOB:             jReq.Contact.DOB,
-					ExternalOrgName: jReq.Contact.ExternalOrgName,
-					OrganizationID:  jReq.Contact.OrganizationID,
-					DepartmentID:    jReq.Contact.DepartmentID,
-					PositionID:      jReq.Contact.PositionID,
-					// IconID is nil for JSON requests (no file upload in JSON body usually)
-				}
-			}
 		}
 
-		// Basic Validation (XOR check still useful for 400 Bad Request)
+		// Validation
+		if err := validator.New().Struct(req); err != nil {
+			// Additional XOR check for ContactID vs Contact
+			if (req.ContactID == nil && req.Contact == nil) || (req.ContactID != nil && req.Contact != nil) {
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest("Must provide either 'contact_id' or 'contact' object, but not both"))
+				return
+			}
+
+			var validationErrors validator.ValidationErrors
+			errors.As(err, &validationErrors)
+			log.Error("validation failed", sl.Err(err))
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, resp.ValidationErrors(validationErrors))
+			return
+		}
+
+		// Double check XOR logic manually if validator didn't catch it logic-wise (validator handles presence, but not XOR logic perfectly with simple tags sometimes)
+		// `dto.CreateUserRequest` doesn't have `oneof` tag on these fields easily because one is int64, other is struct pointer.
 		if (req.ContactID == nil && req.Contact == nil) || (req.ContactID != nil && req.Contact != nil) {
-			log.Warn("validation failed: must provide either contact_id or contact object")
 			render.Status(r, http.StatusBadRequest)
 			render.JSON(w, r, resp.BadRequest("Must provide either 'contact_id' or 'contact' object, but not both"))
 			return
 		}
 
-		// Call Service
 		newUserID, err := userCreator.CreateUser(r.Context(), req, iconFile)
 		if err != nil {
-			// Basic error handling - can be improved with specific error types
 			if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "already exists") {
 				log.Warn("duplicate/conflict", sl.Err(err))
 				render.Status(r, http.StatusConflict)
-				render.JSON(w, r, resp.BadRequest(err.Error())) // Or generic message
+				render.JSON(w, r, resp.Conflict(err.Error()))
 				return
 			}
 			if strings.Contains(err.Error(), "validation failed") || strings.Contains(err.Error(), "not found") {
@@ -263,4 +120,62 @@ func New(log *slog.Logger, userCreator UserCreator) http.HandlerFunc {
 		render.Status(r, http.StatusCreated)
 		render.JSON(w, r, Response{Response: resp.OK(), ID: newUserID})
 	}
+}
+
+func parseMultipartRequest(r *http.Request) (dto.CreateUserRequest, error) {
+	var req dto.CreateUserRequest
+	var err error
+
+	req.Login, err = formparser.GetFormStringRequired(r, "login")
+	if err != nil {
+		return req, err
+	}
+
+	req.Password, err = formparser.GetFormStringRequired(r, "password")
+	if err != nil {
+		return req, err
+	}
+
+	req.RoleIDs, err = formparser.GetFormInt64Slice(r, "role_ids")
+	if err != nil {
+		return req, fmt.Errorf("invalid role_ids: %w", err)
+	}
+	if len(req.RoleIDs) == 0 {
+		return req, errors.New("field role_ids is required")
+	}
+
+	// Contact ID
+	req.ContactID, err = formparser.GetFormInt64(r, "contact_id")
+	if err != nil {
+		return req, err
+	}
+
+	// Parse contact object if present
+	if contactName := r.FormValue("contact.name"); contactName != "" {
+		contact := &dto.AddContactRequest{
+			Name:            contactName,
+			Email:           formparser.GetFormString(r, "contact.email"),
+			Phone:           formparser.GetFormString(r, "contact.phone"),
+			IPPhone:         formparser.GetFormString(r, "contact.ip_phone"),
+			ExternalOrgName: formparser.GetFormString(r, "contact.external_organization_name"),
+		}
+
+		if contact.DOB, err = formparser.GetFormDate(r, "contact.dob"); err != nil {
+			return req, fmt.Errorf("invalid contact.dob: %w", err)
+		}
+
+		if contact.OrganizationID, err = formparser.GetFormInt64(r, "contact.organization_id"); err != nil {
+			return req, err
+		}
+		if contact.DepartmentID, err = formparser.GetFormInt64(r, "contact.department_id"); err != nil {
+			return req, err
+		}
+		if contact.PositionID, err = formparser.GetFormInt64(r, "contact.position_id"); err != nil {
+			return req, err
+		}
+
+		req.Contact = contact
+	}
+
+	return req, nil
 }

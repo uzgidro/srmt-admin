@@ -4,11 +4,11 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"srmt-admin/internal/lib/api/formparser"
 	resp "srmt-admin/internal/lib/api/response"
 	past_events "srmt-admin/internal/lib/dto/past-events"
 	"srmt-admin/internal/lib/helpers"
 	"srmt-admin/internal/lib/logger/sl"
-	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5/middleware"
@@ -28,21 +28,20 @@ func Get(log *slog.Logger, getter pastEventsGetter, minioRepo helpers.MinioURLGe
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
 
 		// Check for 'date' parameter first (takes precedence over 'days')
-		dateStr := r.URL.Query().Get("date")
 		var eventsByDate []past_events.DateGroup
+		var dateStr string
 		var err error
+		dateVal, err := formparser.GetFormDateInLocation(r, "date", loc)
+		if err != nil {
+			log.Warn("invalid 'date' parameter", sl.Err(err))
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, resp.BadRequest("Invalid 'date' parameter, must be in format YYYY-MM-DD"))
+			return
+		}
 
-		if dateStr != "" {
-			// Parse date in the format "YYYY-MM-DD"
-			parsedDate, parseErr := time.Parse("2006-01-02", dateStr)
-			if parseErr != nil {
-				log.Warn("invalid 'date' parameter", sl.Err(parseErr))
-				render.Status(r, http.StatusBadRequest)
-				render.JSON(w, r, resp.BadRequest("Invalid 'date' parameter, must be in format YYYY-MM-DD"))
-				return
-			}
-
+		if dateVal != nil {
 			// Convert parsed date to the specified timezone
+			parsedDate := *dateVal
 			dateInTimezone := time.Date(
 				parsedDate.Year(),
 				parsedDate.Month(),
@@ -53,15 +52,24 @@ func Get(log *slog.Logger, getter pastEventsGetter, minioRepo helpers.MinioURLGe
 
 			log.Info("using provided 'date' parameter", "date", dateInTimezone.Format("2006-01-02"))
 			eventsByDate, err = getter.GetPastEventsByDate(r.Context(), dateInTimezone, loc)
+			// Need to maintain dateStr for logging later? Reconstruct it.
+			dateStr = dateInTimezone.Format("2006-01-02")
 		} else {
 			// Get 'days' parameter from query (default: 7)
 			days := defaultDays
-			daysStr := r.URL.Query().Get("days")
 
-			if daysStr != "" {
-				parsedDays, parseErr := strconv.Atoi(daysStr)
-				if parseErr != nil || parsedDays < 1 || parsedDays > 365 {
-					log.Warn("invalid 'days' parameter", sl.Err(parseErr))
+			daysVal, err := formparser.GetFormInt64(r, "days")
+			if err != nil {
+				log.Warn("invalid 'days' parameter", sl.Err(err))
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest("Invalid 'days' parameter"))
+				return
+			}
+
+			if daysVal != nil {
+				parsedDays := int(*daysVal)
+				if parsedDays < 1 || parsedDays > 365 {
+					log.Warn("invalid 'days' parameter range", slog.Int("days", parsedDays))
 					render.Status(r, http.StatusBadRequest)
 					render.JSON(w, r, resp.BadRequest("Invalid 'days' parameter, must be between 1 and 365"))
 					return

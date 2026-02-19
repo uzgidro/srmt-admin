@@ -192,13 +192,9 @@ func parseMultipartAddRequest(
 	number := formparser.GetFormString(r, "number")
 	description := formparser.GetFormString(r, "description")
 
-	documentDateStr, err := formparser.GetFormStringRequired(r, "document_date")
+	documentDate, err := formparser.GetFormDateRequired(r, "document_date")
 	if err != nil {
-		return addRequest{}, nil, fmt.Errorf("missing document_date: %w", err)
-	}
-	documentDate, err := time.Parse("2006-01-02", documentDateStr)
-	if err != nil {
-		return addRequest{}, nil, fmt.Errorf("invalid document_date format (use YYYY-MM-DD): %w", err)
+		return addRequest{}, nil, err
 	}
 
 	typeIDInt64, err := formparser.GetFormInt64Required(r, "type_id")
@@ -233,12 +229,10 @@ func parseMultipartAddRequest(
 		req.ParentDocumentID = parentDocumentID
 	}
 
-	if dueDateStr := formparser.GetFormString(r, "due_date"); dueDateStr != nil {
-		dueDate, err := time.Parse("2006-01-02", *dueDateStr)
-		if err != nil {
-			return addRequest{}, nil, fmt.Errorf("invalid due_date format (use YYYY-MM-DD): %w", err)
-		}
-		req.DueDate = &dueDate
+	if dueDate, err := formparser.GetFormDate(r, "due_date"); err != nil {
+		return addRequest{}, nil, fmt.Errorf("invalid due_date: %w", err)
+	} else if dueDate != nil {
+		req.DueDate = dueDate
 	}
 
 	uploadResult, err := fileupload.ProcessFormFiles(

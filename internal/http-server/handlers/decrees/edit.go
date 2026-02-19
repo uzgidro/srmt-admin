@@ -149,9 +149,10 @@ func parseMultipartEditRequest(r *http.Request) (dto.EditDecreeRequest, []*multi
 		req.ParentDocumentID = parentID
 	}
 
-	if dueDate, err := formparser.GetFormTime(r, "due_date", "2006-01-02"); err != nil {
-		return dto.EditDecreeRequest{}, nil, fmt.Errorf("invalid due_date format (use YYYY-MM-DD): %w", err)
-	} else if dueDate != nil {
+	// Parse due_date if present
+	if dueDate, err := formparser.GetFormDate(r, "due_date"); err != nil {
+		return dto.EditDecreeRequest{}, nil, fmt.Errorf("invalid due_date: %w", err)
+	} else {
 		req.DueDate = dueDate
 	}
 

@@ -12,10 +12,8 @@ import (
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/lib/service/fileupload"
 	"srmt-admin/internal/storage"
-	"strconv"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
 )
@@ -45,8 +43,7 @@ func Edit(log *slog.Logger, editor investmentEditor, uploader fileupload.FileUpl
 		const op = "handlers.investment.edit"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
 
-		idStr := chi.URLParam(r, "id")
-		id, err := strconv.ParseInt(idStr, 10, 64)
+		id, err := formparser.GetURLParamInt64(r, "id")
 		if err != nil {
 			log.Warn("invalid 'id' parameter", sl.Err(err))
 			render.Status(r, http.StatusBadRequest)
@@ -181,21 +178,17 @@ func parseMultipartEditRequest(
 	name := formparser.GetFormString(r, "name")
 
 	var typeID *int
-	typeIDInt64, err := formparser.GetFormInt64(r, "type_id")
-	if err != nil {
+	if typeIDInt64, err := formparser.GetFormInt64(r, "type_id"); err != nil {
 		return editRequest{}, nil, fmt.Errorf("invalid type_id: %w", err)
-	}
-	if typeIDInt64 != nil {
+	} else if typeIDInt64 != nil {
 		typeIDInt := int(*typeIDInt64)
 		typeID = &typeIDInt
 	}
 
 	var statusID *int
-	statusIDInt64, err := formparser.GetFormInt64(r, "status_id")
-	if err != nil {
+	if statusIDInt64, err := formparser.GetFormInt64(r, "status_id"); err != nil {
 		return editRequest{}, nil, fmt.Errorf("invalid status_id: %w", err)
-	}
-	if statusIDInt64 != nil {
+	} else if statusIDInt64 != nil {
 		statusIDInt := int(*statusIDInt64)
 		statusID = &statusIDInt
 	}

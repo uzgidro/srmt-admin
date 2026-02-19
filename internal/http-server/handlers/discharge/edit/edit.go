@@ -4,9 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/render"
 	"log/slog"
 	"net/http"
 	"srmt-admin/internal/lib/api/formparser"
@@ -15,8 +12,10 @@ import (
 	"srmt-admin/internal/lib/service/auth"
 	"srmt-admin/internal/lib/service/fileupload"
 	"srmt-admin/internal/storage"
-	"strconv"
 	"time"
+
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/render"
 )
 
 type Request struct {
@@ -53,7 +52,7 @@ func New(log *slog.Logger, editor DischargeEditor, uploader fileupload.FileUploa
 			return
 		}
 
-		dischargeID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+		dischargeID, err := formparser.GetURLParamInt64(r, "id")
 		if err != nil {
 			log.Warn("invalid discharge ID format", sl.Err(err))
 			render.Status(r, http.StatusBadRequest)
@@ -174,14 +173,14 @@ func parseMultipartEditRequest(
 		return Request{}, nil, fmt.Errorf("invalid organization_id: %w", err)
 	}
 
-	startedAt, err := formparser.GetFormTime(r, "started_at", time.RFC3339)
+	startedAt, err := formparser.GetFormDateTime(r, "started_at")
 	if err != nil {
-		return Request{}, nil, fmt.Errorf("invalid started_at format (use RFC3339): %w", err)
+		return Request{}, nil, fmt.Errorf("invalid started_at format: %w", err)
 	}
 
-	endedAt, err := formparser.GetFormTime(r, "ended_at", time.RFC3339)
+	endedAt, err := formparser.GetFormDateTime(r, "ended_at")
 	if err != nil {
-		return Request{}, nil, fmt.Errorf("invalid ended_at format (use RFC3339): %w", err)
+		return Request{}, nil, fmt.Errorf("invalid ended_at format: %w", err)
 	}
 
 	flowRate, err := formparser.GetFormFloat64(r, "flow_rate")

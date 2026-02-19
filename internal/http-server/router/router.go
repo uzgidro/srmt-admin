@@ -519,7 +519,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Patch("/reservoir-device", reservoirdevicesummary.Patch(deps.Log, deps.SCDataService))
 
 			r.Get("/reservoir-summary", reservoirsummary.Get(deps.Log, deps.SCDataService, deps.ReservoirFetcher))
-			router.Get("/reservoir-summary/export", reservoirsummary.GetExport(
+			r.Get("/reservoir-summary/export", reservoirsummary.GetExport(
 				deps.Log,
 				deps.PgRepo,
 				excelgen.New(deps.ExcelTemplatePath),

@@ -17,13 +17,13 @@ type EditUserRequest struct {
 
 // CreateUserRequest - DTO для создания пользователя
 type CreateUserRequest struct {
-	Login    string
-	Password string
-	RoleIDs  []int64
+	Login    string  `json:"login" validate:"required"`
+	Password string  `json:"password" validate:"required,min=8"`
+	RoleIDs  []int64 `json:"role_ids" validate:"required,min=1"`
 
 	// XOR: Либо `ContactID`, либо `Contact`
-	ContactID *int64
-	Contact   *AddContactRequest
+	ContactID *int64             `json:"contact_id,omitempty" validate:"omitempty,gt=0"`
+	Contact   *AddContactRequest `json:"contact,omitempty" validate:"omitempty"`
 }
 
 // UpdateUserRequest - Service layer DTO

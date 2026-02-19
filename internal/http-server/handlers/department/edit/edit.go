@@ -3,26 +3,23 @@ package edit
 import (
 	"context"
 	"errors"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/render"
 	"log/slog"
 	"net/http"
 	resp "srmt-admin/internal/lib/api/response"
+	"srmt-admin/internal/lib/dto"
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/storage"
 	"strconv"
-)
 
-// Request (в стиле вашего EditOrganization, где nil = "не обновлять")
-type Request struct {
-	Name        *string `json:"name,omitempty"`
-	Description *string `json:"description,omitempty"`
-}
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/render"
+	"github.com/go-playground/validator/v10"
+)
 
 // DepartmentEditor - интерфейс для обновления
 type DepartmentEditor interface {
-	EditDepartment(ctx context.Context, id int64, name *string, description *string) error
+	EditDepartment(ctx context.Context, id int64, req dto.EditDepartmentRequest) error
 }
 
 func New(log *slog.Logger, updater DepartmentEditor) http.HandlerFunc {
@@ -41,7 +38,7 @@ func New(log *slog.Logger, updater DepartmentEditor) http.HandlerFunc {
 		}
 
 		// 2. Декодируем JSON
-		var req Request
+		var req dto.EditDepartmentRequest
 		if err := render.DecodeJSON(r.Body, &req); err != nil {
 			log.Error("failed to decode request", sl.Err(err))
 			render.Status(r, http.StatusBadRequest)
@@ -49,16 +46,18 @@ func New(log *slog.Logger, updater DepartmentEditor) http.HandlerFunc {
 			return
 		}
 
-		// 3. Валидация (если имя передано, оно не должно быть пустым)
-		if req.Name != nil && *req.Name == "" {
-			log.Warn("validation failed: name is empty")
+		// 3. Валидация
+		if err := validator.New().Struct(req); err != nil {
+			var validationErrors validator.ValidationErrors
+			errors.As(err, &validationErrors)
+			log.Error("validation failed", sl.Err(err))
 			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, resp.BadRequest("Name cannot be empty"))
+			render.JSON(w, r, resp.ValidationErrors(validationErrors))
 			return
 		}
 
-		// 4. Вызываем метод репозитория
-		err = updater.EditDepartment(r.Context(), id, req.Name, req.Description)
+		// 4. Вызываем метод сервиса
+		err = updater.EditDepartment(r.Context(), id, req)
 		if err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
 				log.Warn("department not found", slog.Int64("id", id))
@@ -68,8 +67,8 @@ func New(log *slog.Logger, updater DepartmentEditor) http.HandlerFunc {
 			}
 			if errors.Is(err, storage.ErrDuplicate) {
 				log.Warn("department name duplicate")
-				render.Status(r, http.StatusBadRequest)
-				render.JSON(w, r, resp.BadRequest("Department with this name already exists"))
+				render.Status(r, http.StatusConflict)
+				render.JSON(w, r, resp.Conflict("Department with this name already exists"))
 				return
 			}
 			log.Error("failed to update department", sl.Err(err))
@@ -79,6 +78,6 @@ func New(log *slog.Logger, updater DepartmentEditor) http.HandlerFunc {
 		}
 
 		log.Info("department updated", slog.Int64("id", id))
-		render.JSON(w, r, resp.OK())
+		render.Status(r, http.StatusNoContent)
 	}
 }

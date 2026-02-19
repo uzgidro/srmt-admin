@@ -3,25 +3,23 @@ package patch
 import (
 	"context"
 	"errors"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/render"
 	"log/slog"
 	"net/http"
 	resp "srmt-admin/internal/lib/api/response"
+	"srmt-admin/internal/lib/dto"
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/storage"
 	"strconv"
-)
 
-type Request struct {
-	Name        *string `json:"name,omitempty"`
-	Description *string `json:"description,omitempty"`
-}
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/render"
+	"github.com/go-playground/validator/v10"
+)
 
 // PositionUpdater - интерфейс для обновления
 type PositionUpdater interface {
-	EditPosition(ctx context.Context, id int64, name *string, description *string) error
+	EditPosition(ctx context.Context, id int64, req dto.EditPositionRequest) error
 }
 
 func New(log *slog.Logger, updater PositionUpdater) http.HandlerFunc {
@@ -40,7 +38,7 @@ func New(log *slog.Logger, updater PositionUpdater) http.HandlerFunc {
 		}
 
 		// 2. Декодируем JSON
-		var req Request
+		var req dto.EditPositionRequest
 		if err := render.DecodeJSON(r.Body, &req); err != nil {
 			log.Error("failed to decode request", sl.Err(err))
 			render.Status(r, http.StatusBadRequest)
@@ -48,16 +46,18 @@ func New(log *slog.Logger, updater PositionUpdater) http.HandlerFunc {
 			return
 		}
 
-		// 3. Валидация (если имя передано, оно не должно быть пустым)
-		if req.Name != nil && *req.Name == "" {
-			log.Warn("validation failed: name is empty")
+		// 3. Валидация
+		if err := validator.New().Struct(req); err != nil {
+			var vErrs validator.ValidationErrors
+			errors.As(err, &vErrs)
+			log.Error("validation failed", sl.Err(err))
 			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, resp.BadRequest("Name cannot be empty"))
+			render.JSON(w, r, resp.ValidationErrors(vErrs))
 			return
 		}
 
-		// 4. Вызываем метод репозитория
-		err = updater.EditPosition(r.Context(), id, req.Name, req.Description)
+		// 4. Вызываем метод сервиса
+		err = updater.EditPosition(r.Context(), id, req)
 		if err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
 				log.Warn("position not found", slog.Int64("id", id))
@@ -67,8 +67,8 @@ func New(log *slog.Logger, updater PositionUpdater) http.HandlerFunc {
 			}
 			if errors.Is(err, storage.ErrDuplicate) {
 				log.Warn("position name duplicate")
-				render.Status(r, http.StatusBadRequest)
-				render.JSON(w, r, resp.BadRequest("Position with this name already exists"))
+				render.Status(r, http.StatusConflict)
+				render.JSON(w, r, resp.Conflict("Position with this name already exists"))
 				return
 			}
 			log.Error("failed to update position", sl.Err(err))
@@ -78,6 +78,6 @@ func New(log *slog.Logger, updater PositionUpdater) http.HandlerFunc {
 		}
 
 		log.Info("position updated", slog.Int64("id", id))
-		render.JSON(w, r, resp.OK())
+		render.Status(r, http.StatusNoContent)
 	}
 }

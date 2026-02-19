@@ -14,7 +14,6 @@ import (
 	"srmt-admin/internal/lib/service/auth"
 	"srmt-admin/internal/lib/service/fileupload"
 	"srmt-admin/internal/storage"
-	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5/middleware"
@@ -260,20 +259,17 @@ func parseMultipartAddRequest(
 	}
 
 	// Parse event_date (required)
-	eventDate, err := formparser.GetFormTimeRequired(r, "event_date", time.RFC3339)
+	eventDate, err := formparser.GetFormDateTimeRequired(r, "event_date")
 	if err != nil {
-		return addRequest{}, nil, fmt.Errorf("invalid or missing event_date (use RFC3339 format): %w", err)
+		return addRequest{}, nil, fmt.Errorf("invalid event_date: %w", err)
 	}
 
 	// Parse event_type_id (required)
-	eventTypeIDStr := r.FormValue("event_type_id")
-	if eventTypeIDStr == "" {
-		return addRequest{}, nil, fmt.Errorf("event_type_id is required")
-	}
-	eventTypeID, err := strconv.Atoi(eventTypeIDStr)
+	eventTypeIDInt64, err := formparser.GetFormInt64Required(r, "event_type_id")
 	if err != nil {
-		return addRequest{}, nil, fmt.Errorf("invalid event_type_id: %w", err)
+		return addRequest{}, nil, fmt.Errorf("invalid or missing event_type_id: %w", err)
 	}
+	eventTypeID := int(eventTypeIDInt64)
 
 	// Parse optional fields
 	description := formparser.GetFormString(r, "description")
