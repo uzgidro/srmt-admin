@@ -220,11 +220,6 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 	router.Post("/auth/sign-in", signIn.New(deps.Log, deps.PgRepo, deps.Token))
 	router.Post("/auth/refresh", refresh.New(deps.Log, deps.PgRepo, deps.Token))
 	router.Post("/auth/sign-out", signOut.New(deps.Log))
-	router.Get("/reservoir-summary-hourly/export", reservoirsummaryhourly.GetExport(
-		deps.Log,
-		deps.ReservoirHourlyService,
-		reservoirHourlyExcelGen.New(deps.HourlyExcelTemplatePath),
-	))
 
 	router.Route("/api/v3", func(r chi.Router) {
 		r.Get("/modsnow", table.Get(deps.Log, deps.MongoRepo))
@@ -445,6 +440,11 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 				excelgen.New(deps.ExcelTemplatePath),
 			))
 			r.Post("/reservoir-summary", reservoirsummary.New(deps.Log, deps.PgRepo))
+			r.Get("/reservoir-summary-hourly/export", reservoirsummaryhourly.GetExport(
+				deps.Log,
+				deps.ReservoirHourlyService,
+				reservoirHourlyExcelGen.New(deps.HourlyExcelTemplatePath),
+			))
 
 			r.Get("/visits", visit.Get(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
 			r.Post("/visits", visit.Add(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
