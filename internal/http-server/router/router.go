@@ -278,11 +278,11 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Get("/{id}/download", myDocuments.Download(deps.Log))
 		})
 		r.Route("/my-salary", func(r chi.Router) {
-			r.Get("/", mySalary.Get(deps.Log))
+			r.Get("/", mySalary.Get(deps.Log, deps.HRMSalaryService))
 			r.Get("/payslip/{id}", mySalary.GetPayslip(deps.Log))
 		})
-		r.Get("/my-training", myTraining.Get(deps.Log))
-		r.Get("/my-competencies", myCompetencies.Get(deps.Log))
+		r.Get("/my-training", myTraining.Get(deps.Log, deps.HRMTrainingService))
+		r.Get("/my-competencies", myCompetencies.Get(deps.Log, deps.HRMCompetencyService))
 
 		// News
 		r.Get("/news", news.New(deps.Log, deps.HTTPClient, deps.Config.NewsRetriever.BaseURL))
@@ -340,6 +340,12 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 		r.Get("/ges/{id}/telemetry/{device_id}", asutpTelemetry.NewGetDevice(deps.Log, deps.RedisRepo))
 		r.Get("/ges/{id}/askue", gesAskue.New(deps.Log, deps.MetricsBlender))
 
+		// Positions (read — available to admin + HRM roles)
+		r.Group(func(r chi.Router) {
+			r.Use(mwauth.RequireAnyRole("admin", "hrm_admin", "hrm_manager", "hrm_employee", "rais"))
+			r.Get("/positions", positionsGet.New(deps.Log, deps.PgRepo))
+		})
+
 		// Admin routes
 		r.Group(func(r chi.Router) {
 			r.Use(mwauth.AdminOnly)
@@ -350,8 +356,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Patch("/roles/{id}", roleEdit.New(deps.Log, deps.PgRepo))
 			r.Delete("/roles/{id}", roleDelete.New(deps.Log, deps.PgRepo))
 
-			// Positions
-			r.Get("/positions", positionsGet.New(deps.Log, deps.PgRepo))
+			// Positions (write — admin only)
 			r.Post("/positions", positionsAdd.New(deps.Log, deps.PgRepo))
 			r.Patch("/positions/{id}", positionsPatch.New(deps.Log, deps.PgRepo))
 			r.Delete("/positions/{id}", positionsDelete.New(deps.Log, deps.PgRepo))
@@ -645,6 +650,9 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 				// Salaries — register specific routes BEFORE {id} routes
 				r.Post("/salaries/bulk-calculate", hrmSalaryHandler.BulkCalculate(deps.Log, deps.HRMSalaryService))
 				r.Get("/salaries/structure/{employeeId}", hrmSalaryHandler.GetStructure(deps.Log, deps.HRMSalaryService))
+				r.Get("/salaries/structures", hrmSalaryHandler.GetAllStructures(deps.Log, deps.HRMSalaryService))
+				r.Get("/salaries/bonuses", hrmSalaryHandler.GetAllBonuses(deps.Log, deps.HRMSalaryService))
+				r.Get("/salaries/deductions", hrmSalaryHandler.GetAllDeductions(deps.Log, deps.HRMSalaryService))
 				r.Get("/salaries/export", hrmSalaryHandler.Export(deps.Log))
 				r.Get("/salaries", hrmSalaryHandler.GetAll(deps.Log, deps.HRMSalaryService))
 				r.Post("/salaries", hrmSalaryHandler.Create(deps.Log, deps.HRMSalaryService))

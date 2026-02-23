@@ -7,6 +7,10 @@ import (
 	"github.com/go-chi/render"
 )
 
+type stubResponse struct {
+	Error string `json:"error"`
+}
+
 func GetPayslip(log *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		render.Status(r, http.StatusNotImplemented)

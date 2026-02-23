@@ -75,7 +75,7 @@ func (r *Repo) GetHRDocumentByID(ctx context.Context, id int64) (*document.HRDoc
 
 	sigQuery := `
 		SELECT ds.id, ds.document_id, ds.signer_id,
-			   COALESCE(c.name, ''), COALESCE(p.name, ''),
+			   COALESCE(c.fio, ''), COALESCE(p.name, ''),
 			   ds.status, ds.signed_at, ds.comment, ds.sign_order, ds.created_at
 		FROM document_signatures ds
 		LEFT JOIN contacts c ON ds.signer_id = c.id
@@ -261,7 +261,7 @@ func (r *Repo) GetHRDocumentSignatures(ctx context.Context, documentID int64) ([
 
 	query := `
 		SELECT ds.id, ds.document_id, ds.signer_id,
-			   COALESCE(c.name, ''), COALESCE(p.name, ''),
+			   COALESCE(c.fio, ''), COALESCE(p.name, ''),
 			   ds.status, ds.signed_at, ds.comment, ds.sign_order, ds.created_at
 		FROM document_signatures ds
 		LEFT JOIN contacts c ON ds.signer_id = c.id
@@ -314,7 +314,7 @@ func (r *Repo) GetAllDocumentRequests(ctx context.Context, employeeID *int64) ([
 	const op = "repo.GetAllDocumentRequests"
 
 	query := `
-		SELECT dr.id, dr.employee_id, COALESCE(c.name, ''),
+		SELECT dr.id, dr.employee_id, COALESCE(c.fio, ''),
 			   dr.document_type, dr.purpose, dr.status,
 			   dr.rejection_reason, dr.completed_at, dr.created_at, dr.updated_at
 		FROM document_requests dr
@@ -348,7 +348,7 @@ func (r *Repo) GetDocumentRequestByID(ctx context.Context, id int64) (*document.
 	const op = "repo.GetDocumentRequestByID"
 
 	query := `
-		SELECT dr.id, dr.employee_id, COALESCE(c.name, ''),
+		SELECT dr.id, dr.employee_id, COALESCE(c.fio, ''),
 			   dr.document_type, dr.purpose, dr.status,
 			   dr.rejection_reason, dr.completed_at, dr.created_at, dr.updated_at
 		FROM document_requests dr

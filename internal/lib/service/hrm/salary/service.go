@@ -27,12 +27,15 @@ type RepoInterface interface {
 	// Structures
 	GetActiveSalaryStructure(ctx context.Context, employeeID int64, forDate string) (*salary.SalaryStructure, error)
 	GetSalaryStructureByEmployee(ctx context.Context, employeeID int64) ([]*salary.SalaryStructure, error)
+	GetAllSalaryStructures(ctx context.Context) ([]*salary.SalaryStructure, error)
 
 	// Bonuses/Deductions
 	CreateBonuses(ctx context.Context, salaryID int64, bonuses []dto.BonusInput) error
 	CreateDeductions(ctx context.Context, salaryID int64, deductions []dto.DeductionInput) error
 	GetBonuses(ctx context.Context, salaryID int64) ([]*salary.Bonus, error)
 	GetDeductions(ctx context.Context, salaryID int64) ([]*salary.Deduction, error)
+	GetAllBonuses(ctx context.Context) ([]*salary.Bonus, error)
+	GetAllDeductions(ctx context.Context) ([]*salary.Deduction, error)
 
 	// Helpers
 	GetActiveEmployeesByDepartment(ctx context.Context, departmentID *int64) ([]int64, error)
@@ -273,6 +276,39 @@ func (s *Service) GetBonuses(ctx context.Context, salaryID int64) ([]*salary.Bon
 
 func (s *Service) GetDeductions(ctx context.Context, salaryID int64) ([]*salary.Deduction, error) {
 	deductions, err := s.repo.GetDeductions(ctx, salaryID)
+	if err != nil {
+		return nil, err
+	}
+	if deductions == nil {
+		deductions = []*salary.Deduction{}
+	}
+	return deductions, nil
+}
+
+func (s *Service) GetAllStructures(ctx context.Context) ([]*salary.SalaryStructure, error) {
+	structures, err := s.repo.GetAllSalaryStructures(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if structures == nil {
+		structures = []*salary.SalaryStructure{}
+	}
+	return structures, nil
+}
+
+func (s *Service) GetAllBonuses(ctx context.Context) ([]*salary.Bonus, error) {
+	bonuses, err := s.repo.GetAllBonuses(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if bonuses == nil {
+		bonuses = []*salary.Bonus{}
+	}
+	return bonuses, nil
+}
+
+func (s *Service) GetAllDeductions(ctx context.Context) ([]*salary.Deduction, error) {
+	deductions, err := s.repo.GetAllDeductions(ctx)
 	if err != nil {
 		return nil, err
 	}

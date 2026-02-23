@@ -18,16 +18,13 @@ type OrgUnit struct {
 }
 
 type OrgEmployee struct {
-	ID                int64   `json:"id"`
-	Name              string  `json:"name"`
-	Position          string  `json:"position"`
-	Department        string  `json:"department"`
-	UnitID            *int64  `json:"unit_id,omitempty"`
-	IsHead            bool    `json:"is_head"`
-	ManagerID         *int64  `json:"manager_id,omitempty"`
-	ManagerName       *string `json:"manager_name,omitempty"`
-	SubordinatesCount int     `json:"subordinates_count"`
-	Avatar            *string `json:"avatar,omitempty"`
-	Phone             *string `json:"phone,omitempty"`
-	Email             *string `json:"email,omitempty"`
+	ID         int64   `json:"id"`
+	Name       string  `json:"name"`
+	Position   string  `json:"position"`
+	Department string  `json:"department"`
+	UnitID     *int64  `json:"unit_id,omitempty"`
+	IsHead     bool    `json:"is_head"`
+	Avatar     *string `json:"avatar,omitempty"`
+	Phone      *string `json:"phone,omitempty"`
+	Email      *string `json:"email,omitempty"`
 }

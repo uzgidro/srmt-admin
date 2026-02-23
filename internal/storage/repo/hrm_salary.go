@@ -86,6 +86,11 @@ func (r *Repo) GetAllSalaries(ctx context.Context, filters dto.SalaryFilters) ([
 	var args []interface{}
 	argIdx := 1
 
+	if filters.EmployeeID != nil {
+		conditions = append(conditions, fmt.Sprintf("s.employee_id = $%d", argIdx))
+		args = append(args, *filters.EmployeeID)
+		argIdx++
+	}
 	if filters.PeriodYear != nil {
 		conditions = append(conditions, fmt.Sprintf("s.period_year = $%d", argIdx))
 		args = append(args, *filters.PeriodYear)
@@ -444,6 +449,80 @@ func (r *Repo) SalaryExists(ctx context.Context, employeeID int64, year, month i
 		return false, fmt.Errorf("%s: %w", op, err)
 	}
 	return exists, nil
+}
+
+// --- Collection Getters ---
+
+func (r *Repo) GetAllSalaryStructures(ctx context.Context) ([]*salary.SalaryStructure, error) {
+	const op = "repo.GetAllSalaryStructures"
+
+	query := `
+		SELECT ss.id, ss.employee_id,
+			   ss.base_salary, ss.regional_allowance, ss.seniority_allowance,
+			   ss.qualification_allowance, ss.hazard_allowance, ss.night_shift_allowance,
+			   ss.effective_from::text, ss.effective_to::text, ss.created_at, ss.updated_at
+		FROM salary_structures ss
+		ORDER BY ss.effective_from DESC`
+
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+	defer rows.Close()
+
+	var structures []*salary.SalaryStructure
+	for rows.Next() {
+		ss, err := scanSalaryStructure(rows)
+		if err != nil {
+			return nil, fmt.Errorf("%s: scan: %w", op, err)
+		}
+		structures = append(structures, ss)
+	}
+	return structures, rows.Err()
+}
+
+func (r *Repo) GetAllBonuses(ctx context.Context) ([]*salary.Bonus, error) {
+	const op = "repo.GetAllBonuses"
+
+	query := `SELECT id, salary_id, bonus_type, amount, description, created_at FROM salary_bonuses ORDER BY created_at DESC`
+
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+	defer rows.Close()
+
+	var bonuses []*salary.Bonus
+	for rows.Next() {
+		b, err := scanBonus(rows)
+		if err != nil {
+			return nil, fmt.Errorf("%s: scan: %w", op, err)
+		}
+		bonuses = append(bonuses, b)
+	}
+	return bonuses, rows.Err()
+}
+
+func (r *Repo) GetAllDeductions(ctx context.Context) ([]*salary.Deduction, error) {
+	const op = "repo.GetAllDeductions"
+
+	query := `SELECT id, salary_id, deduction_type, amount, description, created_at FROM salary_deductions ORDER BY created_at DESC`
+
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+	defer rows.Close()
+
+	var deductions []*salary.Deduction
+	for rows.Next() {
+		d, err := scanDeduction(rows)
+		if err != nil {
+			return nil, fmt.Errorf("%s: scan: %w", op, err)
+		}
+		deductions = append(deductions, d)
+	}
+	return deductions, rows.Err()
 }
 
 // --- Scan Helpers ---
