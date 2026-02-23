@@ -187,12 +187,13 @@ func (r *Repo) GetUnitEmployees(ctx context.Context, unitID int64) ([]*orgstruct
 		SELECT c.id, COALESCE(c.fio, ''), COALESCE(p.name, ''), COALESCE(d.name, ''),
 			   ou.id,
 			   CASE WHEN ou.head_id = c.id THEN true ELSE false END,
-			   c.avatar, c.phone, c.email
+			   f.object_key, c.phone, c.email
 		FROM contacts c
 		LEFT JOIN personnel_records pr ON pr.employee_id = c.id
 		LEFT JOIN positions p ON c.position_id = p.id
 		LEFT JOIN departments d ON c.department_id = d.id
 		LEFT JOIN org_units ou ON ou.department_id = c.department_id
+		LEFT JOIN files f ON c.icon_id = f.id
 		WHERE c.department_id = $1
 		ORDER BY c.fio`
 
@@ -220,12 +221,13 @@ func (r *Repo) GetAllOrgEmployees(ctx context.Context) ([]*orgstructure.OrgEmplo
 		SELECT c.id, COALESCE(c.fio, ''), COALESCE(p.name, ''), COALESCE(d.name, ''),
 			   ou.id,
 			   CASE WHEN ou.head_id = c.id THEN true ELSE false END,
-			   c.avatar, c.phone, c.email
+			   f.object_key, c.phone, c.email
 		FROM contacts c
 		LEFT JOIN personnel_records pr ON pr.employee_id = c.id
 		LEFT JOIN positions p ON c.position_id = p.id
 		LEFT JOIN departments d ON c.department_id = d.id
 		LEFT JOIN org_units ou ON ou.department_id = c.department_id
+		LEFT JOIN files f ON c.icon_id = f.id
 		ORDER BY c.fio`
 
 	rows, err := r.db.QueryContext(ctx, query)
