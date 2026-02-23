@@ -46,6 +46,7 @@ type DeductionInput struct {
 
 // SalaryFilters — query parameters for GET /hrm/salaries
 type SalaryFilters struct {
+	EmployeeID   *int64
 	PeriodMonth  *int
 	PeriodYear   *int
 	DepartmentID *int64

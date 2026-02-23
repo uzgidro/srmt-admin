@@ -313,6 +313,11 @@ func timePtr(t time.Time) *time.Time {
 	return &t
 }
 
+func ptrTimePtr(t time.Time) **time.Time {
+	p := &t
+	return &p
+}
+
 // TestEditShutdownIdleDischargeCreation specifically tests the fix for creating
 // idle discharge when editing a shutdown that didn't have one
 func TestEditShutdownIdleDischargeCreation(t *testing.T) {

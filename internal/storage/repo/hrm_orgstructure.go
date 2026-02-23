@@ -37,7 +37,7 @@ func (r *Repo) GetOrgUnitByID(ctx context.Context, id int64) (*orgstructure.OrgU
 	const op = "repo.GetOrgUnitByID"
 
 	query := `
-		SELECT ou.id, ou.name, ou.type, ou.parent_id, ou.head_id, COALESCE(c.name, ''),
+		SELECT ou.id, ou.name, ou.type, ou.parent_id, ou.head_id, COALESCE(c.fio, ''),
 			   ou.department_id, ou.level, ou.created_at, ou.updated_at
 		FROM org_units ou
 		LEFT JOIN contacts c ON ou.head_id = c.id
@@ -57,7 +57,7 @@ func (r *Repo) GetAllOrgUnits(ctx context.Context) ([]*orgstructure.OrgUnit, err
 	const op = "repo.GetAllOrgUnits"
 
 	query := `
-		SELECT ou.id, ou.name, ou.type, ou.parent_id, ou.head_id, COALESCE(c.name, ''),
+		SELECT ou.id, ou.name, ou.type, ou.parent_id, ou.head_id, COALESCE(c.fio, ''),
 			   ou.department_id, ou.level, ou.created_at, ou.updated_at
 		FROM org_units ou
 		LEFT JOIN contacts c ON ou.head_id = c.id
@@ -184,20 +184,17 @@ func (r *Repo) GetUnitEmployees(ctx context.Context, unitID int64) ([]*orgstruct
 	}
 
 	query := `
-		SELECT c.id, COALESCE(c.name, ''), COALESCE(p.name, ''), COALESCE(d.name, ''),
+		SELECT c.id, COALESCE(c.fio, ''), COALESCE(p.name, ''), COALESCE(d.name, ''),
 			   ou.id,
 			   CASE WHEN ou.head_id = c.id THEN true ELSE false END,
-			   pr.manager_id, COALESCE(mc.name, ''),
-			   (SELECT COUNT(*) FROM personnel_records pr2 WHERE pr2.manager_id = c.id),
 			   c.avatar, c.phone, c.email
 		FROM contacts c
 		LEFT JOIN personnel_records pr ON pr.employee_id = c.id
 		LEFT JOIN positions p ON c.position_id = p.id
 		LEFT JOIN departments d ON c.department_id = d.id
 		LEFT JOIN org_units ou ON ou.department_id = c.department_id
-		LEFT JOIN contacts mc ON pr.manager_id = mc.id
 		WHERE c.department_id = $1
-		ORDER BY c.name`
+		ORDER BY c.fio`
 
 	rows, err := r.db.QueryContext(ctx, query, *deptID)
 	if err != nil {
@@ -220,19 +217,16 @@ func (r *Repo) GetAllOrgEmployees(ctx context.Context) ([]*orgstructure.OrgEmplo
 	const op = "repo.GetAllOrgEmployees"
 
 	query := `
-		SELECT c.id, COALESCE(c.name, ''), COALESCE(p.name, ''), COALESCE(d.name, ''),
+		SELECT c.id, COALESCE(c.fio, ''), COALESCE(p.name, ''), COALESCE(d.name, ''),
 			   ou.id,
 			   CASE WHEN ou.head_id = c.id THEN true ELSE false END,
-			   pr.manager_id, COALESCE(mc.name, ''),
-			   (SELECT COUNT(*) FROM personnel_records pr2 WHERE pr2.manager_id = c.id),
 			   c.avatar, c.phone, c.email
 		FROM contacts c
 		LEFT JOIN personnel_records pr ON pr.employee_id = c.id
 		LEFT JOIN positions p ON c.position_id = p.id
 		LEFT JOIN departments d ON c.department_id = d.id
 		LEFT JOIN org_units ou ON ou.department_id = c.department_id
-		LEFT JOIN contacts mc ON pr.manager_id = mc.id
-		ORDER BY c.name`
+		ORDER BY c.fio`
 
 	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
@@ -272,19 +266,13 @@ func scanOrgUnit(s scannable) (*orgstructure.OrgUnit, error) {
 
 func scanOrgEmployee(s scannable) (*orgstructure.OrgEmployee, error) {
 	var e orgstructure.OrgEmployee
-	var managerName *string
 	err := s.Scan(
 		&e.ID, &e.Name, &e.Position, &e.Department,
 		&e.UnitID, &e.IsHead,
-		&e.ManagerID, &managerName,
-		&e.SubordinatesCount,
 		&e.Avatar, &e.Phone, &e.Email,
 	)
 	if err != nil {
 		return nil, err
-	}
-	if managerName != nil && *managerName != "" {
-		e.ManagerName = managerName
 	}
 	return &e, nil
 }
