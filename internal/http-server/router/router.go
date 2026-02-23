@@ -698,6 +698,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 					// Stubs (501)
 					r.Post("/offers", hrmRecruitingHandler.CreateOffer(deps.Log))
 					r.Patch("/offers/{id}", hrmRecruitingHandler.UpdateOffer(deps.Log))
+					r.Get("/onboardings", hrmRecruitingHandler.GetOnboardings(deps.Log))
 					r.Post("/onboardings", hrmRecruitingHandler.CreateOnboarding(deps.Log))
 					r.Get("/stats", hrmRecruitingHandler.GetStats(deps.Log))
 				})
