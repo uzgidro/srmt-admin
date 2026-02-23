@@ -77,7 +77,7 @@ func (r *Repo) GetAllOrgUnits(ctx context.Context) ([]*orgstructure.OrgUnit, err
 		}
 		units = append(units, unit)
 	}
-	return units, nil
+	return units, rows.Err()
 }
 
 func (r *Repo) UpdateOrgUnit(ctx context.Context, id int64, req dto.UpdateOrgUnitRequest) error {
@@ -210,7 +210,7 @@ func (r *Repo) GetUnitEmployees(ctx context.Context, unitID int64) ([]*orgstruct
 		}
 		employees = append(employees, emp)
 	}
-	return employees, nil
+	return employees, rows.Err()
 }
 
 func (r *Repo) GetAllOrgEmployees(ctx context.Context) ([]*orgstructure.OrgEmployee, error) {
@@ -242,7 +242,7 @@ func (r *Repo) GetAllOrgEmployees(ctx context.Context) ([]*orgstructure.OrgEmplo
 		}
 		employees = append(employees, emp)
 	}
-	return employees, nil
+	return employees, rows.Err()
 }
 
 // ==================== Scanners ====================

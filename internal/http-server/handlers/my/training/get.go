@@ -37,6 +37,10 @@ func Get(log *slog.Logger, svc TrainingGetter) http.HandlerFunc {
 			return
 		}
 
+		if trainings == nil {
+			trainings = []*training.Training{}
+		}
+
 		render.JSON(w, r, trainings)
 	}
 }

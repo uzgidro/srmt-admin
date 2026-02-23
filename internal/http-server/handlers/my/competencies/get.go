@@ -37,6 +37,10 @@ func Get(log *slog.Logger, svc CompetencyGetter) http.HandlerFunc {
 			return
 		}
 
+		if assessments == nil {
+			assessments = []*competency.AssessmentSession{}
+		}
+
 		render.JSON(w, r, assessments)
 	}
 }
