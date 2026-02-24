@@ -59,14 +59,14 @@ func (g *Generator) GenerateExcel(date string, data []*reservoirsummarymodel.Res
 
 	set("L2", parsedDate)
 
-	// Populate level data in cells B6-B21 (skip last organization and skip B18-B19, B22-B23)
-	currentLevelCells := []string{"B6", "B8", "B10", "B12", "B14", "B16", "B20"}
-	differenceCells := []string{"B7", "B9", "B11", "B13", "B15", "B17", "B21"}
+	// Populate level data in cells B6-B23 (skip B18-B19)
+	currentLevelCells := []string{"B6", "B8", "B10", "B12", "B14", "B16", "B20", "B22"}
+	differenceCells := []string{"B7", "B9", "B11", "B13", "B15", "B17", "B21", "B23"}
 
-	// Calculate the number of organizations to display (all except the last one)
+	// Calculate the number of organizations to display
 	maxIndex := len(filteredData)
-	if maxIndex > 7 {
-		maxIndex = 7 // Limit to 7 cells max
+	if maxIndex > 8 {
+		maxIndex = 8 // Limit to 8 cells max
 	}
 
 	// Populate cells with level data
@@ -76,16 +76,16 @@ func (g *Generator) GenerateExcel(date string, data []*reservoirsummarymodel.Res
 		set(differenceCells[i], org.Level.Current-org.Level.Previous)
 	}
 
-	// Populate volume data in cells C6-E16 (skip last organization)
-	currentVolumeCells := []string{"C6", "C8", "C10", "C12", "C14", "C16"}
-	volumeDifferenceCells := []string{"C7", "C9", "C11", "C13", "C15", "C17"}
-	pastYearVolumeCells := []string{"D6", "D8", "D10", "D12", "D14", "D16"}
-	twoYearsAgoVolumeCells := []string{"E6", "E8", "E10", "E12", "E14", "E16"}
+	// Populate volume data in cells C6-E22 (skip C18-C19)
+	currentVolumeCells := []string{"C6", "C8", "C10", "C12", "C14", "C16", "C20", "C22"}
+	volumeDifferenceCells := []string{"C7", "C9", "C11", "C13", "C15", "C17", "C21", "C23"}
+	pastYearVolumeCells := []string{"D6", "D8", "D10", "D12", "D14", "D16", "D20", "D22"}
+	twoYearsAgoVolumeCells := []string{"E6", "E8", "E10", "E12", "E14", "E16", "E20", "E22"}
 
-	// Calculate the number of organizations to display for volume (max 6 cells)
-	maxVolumeIndex := len(filteredData) // Skip last organization
-	if maxVolumeIndex > 6 {
-		maxVolumeIndex = 6 // Limit to 6 cells max
+	// Calculate the number of organizations to display for volume
+	maxVolumeIndex := len(filteredData)
+	if maxVolumeIndex > 8 {
+		maxVolumeIndex = 8 // Limit to 8 cells max
 	}
 
 	// Populate cells with volume data
@@ -100,8 +100,8 @@ func (g *Generator) GenerateExcel(date string, data []*reservoirsummarymodel.Res
 	// Populate income data in cells F6-H16
 	currentIncomeCells := []string{"F6", "F8", "F10", "F12", "F14", "F16", "F20", "F22"}
 	incomeDifferenceCells := []string{"F7", "F9", "F11", "F13", "F15", "F17", "F21", "F23"}
-	pastYearIncomeCells := []string{"G6", "G8", "G10", "G12", "G14", "G16"}
-	twoYearsAgoIncomeCells := []string{"H6", "H8", "H10", "H12", "H14", "H16"}
+	pastYearIncomeCells := []string{"G6", "G8", "G10", "G12", "G14", "G16", "G20", "G22"}
+	twoYearsAgoIncomeCells := []string{"H6", "H8", "H10", "H12", "H14", "H16", "H20", "H22"}
 
 	// Calculate the number of organizations to display for income current/diff (max 8 cells)
 	maxIncomeIndex := len(filteredData)
@@ -116,10 +116,10 @@ func (g *Generator) GenerateExcel(date string, data []*reservoirsummarymodel.Res
 		set(incomeDifferenceCells[i], org.Income.Current-org.Income.Previous)
 	}
 
-	// Calculate the number of organizations to display for income past year/two years ago (max 6 cells)
+	// Calculate the number of organizations to display for income past year/two years ago
 	maxIncomeHistoryIndex := len(filteredData)
-	if maxIncomeHistoryIndex > 6 {
-		maxIncomeHistoryIndex = 6 // Limit to 6 cells max
+	if maxIncomeHistoryIndex > 8 {
+		maxIncomeHistoryIndex = 8 // Limit to 8 cells max
 	}
 
 	// Populate cells with past year and two years ago income
@@ -132,8 +132,8 @@ func (g *Generator) GenerateExcel(date string, data []*reservoirsummarymodel.Res
 	// Populate release data in cells I6-K16
 	currentReleaseCells := []string{"I6", "I8", "I10", "I12", "I14", "I16", "I20", "I22"}
 	releaseDifferenceCells := []string{"I7", "I9", "I11", "I13", "I15", "I17", "I21", "I23"}
-	pastYearReleaseCells := []string{"J6", "J8", "J10", "J12", "J14", "J16"}
-	twoYearsAgoReleaseCells := []string{"K6", "K8", "K10", "K12", "K14", "K16"}
+	pastYearReleaseCells := []string{"J6", "J8", "J10", "J12", "J14", "J16", "J20", "J22"}
+	twoYearsAgoReleaseCells := []string{"K6", "K8", "K10", "K12", "K14", "K16", "K20", "K22"}
 
 	// Calculate the number of organizations to display for release current/diff (max 8 cells)
 	maxReleaseIndex := len(filteredData)
@@ -148,10 +148,10 @@ func (g *Generator) GenerateExcel(date string, data []*reservoirsummarymodel.Res
 		set(releaseDifferenceCells[i], org.Release.Current-org.Release.Previous)
 	}
 
-	// Calculate the number of organizations to display for release past year/two years ago (max 6 cells)
+	// Calculate the number of organizations to display for release past year/two years ago
 	maxReleaseHistoryIndex := len(filteredData)
-	if maxReleaseHistoryIndex > 6 {
-		maxReleaseHistoryIndex = 6 // Limit to 6 cells max
+	if maxReleaseHistoryIndex > 8 {
+		maxReleaseHistoryIndex = 8 // Limit to 8 cells max
 	}
 
 	// Populate cells with past year and two years ago release
@@ -161,14 +161,14 @@ func (g *Generator) GenerateExcel(date string, data []*reservoirsummarymodel.Res
 		set(twoYearsAgoReleaseCells[i], org.Release.TwoYearsAgo)
 	}
 
-	// Populate incoming volume (total income) data in cells L6-M16
-	currentYearIncomingVolumeCells := []string{"L6", "L8", "L10", "L12", "L14", "L16"}
-	pastYearIncomingVolumeCells := []string{"M6", "M8", "M10", "M12", "M14", "M16"}
+	// Populate incoming volume (total income) data in cells L6-M22
+	currentYearIncomingVolumeCells := []string{"L6", "L8", "L10", "L12", "L14", "L16", "L20", "L22"}
+	pastYearIncomingVolumeCells := []string{"M6", "M8", "M10", "M12", "M14", "M16", "M20", "M22"}
 
-	// Calculate the number of organizations to display for incoming volume (max 6 cells)
+	// Calculate the number of organizations to display for incoming volume
 	maxIncomingVolumeIndex := len(filteredData)
-	if maxIncomingVolumeIndex > 6 {
-		maxIncomingVolumeIndex = 6 // Limit to 6 cells max
+	if maxIncomingVolumeIndex > 8 {
+		maxIncomingVolumeIndex = 8 // Limit to 8 cells max
 	}
 
 	// Populate cells with incoming volume data
