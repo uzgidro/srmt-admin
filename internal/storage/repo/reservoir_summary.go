@@ -377,73 +377,17 @@ SELECT
     COALESCE(reld.release_two_years_ago, 0) AS release_two_years_ago,
     COALESCE(md.modsnow_current, 0) AS modsnow_current,
     COALESCE(md.modsnow_year_ago, 0) AS modsnow_year_ago,
-    -- Stored values (NULL if not set or not a reservoir organization)
-    CASE
-        WHEN EXISTS (
-            SELECT 1 FROM organization_type_links otl
-            WHERE otl.organization_id = od.organization_id
-            AND otl.type_id = 8
-        ) THEN siv.stored_total_income_volume
-        ELSE NULL
-    END AS stored_incoming_volume,
-    CASE
-        WHEN EXISTS (
-            SELECT 1 FROM organization_type_links otl
-            WHERE otl.organization_id = od.organization_id
-            AND otl.type_id = 8
-        ) THEN siv.stored_total_income_volume_prev_year
-        ELSE NULL
-    END AS stored_incoming_volume_prev_year,
-    -- Set incoming_volume to 0 for non-reservoir organizations
-    CASE
-        WHEN EXISTS (
-            SELECT 1 FROM organization_type_links otl
-            WHERE otl.organization_id = od.organization_id
-            AND otl.type_id = 8
-        ) THEN COALESCE(iv.incoming_volume_mln_m3_current_year, 0)
-        ELSE 0
-    END AS incoming_volume_mln_m3,
-    CASE
-        WHEN EXISTS (
-            SELECT 1 FROM organization_type_links otl
-            WHERE otl.organization_id = od.organization_id
-            AND otl.type_id = 8
-        ) THEN COALESCE(iv.incoming_volume_mln_m3_prev_year, 0)
-        ELSE 0
-    END AS incoming_volume_mln_m3_prev_year,
-    -- Calculation Base Details (New Fields)
-    CASE
-        WHEN EXISTS (
-            SELECT 1 FROM organization_type_links otl
-            WHERE otl.organization_id = od.organization_id
-            AND otl.type_id = 8
-        ) THEN iv.base_date_curr
-        ELSE NULL
-    END AS base_date_curr,
-    CASE
-        WHEN EXISTS (
-            SELECT 1 FROM organization_type_links otl
-            WHERE otl.organization_id = od.organization_id
-            AND otl.type_id = 8
-        ) THEN iv.base_val_curr
-        ELSE NULL
-    END AS base_val_curr,
-    CASE
-        WHEN EXISTS (
-            SELECT 1 FROM organization_type_links otl
-            WHERE otl.organization_id = od.organization_id
-            AND otl.type_id = 8
-        ) THEN iv.base_date_prev
-        ELSE NULL
-    END AS base_date_prev,
-    CASE
-        WHEN EXISTS (
-            SELECT 1 FROM organization_type_links otl
-            WHERE otl.organization_id = od.organization_id
-            AND otl.type_id = 8
-        ) THEN iv.base_val_prev
-        ELSE NULL
-    END AS base_val_prev
+    -- Stored values (NULL if not set)
+    siv.stored_total_income_volume AS stored_incoming_volume,
+    siv.stored_total_income_volume_prev_year AS stored_incoming_volume_prev_year,
+    -- Incoming volume for all organizations
+    COALESCE(iv.incoming_volume_mln_m3_current_year, 0) AS incoming_volume_mln_m3,
+    COALESCE(iv.incoming_volume_mln_m3_prev_year, 0) AS incoming_volume_mln_m3_prev_year,
+    -- Calculation Base Details
+    iv.base_date_curr AS base_date_curr,
+    iv.base_val_curr AS base_val_curr,
+    iv.base_date_prev AS base_date_prev,
+    iv.base_val_prev AS base_val_prev
 
 FROM org_data od
 LEFT JOIN organizations o ON od.organization_id = o.id
@@ -537,16 +481,8 @@ SELECT
     ) THEN COALESCE(md.modsnow_year_ago, 0) ELSE 0 END), 0) AS modsnow_year_ago,
     NULL AS stored_incoming_volume,
     NULL AS stored_incoming_volume_prev_year,
-    COALESCE(SUM(CASE WHEN EXISTS (
-        SELECT 1 FROM organization_type_links otl
-        WHERE otl.organization_id = od.organization_id
-        AND otl.type_id = 8
-    ) THEN COALESCE(iv.incoming_volume_mln_m3_current_year, 0) ELSE 0 END), 0) AS incoming_volume_mln_m3,
-    COALESCE(SUM(CASE WHEN EXISTS (
-        SELECT 1 FROM organization_type_links otl
-        WHERE otl.organization_id = od.organization_id
-        AND otl.type_id = 8
-    ) THEN COALESCE(iv.incoming_volume_mln_m3_prev_year, 0) ELSE 0 END), 0) AS incoming_volume_mln_m3_prev_year,
+    COALESCE(SUM(COALESCE(iv.incoming_volume_mln_m3_current_year, 0)), 0) AS incoming_volume_mln_m3,
+    COALESCE(SUM(COALESCE(iv.incoming_volume_mln_m3_prev_year, 0)), 0) AS incoming_volume_mln_m3_prev_year,
     NULL AS base_date_curr,
     NULL AS base_val_curr,
     NULL AS base_date_prev,
