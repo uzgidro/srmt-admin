@@ -37,6 +37,11 @@ func ApproveRequest(log *slog.Logger, svc DocumentRequestApprover) http.HandlerF
 				render.JSON(w, r, resp.NotFound("Document request not found"))
 				return
 			}
+			if errors.Is(err, storage.ErrInvalidStatus) {
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest("Request is not in pending status"))
+				return
+			}
 			log.Error("failed to approve document request", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)
 			render.JSON(w, r, resp.InternalServerError("Failed to approve document request"))

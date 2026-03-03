@@ -2,7 +2,6 @@ package access
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"srmt-admin/internal/lib/dto"
 	"srmt-admin/internal/lib/model/hrm/access"
@@ -142,7 +141,7 @@ func (s *Service) ApproveRequest(ctx context.Context, id int64, approvedBy int64
 		return err
 	}
 	if req.Status != "pending" {
-		return errors.New("request is not in pending status")
+		return storage.ErrInvalidStatus
 	}
 	return s.repo.UpdateAccessRequestStatus(ctx, id, "approved", &approvedBy, nil)
 }
@@ -153,7 +152,7 @@ func (s *Service) RejectRequest(ctx context.Context, id int64, reason string) er
 		return err
 	}
 	if req.Status != "pending" {
-		return errors.New("request is not in pending status")
+		return storage.ErrInvalidStatus
 	}
 	return s.repo.UpdateAccessRequestStatus(ctx, id, "rejected", nil, &reason)
 }

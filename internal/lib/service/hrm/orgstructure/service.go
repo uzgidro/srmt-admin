@@ -2,10 +2,10 @@ package orgstructure
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"srmt-admin/internal/lib/dto"
 	"srmt-admin/internal/lib/model/hrm/orgstructure"
+	"srmt-admin/internal/storage"
 )
 
 type RepoInterface interface {
@@ -79,7 +79,7 @@ func (s *Service) Delete(ctx context.Context, id int64) error {
 		return err
 	}
 	if hasChildren {
-		return errors.New("cannot delete unit with children")
+		return storage.ErrUnitHasChildren
 	}
 	return s.repo.DeleteOrgUnit(ctx, id)
 }

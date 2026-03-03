@@ -2,7 +2,6 @@ package document
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"srmt-admin/internal/lib/dto"
 	"srmt-admin/internal/lib/model/hrm/document"
@@ -101,7 +100,7 @@ func (s *Service) ApproveRequest(ctx context.Context, id int64) error {
 		return err
 	}
 	if req.Status != "pending" {
-		return errors.New("request is not in pending status")
+		return storage.ErrInvalidStatus
 	}
 	return s.repo.UpdateDocumentRequestStatus(ctx, id, "in_progress", nil)
 }
@@ -112,7 +111,7 @@ func (s *Service) RejectRequest(ctx context.Context, id int64, reason string) er
 		return err
 	}
 	if req.Status != "pending" {
-		return errors.New("request is not in pending status")
+		return storage.ErrInvalidStatus
 	}
 	return s.repo.UpdateDocumentRequestStatus(ctx, id, "rejected", &reason)
 }

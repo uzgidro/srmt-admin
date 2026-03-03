@@ -2,6 +2,7 @@ package access
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	mwauth "srmt-admin/internal/http-server/middleware/auth"
@@ -38,8 +39,10 @@ func CreateRequest(log *slog.Logger, svc AccessRequestCreator) http.HandlerFunc 
 		}
 
 		if err := validator.New().Struct(req); err != nil {
+			var vErrs validator.ValidationErrors
+			errors.As(err, &vErrs)
 			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, resp.BadRequest(err.Error()))
+			render.JSON(w, r, resp.ValidationErrors(vErrs))
 			return
 		}
 

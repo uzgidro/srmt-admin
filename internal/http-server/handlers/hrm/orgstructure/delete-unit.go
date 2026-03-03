@@ -37,6 +37,11 @@ func DeleteUnit(log *slog.Logger, svc UnitDeleter) http.HandlerFunc {
 				render.JSON(w, r, resp.NotFound("Org unit not found"))
 				return
 			}
+			if errors.Is(err, storage.ErrUnitHasChildren) {
+				render.Status(r, http.StatusConflict)
+				render.JSON(w, r, resp.Conflict("Cannot delete unit with child units"))
+				return
+			}
 			log.Error("failed to delete org unit", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)
 			render.JSON(w, r, resp.InternalServerError("Failed to delete org unit"))

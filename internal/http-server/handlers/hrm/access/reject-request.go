@@ -41,8 +41,10 @@ func RejectRequest(log *slog.Logger, svc AccessRequestRejecter) http.HandlerFunc
 		}
 
 		if err := validator.New().Struct(req); err != nil {
+			var vErrs validator.ValidationErrors
+			errors.As(err, &vErrs)
 			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, resp.BadRequest(err.Error()))
+			render.JSON(w, r, resp.ValidationErrors(vErrs))
 			return
 		}
 
@@ -50,6 +52,11 @@ func RejectRequest(log *slog.Logger, svc AccessRequestRejecter) http.HandlerFunc
 			if errors.Is(err, storage.ErrAccessRequestNotFound) {
 				render.Status(r, http.StatusNotFound)
 				render.JSON(w, r, resp.NotFound("Access request not found"))
+				return
+			}
+			if errors.Is(err, storage.ErrInvalidStatus) {
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest("Request is not in pending status"))
 				return
 			}
 			log.Error("failed to reject access request", sl.Err(err))

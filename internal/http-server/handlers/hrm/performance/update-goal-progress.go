@@ -41,8 +41,10 @@ func UpdateGoalProgress(log *slog.Logger, svc GoalProgressUpdater) http.HandlerF
 		}
 
 		if err := validator.New().Struct(req); err != nil {
+			var vErrs validator.ValidationErrors
+			errors.As(err, &vErrs)
 			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, resp.BadRequest(err.Error()))
+			render.JSON(w, r, resp.ValidationErrors(vErrs))
 			return
 		}
 
