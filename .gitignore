@@ -5,6 +5,7 @@ wire_gen.go
 *.exe
 
 /.claude
+/.vscode
 
 # Config files (contain secrets)
 /config/*.yaml
