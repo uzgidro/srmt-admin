@@ -45,6 +45,11 @@ func ApproveRequest(log *slog.Logger, svc AccessRequestApprover) http.HandlerFun
 				render.JSON(w, r, resp.NotFound("Access request not found"))
 				return
 			}
+			if errors.Is(err, storage.ErrInvalidStatus) {
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest("Request is not in pending status"))
+				return
+			}
 			log.Error("failed to approve access request", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)
 			render.JSON(w, r, resp.InternalServerError("Failed to approve access request"))

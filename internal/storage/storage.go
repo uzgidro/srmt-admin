@@ -69,8 +69,13 @@ var (
 	ErrAccessZoneNotFound    = errors.New("access zone not found")
 	ErrAccessRequestNotFound = errors.New("access request not found")
 
+	// Constraint errors
+	ErrNotNullViolation         = errors.New("required field is missing")
+	ErrCheckConstraintViolation = errors.New("value violates constraint")
+
 	// Org Structure errors
 	ErrOrgUnitNotFound = errors.New("org unit not found")
+	ErrUnitHasChildren = errors.New("cannot delete unit with children")
 
 	// Competency Assessment errors
 	ErrCompetencyNotFound = errors.New("competency not found")

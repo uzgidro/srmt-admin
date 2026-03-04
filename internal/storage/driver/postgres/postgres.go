@@ -53,6 +53,10 @@ func (t *Translator) Translate(err error, op string) error {
 			return fmt.Errorf("%s: %w", op, storage.ErrDuplicate)
 		case "23503":
 			return fmt.Errorf("%s: %w", op, storage.ErrForeignKeyViolation)
+		case "23502":
+			return fmt.Errorf("%s: %w", op, storage.ErrNotNullViolation)
+		case "23514":
+			return fmt.Errorf("%s: %w", op, storage.ErrCheckConstraintViolation)
 		}
 	}
 	return fmt.Errorf("%s: %w", op, err)

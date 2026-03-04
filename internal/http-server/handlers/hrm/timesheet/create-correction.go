@@ -9,6 +9,7 @@ import (
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/dto"
 	"srmt-admin/internal/lib/logger/sl"
+	"srmt-admin/internal/storage"
 
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
@@ -54,6 +55,11 @@ func CreateCorrection(log *slog.Logger, svc CorrectionCreator) http.HandlerFunc 
 
 		id, err := svc.CreateCorrection(r.Context(), req, claims.ContactID)
 		if err != nil {
+			if errors.Is(err, storage.ErrForeignKeyViolation) {
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest("Invalid timesheet entry ID"))
+				return
+			}
 			log.Error("failed to create correction", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)
 			render.JSON(w, r, resp.InternalServerError("Failed to create correction"))

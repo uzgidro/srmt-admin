@@ -32,8 +32,10 @@ func Create(log *slog.Logger, svc Creator) http.HandlerFunc {
 		}
 
 		if err := validator.New().Struct(req); err != nil {
+			var vErrs validator.ValidationErrors
+			errors.As(err, &vErrs)
 			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, resp.BadRequest(err.Error()))
+			render.JSON(w, r, resp.ValidationErrors(vErrs))
 			return
 		}
 
@@ -42,6 +44,11 @@ func Create(log *slog.Logger, svc Creator) http.HandlerFunc {
 			if errors.Is(err, storage.ErrSalaryAlreadyExists) {
 				render.Status(r, http.StatusConflict)
 				render.JSON(w, r, resp.Conflict("Salary record already exists for this period"))
+				return
+			}
+			if errors.Is(err, storage.ErrForeignKeyViolation) {
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest("Invalid employee ID"))
 				return
 			}
 			log.Error("failed to create salary", sl.Err(err))

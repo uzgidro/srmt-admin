@@ -2,11 +2,13 @@ package access
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/dto"
 	"srmt-admin/internal/lib/logger/sl"
+	"srmt-admin/internal/storage"
 
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
@@ -30,13 +32,20 @@ func CreateZone(log *slog.Logger, svc ZoneCreator) http.HandlerFunc {
 		}
 
 		if err := validator.New().Struct(req); err != nil {
+			var vErrs validator.ValidationErrors
+			errors.As(err, &vErrs)
 			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, resp.BadRequest(err.Error()))
+			render.JSON(w, r, resp.ValidationErrors(vErrs))
 			return
 		}
 
 		id, err := svc.CreateZone(r.Context(), req)
 		if err != nil {
+			if errors.Is(err, storage.ErrDuplicate) {
+				render.Status(r, http.StatusConflict)
+				render.JSON(w, r, resp.Conflict("Access zone with this name already exists"))
+				return
+			}
 			log.Error("failed to create access zone", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)
 			render.JSON(w, r, resp.InternalServerError("Failed to create access zone"))
