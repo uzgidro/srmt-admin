@@ -48,6 +48,7 @@ func (g *Generator) GenerateExcel(
 	visits []*visit.ResponseModel,
 	incidents []*incident.ResponseModel,
 	loc *time.Location,
+	authorShortName string,
 ) (*excelize.File, error) {
 	// Open template file
 	f, err := excelize.OpenFile(g.templatePath)
@@ -57,8 +58,8 @@ func (g *Generator) GenerateExcel(
 
 	sheet := f.GetSheetName(0)
 
-	// Replace DATE_START and DATE_END placeholders
-	if err := g.replaceDatePlaceholders(f, sheet, dateStart, dateEnd); err != nil {
+	// Replace DATE_START, DATE_END, and SHORT_NAME placeholders
+	if err := g.replacePlaceholders(f, sheet, dateStart, dateEnd, authorShortName); err != nil {
 		f.Close()
 		return nil, fmt.Errorf("failed to replace date placeholders: %w", err)
 	}
@@ -217,8 +218,8 @@ func (g *Generator) GenerateExcel(
 	return f, nil
 }
 
-// replaceDatePlaceholders replaces DATE_START, DATE_END, and DATE_TITLE in the template
-func (g *Generator) replaceDatePlaceholders(f *excelize.File, sheet string, dateStart, dateEnd time.Time) error {
+// replacePlaceholders replaces DATE_START, DATE_END, and SHORT_NAME in the template
+func (g *Generator) replacePlaceholders(f *excelize.File, sheet string, dateStart, dateEnd time.Time, authorShortName string) error {
 	rows, err := f.GetRows(sheet)
 	if err != nil {
 		return fmt.Errorf("failed to get rows: %w", err)
@@ -239,6 +240,10 @@ func (g *Generator) replaceDatePlaceholders(f *excelize.File, sheet string, date
 			}
 			if strings.Contains(newValue, "DATE_END") {
 				newValue = strings.Replace(newValue, "DATE_END", dateEndStr, -1)
+				replaced = true
+			}
+			if strings.Contains(newValue, "SHORT_NAME") {
+				newValue = strings.Replace(newValue, "SHORT_NAME", authorShortName, -1)
 				replaced = true
 			}
 

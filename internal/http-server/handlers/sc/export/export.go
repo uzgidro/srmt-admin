@@ -17,7 +17,9 @@ import (
 	"srmt-admin/internal/lib/model/incident"
 	"srmt-admin/internal/lib/model/shutdown"
 	"srmt-admin/internal/lib/model/visit"
+	mwauth "srmt-admin/internal/http-server/middleware/auth"
 	scgen "srmt-admin/internal/lib/service/excel/sc"
+	"strings"
 
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
@@ -47,6 +49,15 @@ type VisitGetter interface {
 // IncidentGetter defines the interface for fetching incident data
 type IncidentGetter interface {
 	GetIncidents(ctx context.Context, day time.Time) ([]*incident.ResponseModel, error)
+}
+
+func shortenName(fullName string) string {
+	parts := strings.Fields(fullName)
+	if len(parts) < 2 {
+		return fullName
+	}
+	firstRune := []rune(parts[1])[0]
+	return fmt.Sprintf("%s %c.", parts[0], firstRune)
 }
 
 // New returns an HTTP handler for Excel/PDF export of SC reports
@@ -149,8 +160,14 @@ func New(
 			return
 		}
 
+		// Get author short name from JWT claims
+		var authorShort string
+		if claims, ok := mwauth.ClaimsFromContext(r.Context()); ok {
+			authorShort = shortenName(claims.Name)
+		}
+
 		// Generate Excel file
-		excelFile, err := generator.GenerateExcel(startDate, endDate, discharges, groupedShutdowns, visits, incidents, loc)
+		excelFile, err := generator.GenerateExcel(startDate, endDate, discharges, groupedShutdowns, visits, incidents, loc, authorShort)
 		if err != nil {
 			log.Error("failed to generate Excel file", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)
