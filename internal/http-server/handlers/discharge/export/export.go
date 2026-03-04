@@ -65,8 +65,8 @@ func New(log *slog.Logger, getter DischargeGetter, generator *excelgen.Generator
 			return
 		}
 
-		// Operational day starts at 00:00 local time and ends at 00:00 next day
-		startDate := time.Date(parsedDate.Year(), parsedDate.Month(), parsedDate.Day(), 0, 0, 0, 0, loc)
+		// Operational day starts at 05:00 local time and ends at 05:00 next day
+		startDate := time.Date(parsedDate.Year(), parsedDate.Month(), parsedDate.Day(), 5, 0, 0, 0, loc)
 		endDate := startDate.Add(24 * time.Hour)
 
 		// Fetch discharge data for the operational day
