@@ -39,8 +39,8 @@ func (r *Repo) GetIncidents(ctx context.Context, day time.Time) ([]*incident.Res
 
 	// Create date range for the full day in the provided timezone
 	// This handles timezone conversion properly
-	// День начинается в 00:00 местного времени
-	startOfDay := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, day.Location())
+	// День начинается в 05:00 местного времени
+	startOfDay := time.Date(day.Year(), day.Month(), day.Day(), 5, 0, 0, 0, day.Location())
 	endOfDay := startOfDay.Add(24 * time.Hour)
 
 	query := selectIncidentFields + fromIncidentJoins +

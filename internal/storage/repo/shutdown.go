@@ -87,8 +87,8 @@ func (r *Repo) AddShutdown(ctx context.Context, req dto.AddShutdownRequest) (int
 func (r *Repo) GetShutdowns(ctx context.Context, day time.Time) ([]*shutdown.ResponseModel, error) {
 	const op = "storage.repo.GetShutdowns"
 
-	// День начинается в 00:00 местного времени
-	startOfDay := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, day.Location())
+	// День начинается в 05:00 местного времени
+	startOfDay := time.Date(day.Year(), day.Month(), day.Day(), 5, 0, 0, 0, day.Location())
 	endOfDay := startOfDay.Add(24 * time.Hour)
 
 	query := selectShutdownFields + fromShutdownJoins +
