@@ -22,7 +22,7 @@ func New(templatePath string) *Generator {
 }
 
 // GenerateExcel creates an Excel file from the template with the specified date
-func (g *Generator) GenerateExcel(date string, data []*reservoirsummarymodel.ResponseModel) (*excelize.File, error) {
+func (g *Generator) GenerateExcel(date string, data []*reservoirsummarymodel.ResponseModel, authorShortName string) (*excelize.File, error) {
 	// Open template file
 	f, err := excelize.OpenFile(g.templatePath)
 	if err != nil {
@@ -192,6 +192,8 @@ func (g *Generator) GenerateExcel(date string, data []*reservoirsummarymodel.Res
 		set(currentYearModsnowCells[i], org.Modsnow.Current)
 		set(pastYearModsnowCells[i], org.Modsnow.YearAgo)
 	}
+
+	set("K25", authorShortName)
 
 	if writeErr != nil {
 		f.Close()

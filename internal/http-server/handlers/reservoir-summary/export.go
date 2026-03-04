@@ -13,12 +13,23 @@ import (
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
 	excelgen "srmt-admin/internal/lib/service/excel/reservoir-summary"
+	mwauth "srmt-admin/internal/http-server/middleware/auth"
 	"srmt-admin/internal/storage/repo"
+	"strings"
 
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
 	"github.com/xuri/excelize/v2"
 )
+
+func shortenName(fullName string) string {
+	parts := strings.Fields(fullName)
+	if len(parts) < 2 {
+		return fullName
+	}
+	firstRune := []rune(parts[1])[0]
+	return fmt.Sprintf("%s %c.", parts[0], firstRune)
+}
 
 // GetExport returns an HTTP handler for Excel/PDF export
 func GetExport(log *slog.Logger, pgRepo *repo.Repo, generator *excelgen.Generator) http.HandlerFunc {
@@ -68,8 +79,14 @@ func GetExport(log *slog.Logger, pgRepo *repo.Repo, generator *excelgen.Generato
 			return
 		}
 
+		// Get author short name from JWT claims
+		var authorShort string
+		if claims, ok := mwauth.ClaimsFromContext(r.Context()); ok {
+			authorShort = shortenName(claims.Name)
+		}
+
 		// Generate Excel file
-		excelFile, err := generator.GenerateExcel(dateStr, data)
+		excelFile, err := generator.GenerateExcel(dateStr, data, authorShort)
 		if err != nil {
 			log.Error("failed to generate Excel file", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)
