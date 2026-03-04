@@ -30,8 +30,8 @@ func Get(log *slog.Logger, getter visitGetter, minioRepo helpers.MinioURLGenerat
 
 		if dateStr == "" {
 			now := time.Now().In(loc)
-			// День начинается в 07:00 местного времени
-			day = time.Date(now.Year(), now.Month(), now.Day(), 7, 0, 0, 0, loc)
+			// День начинается в 00:00 местного времени
+			day = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
 			log.Info("no 'date' parameter provided, using today", "date", day.Format(dateLayout))
 		} else {
 			var err error
@@ -43,8 +43,8 @@ func Get(log *slog.Logger, getter visitGetter, minioRepo helpers.MinioURLGenerat
 				render.JSON(w, r, resp.BadRequest("Invalid 'date' format, use YYYY-MM-DD"))
 				return
 			}
-			// День начинается в 07:00 местного времени
-			day = time.Date(t.Year(), t.Month(), t.Day(), 7, 0, 0, 0, loc)
+			// День начинается в 00:00 местного времени
+			day = time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, loc)
 			log.Info("using provided 'date' parameter", "date", dateStr)
 		}
 
