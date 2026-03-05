@@ -97,10 +97,10 @@ func (s *Service) BuildReport(ctx context.Context, date string) (*model.HourlyRe
 func (s *Service) transformRecords(orgID int64, orgName string, records []*dto.ReservoirData) model.ReservoirData {
 	current := records[0]
 
-	// Find day-begin: first record starting from index 1 where hour == 6
+	// Find day-begin: first record starting from index 1 where hour == 0
 	dayBegin := records[len(records)-1] // fallback to oldest
 	for i := 1; i < len(records); i++ {
-		if records[i].Time != nil && records[i].Time.Hour() == 6 {
+		if records[i].Time != nil && records[i].Time.Hour() == 0 {
 			dayBegin = records[i]
 			break
 		}

@@ -118,7 +118,7 @@ func (f *Fetcher) FetchDataAtDayBegin(ctx context.Context, date string) (map[int
 
 			dataAtDayBegin := &dto.ReservoirData{}
 			for _, item := range convertedData {
-				if item.Time.Hour() == 6 {
+				if item.Time.Hour() == 0 {
 					dataAtDayBegin = item
 				}
 			}
@@ -502,53 +502,53 @@ func (f *Fetcher) calculateMetrics(data *APIResponse, isToday bool) *dto.Reservo
 		last := data.Items[len(data.Items)-1]
 		metrics.Current = f.extractData(&last)
 
-		// Find element with time == 6 for diff calculation
-		var time6Element *APIResponseItem
+		// Find day-begin element for diff calculation
+		var dayBegin *APIResponseItem
 		for i := range data.Items {
-			if data.Items[i].Time == 6 {
-				time6Element = &data.Items[i]
+			if data.Items[i].Time == 0 {
+				dayBegin = &data.Items[i]
 				break
 			}
 		}
 
-		// Calculate diff if we found the 6 o'clock element
-		if time6Element != nil {
+		// Calculate diff if we found the day-begin element
+		if dayBegin != nil {
 			currentData := f.extractData(&last)
-			time6Data := f.extractData(time6Element)
+			dayBeginData := f.extractData(dayBegin)
 
-			if currentData != nil && time6Data != nil {
+			if currentData != nil && dayBeginData != nil {
 				metrics.Diff = &dto.ReservoirData{}
 
 				// Calculate differences for each field
-				if currentData.Income != nil && time6Data.Income != nil {
-					diff := *currentData.Income - *time6Data.Income
+				if currentData.Income != nil && dayBeginData.Income != nil {
+					diff := *currentData.Income - *dayBeginData.Income
 					metrics.Diff.Income = &diff
 				}
-				if currentData.Release != nil && time6Data.Release != nil {
-					diff := *currentData.Release - *time6Data.Release
+				if currentData.Release != nil && dayBeginData.Release != nil {
+					diff := *currentData.Release - *dayBeginData.Release
 					metrics.Diff.Release = &diff
 				}
-				if currentData.Level != nil && time6Data.Level != nil {
-					diff := *currentData.Level - *time6Data.Level
+				if currentData.Level != nil && dayBeginData.Level != nil {
+					diff := *currentData.Level - *dayBeginData.Level
 					metrics.Diff.Level = &diff
 				}
-				if currentData.Volume != nil && time6Data.Volume != nil {
-					diff := *currentData.Volume - *time6Data.Volume
+				if currentData.Volume != nil && dayBeginData.Volume != nil {
+					diff := *currentData.Volume - *dayBeginData.Volume
 					metrics.Diff.Volume = &diff
 				}
 			}
 		}
 	} else {
-		// For historical dates: find element with time == 6, or use last element if not found
+		// For historical dates: find element with time == 0, or use last element if not found
 		var selectedElement *APIResponseItem
 		for i := range data.Items {
-			if data.Items[i].Time == 6 {
+			if data.Items[i].Time == 0 {
 				selectedElement = &data.Items[i]
 				break
 			}
 		}
 
-		// If no time==6 element found, use the last element
+		// If no time==0 element found, use the last element
 		if selectedElement == nil {
 			selectedElement = &data.Items[len(data.Items)-1]
 		}
