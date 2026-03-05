@@ -142,18 +142,25 @@ func (r *Repo) EditShutdown(ctx context.Context, id int64, req dto.EditShutdownR
 	var currentIdleID sql.NullInt64
 	var currentStart time.Time
 	var currentEnd sql.NullTime
-	var currentOrgID int64 // (Нужен, если создаем новый ХС)
+	var currentOrgID int64         // (Нужен, если создаем новый ХС)
+	var currentReason sql.NullString // (Нужен для причины ХС)
 
 	err = tx.QueryRowContext(ctx,
-		"SELECT organization_id, idle_discharge_id, start_time, end_time FROM shutdowns WHERE id = $1 FOR UPDATE",
+		"SELECT organization_id, idle_discharge_id, start_time, end_time, reason FROM shutdowns WHERE id = $1 FOR UPDATE",
 		id,
-	).Scan(&currentOrgID, &currentIdleID, &currentStart, &currentEnd)
+	).Scan(&currentOrgID, &currentIdleID, &currentStart, &currentEnd, &currentReason)
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return storage.ErrNotFound
 		}
 		return fmt.Errorf("%s: failed to get current shutdown: %w", op, err)
+	}
+
+	// Определяем причину для ХС: из запроса или текущую из БД
+	effectiveReason := currentReason
+	if req.Reason != nil {
+		effectiveReason = sql.NullString{String: *req.Reason, Valid: true}
 	}
 
 	// --- (ИСПРАВЛЕННАЯ ЛОГИКА) ---
@@ -203,8 +210,8 @@ func (r *Repo) EditShutdown(ctx context.Context, id int64, req dto.EditShutdownR
 		if currentIdleID.Valid {
 			// (Уже был - ОБНОВЛЯЕМ)
 			_, err = tx.ExecContext(ctx,
-				"UPDATE idle_water_discharges SET start_time = $1, end_time = $2, flow_rate_m3_s = $3 WHERE id = $4",
-				start, end, flowRate, currentIdleID.Int64,
+				"UPDATE idle_water_discharges SET start_time = $1, end_time = $2, flow_rate_m3_s = $3, reason = $4 WHERE id = $5",
+				start, end, flowRate, effectiveReason, currentIdleID.Int64,
 			)
 			if err != nil {
 				return fmt.Errorf("%s: failed to update idle_discharge: %w", op, err)
@@ -215,8 +222,8 @@ func (r *Repo) EditShutdown(ctx context.Context, id int64, req dto.EditShutdownR
 			// (Не было, но объем > 0 - СОЗДАЕМ)
 			var createdIdleID int64
 			err = tx.QueryRowContext(ctx,
-				"INSERT INTO idle_water_discharges (organization_id, start_time, end_time, flow_rate_m3_s, created_by) VALUES ($1, $2, $3, $4, $5) RETURNING id",
-				currentOrgID, start, end, flowRate, req.CreatedByUserID,
+				"INSERT INTO idle_water_discharges (organization_id, start_time, end_time, flow_rate_m3_s, reason, created_by) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+				currentOrgID, start, end, flowRate, effectiveReason, req.CreatedByUserID,
 			).Scan(&createdIdleID)
 			if err != nil {
 				return fmt.Errorf("%s: failed to insert idle_discharge: %w", op, err)
