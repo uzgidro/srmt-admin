@@ -759,7 +759,7 @@ func (r *Repo) GetOrganizationsWithReservoir(ctx context.Context, orgIDs []int64
 		WHERE
 			d.organization_id = ANY($1)
 			AND d.start_time <= $2::date
-			AND (d.end_time >= $2::date OR d.end_time IS NULL)
+			AND (d.end_time > $2::date OR d.end_time IS NULL)
 		ORDER BY d.organization_id, d.id DESC;
 	`
 

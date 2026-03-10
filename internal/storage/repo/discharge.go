@@ -89,7 +89,7 @@ func (r *Repo) GetAllDischarges(ctx context.Context, isOngoing *bool, startDate,
 
 	if startDate != nil {
 		endOfDay := startDate.Add(24 * time.Hour)
-		conditions = append(conditions, fmt.Sprintf("(d.end_time >= $%d OR d.end_time IS NULL) AND d.start_time <= $%d", argID, argID+1))
+		conditions = append(conditions, fmt.Sprintf("(d.end_time > $%d OR d.end_time IS NULL) AND d.start_time < $%d", argID, argID+1))
 		args = append(args, *startDate, endOfDay)
 		argID += 2
 	}
@@ -224,7 +224,7 @@ func (r *Repo) GetDischargesByCascades(ctx context.Context, isOngoing *bool, sta
 	}
 	if startDate != nil {
 		endOfDay := startDate.Add(24 * time.Hour)
-		conditions = append(conditions, fmt.Sprintf("(d.end_time >= $%d OR d.end_time IS NULL) AND d.start_time <= $%d", argID, argID+1))
+		conditions = append(conditions, fmt.Sprintf("(d.end_time > $%d OR d.end_time IS NULL) AND d.start_time < $%d", argID, argID+1))
 		args = append(args, *startDate, endOfDay)
 		argID += 2
 	}
