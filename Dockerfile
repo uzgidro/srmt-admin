@@ -41,7 +41,7 @@ FROM alpine:3.23
 # libreoffice - для конвертации Excel в PDF
 # font-dejavu font-liberation font-noto - шрифты с поддержкой кириллицы
 # msttcorefonts-installer - Arial, Times New Roman и другие MS шрифты
-ARG CACHE_BUST=1
+ARG CACHE_BUST=2
 RUN apk upgrade --no-cache && \
     apk --no-cache add ca-certificates tzdata libreoffice \
     font-dejavu font-liberation font-noto \
