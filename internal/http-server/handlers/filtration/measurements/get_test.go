@@ -10,8 +10,27 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	mwauth "srmt-admin/internal/http-server/middleware/auth"
 	"srmt-admin/internal/lib/model/filtration"
+	"srmt-admin/internal/token"
 )
+
+// mockTokenVerifier implements mwauth.TokenVerifier for injecting claims into context.
+type mockTokenVerifier struct {
+	claims *token.Claims
+	err    error
+}
+
+func (m *mockTokenVerifier) Verify(_ string) (*token.Claims, error) {
+	return m.claims, m.err
+}
+
+// withAuth wraps a handler with the Authenticator middleware and a mock verifier
+// that returns the given claims. The request must include "Authorization: Bearer test-token".
+func withAuth(handler http.HandlerFunc, claims *token.Claims) http.Handler {
+	verifier := &mockTokenVerifier{claims: claims}
+	return mwauth.Authenticator(verifier)(handler)
+}
 
 type mockFiltrationGetter struct {
 	getFunc func(ctx context.Context, orgID int64, date string) ([]filtration.FiltrationMeasurement, error)
@@ -33,15 +52,20 @@ func TestGet(t *testing.T) {
 	flowRate := 1.5
 	level := 2.0
 
+	scClaims := &token.Claims{
+		UserID: 1,
+		Roles:  []string{"sc"},
+	}
+
 	tests := []struct {
-		name               string
-		url                string
-		filtrationReturn   []filtration.FiltrationMeasurement
-		filtrationErr      error
-		piezometerReturn   []filtration.PiezometerMeasurement
-		piezometerErr      error
-		wantStatusCode     int
-		wantErrInBody      bool
+		name             string
+		url              string
+		filtrationReturn []filtration.FiltrationMeasurement
+		filtrationErr    error
+		piezometerReturn []filtration.PiezometerMeasurement
+		piezometerErr    error
+		wantStatusCode   int
+		wantErrInBody    bool
 	}{
 		{
 			name:           "missing organization_id",
@@ -105,10 +129,11 @@ func TestGet(t *testing.T) {
 			}
 
 			req := httptest.NewRequest(http.MethodGet, tt.url, nil)
+			req.Header.Set("Authorization", "Bearer test-token")
 			rr := httptest.NewRecorder()
 			log := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-			handler := Get(log, fg, pg)
+			handler := withAuth(Get(log, fg, pg), scClaims)
 			handler.ServeHTTP(rr, req)
 
 			if rr.Code != tt.wantStatusCode {

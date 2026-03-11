@@ -10,6 +10,7 @@ import (
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/lib/model/filtration"
+	"srmt-admin/internal/lib/service/auth"
 	"srmt-admin/internal/storage"
 
 	"github.com/go-chi/chi/v5/middleware"
@@ -38,6 +39,13 @@ func Get(log *slog.Logger, getter SummaryGetter) http.HandlerFunc {
 			log.Warn("invalid organization_id", sl.Err(err), slog.String("organization_id", orgIDStr))
 			render.Status(r, http.StatusBadRequest)
 			render.JSON(w, r, resp.BadRequest("Invalid 'organization_id' parameter"))
+			return
+		}
+
+		if err := auth.CheckOrgAccess(r.Context(), orgID); err != nil {
+			log.Warn("access denied to organization", slog.Int64("org_id", orgID))
+			render.Status(r, http.StatusForbidden)
+			render.JSON(w, r, resp.Forbidden("Access denied"))
 			return
 		}
 

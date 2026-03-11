@@ -460,29 +460,6 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Patch("/visits/{id}", visit.Edit(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
 			r.Delete("/visits/{id}", visit.Delete(deps.Log, deps.PgRepo))
 
-			// Filtration (Фильтрация плотин)
-			r.Route("/filtration", func(r chi.Router) {
-				// Locations
-				r.Post("/locations", filtrationLocations.Add(deps.Log, deps.PgRepo))
-				r.Get("/locations", filtrationLocations.Get(deps.Log, deps.PgRepo))
-				r.Patch("/locations/{id}", filtrationLocations.Update(deps.Log, deps.PgRepo))
-				r.Delete("/locations/{id}", filtrationLocations.Delete(deps.Log, deps.PgRepo))
-
-				// Piezometers
-				r.Post("/piezometers", filtrationPiezometers.Add(deps.Log, deps.PgRepo))
-				r.Get("/piezometers", filtrationPiezometers.Get(deps.Log, deps.PgRepo))
-				r.Patch("/piezometers/{id}", filtrationPiezometers.Update(deps.Log, deps.PgRepo))
-				r.Delete("/piezometers/{id}", filtrationPiezometers.Delete(deps.Log, deps.PgRepo))
-				r.Get("/piezometers/counts", filtrationPiezometers.Counts(deps.Log, deps.PgRepo))
-
-				// Measurements
-				r.Post("/measurements", filtrationMeasurements.Upsert(deps.Log, deps.PgRepo, deps.PgRepo))
-				r.Get("/measurements", filtrationMeasurements.Get(deps.Log, deps.PgRepo, deps.PgRepo))
-
-				// Summary
-				r.Get("/summary", filtrationSummary.Get(deps.Log, deps.PgRepo))
-			})
-
 			// SC Export (комплексный суточный отчёт)
 			r.Get("/sc/export", scExport.New(
 				deps.Log,
@@ -494,6 +471,31 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 				scExcelGen.New(deps.SCExcelTemplatePath),
 				loc,
 			))
+		})
+
+		// Filtration (Фильтрация плотин)
+		r.Route("/filtration", func(r chi.Router) {
+			r.Use(mwauth.RequireAnyRole("sc", "rais", "reservoir"))
+
+			// Locations
+			r.Post("/locations", filtrationLocations.Add(deps.Log, deps.PgRepo))
+			r.Get("/locations", filtrationLocations.Get(deps.Log, deps.PgRepo))
+			r.Patch("/locations/{id}", filtrationLocations.Update(deps.Log, deps.PgRepo, deps.PgRepo))
+			r.Delete("/locations/{id}", filtrationLocations.Delete(deps.Log, deps.PgRepo, deps.PgRepo))
+
+			// Piezometers
+			r.Post("/piezometers", filtrationPiezometers.Add(deps.Log, deps.PgRepo))
+			r.Get("/piezometers", filtrationPiezometers.Get(deps.Log, deps.PgRepo))
+			r.Get("/piezometers/counts", filtrationPiezometers.Counts(deps.Log, deps.PgRepo))
+			r.Patch("/piezometers/{id}", filtrationPiezometers.Update(deps.Log, deps.PgRepo, deps.PgRepo))
+			r.Delete("/piezometers/{id}", filtrationPiezometers.Delete(deps.Log, deps.PgRepo, deps.PgRepo))
+
+			// Measurements
+			r.Post("/measurements", filtrationMeasurements.Upsert(deps.Log, deps.PgRepo, deps.PgRepo))
+			r.Get("/measurements", filtrationMeasurements.Get(deps.Log, deps.PgRepo, deps.PgRepo))
+
+			// Summary
+			r.Get("/summary", filtrationSummary.Get(deps.Log, deps.PgRepo))
 		})
 
 		r.Group(func(r chi.Router) {

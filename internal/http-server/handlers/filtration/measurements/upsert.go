@@ -25,9 +25,10 @@ type PiezometerMeasurementUpserter interface {
 }
 
 type UpsertRequest struct {
-	Date                   string                                `json:"date" validate:"required"`
-	FiltrationMeasurements []filtration.FiltrationMeasurementInput `json:"filtration_measurements"`
-	PiezometerMeasurements []filtration.PiezometerMeasurementInput `json:"piezometer_measurements"`
+	OrganizationID         int64                                   `json:"organization_id" validate:"required"`
+	Date                   string                                  `json:"date" validate:"required"`
+	FiltrationMeasurements []filtration.FiltrationMeasurementInput  `json:"filtration_measurements"`
+	PiezometerMeasurements []filtration.PiezometerMeasurementInput  `json:"piezometer_measurements"`
 }
 
 func Upsert(log *slog.Logger, fu FiltrationMeasurementUpserter, pu PiezometerMeasurementUpserter) http.HandlerFunc {
@@ -58,6 +59,13 @@ func Upsert(log *slog.Logger, fu FiltrationMeasurementUpserter, pu PiezometerMea
 			log.Error("validation failed", sl.Err(err))
 			render.Status(r, http.StatusBadRequest)
 			render.JSON(w, r, resp.ValidationErrors(vErrs))
+			return
+		}
+
+		if err := auth.CheckOrgAccess(r.Context(), req.OrganizationID); err != nil {
+			log.Warn("access denied to organization", slog.Int64("org_id", req.OrganizationID))
+			render.Status(r, http.StatusForbidden)
+			render.JSON(w, r, resp.Forbidden("Access denied"))
 			return
 		}
 

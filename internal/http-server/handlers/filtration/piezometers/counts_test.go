@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"srmt-admin/internal/lib/model/filtration"
+	"srmt-admin/internal/token"
 	"testing"
 )
 
@@ -23,6 +24,11 @@ func (m *mockPiezometerCounter) GetPiezometerCountsByOrg(ctx context.Context, or
 }
 
 func TestCounts(t *testing.T) {
+	scClaims := &token.Claims{
+		UserID: 1,
+		Roles:  []string{"sc"},
+	}
+
 	tests := []struct {
 		name           string
 		url            string
@@ -63,10 +69,11 @@ func TestCounts(t *testing.T) {
 			}
 
 			req := httptest.NewRequest(http.MethodGet, tt.url, nil)
+			req.Header.Set("Authorization", "Bearer test-token")
 			rr := httptest.NewRecorder()
 			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-			handler := Counts(logger, mock)
+			handler := withAuth(Counts(logger, mock), scClaims)
 			handler.ServeHTTP(rr, req)
 
 			if rr.Code != tt.wantStatusCode {

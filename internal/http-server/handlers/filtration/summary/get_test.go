@@ -10,9 +10,28 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	mwauth "srmt-admin/internal/http-server/middleware/auth"
 	"srmt-admin/internal/lib/model/filtration"
 	"srmt-admin/internal/storage"
+	"srmt-admin/internal/token"
 )
+
+// mockTokenVerifier implements mwauth.TokenVerifier for injecting claims into context.
+type mockTokenVerifier struct {
+	claims *token.Claims
+	err    error
+}
+
+func (m *mockTokenVerifier) Verify(_ string) (*token.Claims, error) {
+	return m.claims, m.err
+}
+
+// withAuth wraps a handler with the Authenticator middleware and a mock verifier
+// that returns the given claims. The request must include "Authorization: Bearer test-token".
+func withAuth(handler http.HandlerFunc, claims *token.Claims) http.Handler {
+	verifier := &mockTokenVerifier{claims: claims}
+	return mwauth.Authenticator(verifier)(handler)
+}
 
 type mockSummaryGetter struct {
 	getFunc func(ctx context.Context, orgID int64, date string) (*filtration.OrgFiltrationSummary, error)
@@ -23,6 +42,11 @@ func (m *mockSummaryGetter) GetOrgFiltrationSummary(ctx context.Context, orgID i
 }
 
 func TestGet(t *testing.T) {
+	scClaims := &token.Claims{
+		UserID: 1,
+		Roles:  []string{"sc"},
+	}
+
 	tests := []struct {
 		name           string
 		url            string
@@ -50,9 +74,9 @@ func TestGet(t *testing.T) {
 			wantErrInBody:  true,
 		},
 		{
-			name:    "not found",
-			url:     "/filtration/summary?organization_id=1&date=2025-01-01",
-			mockErr: storage.ErrNotFound,
+			name:           "not found",
+			url:            "/filtration/summary?organization_id=1&date=2025-01-01",
+			mockErr:        storage.ErrNotFound,
 			wantStatusCode: http.StatusNotFound,
 			wantErrInBody:  true,
 		},
@@ -86,10 +110,11 @@ func TestGet(t *testing.T) {
 			}
 
 			req := httptest.NewRequest(http.MethodGet, tt.url, nil)
+			req.Header.Set("Authorization", "Bearer test-token")
 			rr := httptest.NewRecorder()
 			log := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-			handler := Get(log, mock)
+			handler := withAuth(Get(log, mock), scClaims)
 			handler.ServeHTTP(rr, req)
 
 			if rr.Code != tt.wantStatusCode {

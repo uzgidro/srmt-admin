@@ -3,6 +3,7 @@ package repo
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"srmt-admin/internal/lib/model/filtration"
 	"srmt-admin/internal/storage"
@@ -588,4 +589,34 @@ func (r *Repo) GetOrgFiltrationSummary(ctx context.Context, orgID int64, date st
 	}
 
 	return summary, nil
+}
+
+// --- Org Ownership Lookups ---
+
+func (r *Repo) GetFiltrationLocationOrgID(ctx context.Context, id int64) (int64, error) {
+	const op = "storage.repo.Filtration.GetFiltrationLocationOrgID"
+
+	var orgID int64
+	err := r.db.QueryRowContext(ctx, "SELECT organization_id FROM filtration_locations WHERE id = $1", id).Scan(&orgID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, fmt.Errorf("%s: %w", op, storage.ErrNotFound)
+		}
+		return 0, r.translator.Translate(err, op)
+	}
+	return orgID, nil
+}
+
+func (r *Repo) GetPiezometerOrgID(ctx context.Context, id int64) (int64, error) {
+	const op = "storage.repo.Filtration.GetPiezometerOrgID"
+
+	var orgID int64
+	err := r.db.QueryRowContext(ctx, "SELECT organization_id FROM piezometers WHERE id = $1", id).Scan(&orgID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, fmt.Errorf("%s: %w", op, storage.ErrNotFound)
+		}
+		return 0, r.translator.Translate(err, op)
+	}
+	return orgID, nil
 }

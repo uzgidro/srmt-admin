@@ -50,6 +50,13 @@ func Add(log *slog.Logger, creator LocationCreator) http.HandlerFunc {
 			return
 		}
 
+		if err := auth.CheckOrgAccess(r.Context(), req.OrganizationID); err != nil {
+			log.Warn("access denied to organization", slog.Int64("org_id", req.OrganizationID))
+			render.Status(r, http.StatusForbidden)
+			render.JSON(w, r, resp.Forbidden("Access denied"))
+			return
+		}
+
 		id, err := creator.CreateFiltrationLocation(r.Context(), req, userID)
 		if err != nil {
 			if errors.Is(err, storage.ErrUniqueViolation) {
