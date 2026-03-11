@@ -37,6 +37,10 @@ import (
 	dischargeGetCurrent "srmt-admin/internal/http-server/handlers/discharge/get-current"
 	dischargeGetFlat "srmt-admin/internal/http-server/handlers/discharge/get-flat"
 	docstatuses "srmt-admin/internal/http-server/handlers/document-statuses"
+	filtrationLocations "srmt-admin/internal/http-server/handlers/filtration/locations"
+	filtrationMeasurements "srmt-admin/internal/http-server/handlers/filtration/measurements"
+	filtrationPiezometers "srmt-admin/internal/http-server/handlers/filtration/piezometers"
+	filtrationSummary "srmt-admin/internal/http-server/handlers/filtration/summary"
 	eventAdd "srmt-admin/internal/http-server/handlers/events/add"
 	eventDelete "srmt-admin/internal/http-server/handlers/events/delete"
 	eventEdit "srmt-admin/internal/http-server/handlers/events/edit"
@@ -455,6 +459,29 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Post("/visits", visit.Add(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
 			r.Patch("/visits/{id}", visit.Edit(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
 			r.Delete("/visits/{id}", visit.Delete(deps.Log, deps.PgRepo))
+
+			// Filtration (Фильтрация плотин)
+			r.Route("/filtration", func(r chi.Router) {
+				// Locations
+				r.Post("/locations", filtrationLocations.Add(deps.Log, deps.PgRepo))
+				r.Get("/locations", filtrationLocations.Get(deps.Log, deps.PgRepo))
+				r.Patch("/locations/{id}", filtrationLocations.Update(deps.Log, deps.PgRepo))
+				r.Delete("/locations/{id}", filtrationLocations.Delete(deps.Log, deps.PgRepo))
+
+				// Piezometers
+				r.Post("/piezometers", filtrationPiezometers.Add(deps.Log, deps.PgRepo))
+				r.Get("/piezometers", filtrationPiezometers.Get(deps.Log, deps.PgRepo))
+				r.Patch("/piezometers/{id}", filtrationPiezometers.Update(deps.Log, deps.PgRepo))
+				r.Delete("/piezometers/{id}", filtrationPiezometers.Delete(deps.Log, deps.PgRepo))
+				r.Get("/piezometers/counts", filtrationPiezometers.Counts(deps.Log, deps.PgRepo))
+
+				// Measurements
+				r.Post("/measurements", filtrationMeasurements.Upsert(deps.Log, deps.PgRepo, deps.PgRepo))
+				r.Get("/measurements", filtrationMeasurements.Get(deps.Log, deps.PgRepo, deps.PgRepo))
+
+				// Summary
+				r.Get("/summary", filtrationSummary.Get(deps.Log, deps.PgRepo))
+			})
 
 			// SC Export (комплексный суточный отчёт)
 			r.Get("/sc/export", scExport.New(
