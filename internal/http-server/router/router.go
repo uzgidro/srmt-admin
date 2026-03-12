@@ -39,6 +39,7 @@ import (
 	docstatuses "srmt-admin/internal/http-server/handlers/document-statuses"
 	filtrationLocations "srmt-admin/internal/http-server/handlers/filtration/locations"
 	filtrationMeasurements "srmt-admin/internal/http-server/handlers/filtration/measurements"
+	piezometerCounts "srmt-admin/internal/http-server/handlers/filtration/piezometer-counts"
 	filtrationPiezometers "srmt-admin/internal/http-server/handlers/filtration/piezometers"
 	filtrationComparison "srmt-admin/internal/http-server/handlers/filtration/comparison"
 	filtrationSummary "srmt-admin/internal/http-server/handlers/filtration/summary"
@@ -487,9 +488,12 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			// Piezometers
 			r.Post("/piezometers", filtrationPiezometers.Add(deps.Log, deps.PgRepo))
 			r.Get("/piezometers", filtrationPiezometers.Get(deps.Log, deps.PgRepo))
-			r.Get("/piezometers/counts", filtrationPiezometers.Counts(deps.Log, deps.PgRepo))
 			r.Patch("/piezometers/{id}", filtrationPiezometers.Update(deps.Log, deps.PgRepo, deps.PgRepo))
 			r.Delete("/piezometers/{id}", filtrationPiezometers.Delete(deps.Log, deps.PgRepo, deps.PgRepo))
+
+			// Piezometer Counts (per organization)
+			r.Get("/piezometer-counts", piezometerCounts.Get(deps.Log, deps.PgRepo))
+			r.Post("/piezometer-counts", piezometerCounts.Upsert(deps.Log, deps.PgRepo))
 
 			// Measurements
 			r.Post("/measurements", filtrationMeasurements.Upsert(deps.Log, deps.PgRepo, deps.PgRepo))

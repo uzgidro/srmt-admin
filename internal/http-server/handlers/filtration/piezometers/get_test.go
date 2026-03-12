@@ -49,7 +49,7 @@ func TestGet(t *testing.T) {
 		{
 			name:           "successful get",
 			url:            "/filtration/piezometers?organization_id=1",
-			mockResult:     []filtration.Piezometer{{ID: 1, Name: "Piezometer 1", Type: filtration.PiezometerTypePressure}},
+			mockResult:     []filtration.Piezometer{{ID: 1, Name: "Piezometer 1"}},
 			wantStatusCode: http.StatusOK,
 		},
 		{
