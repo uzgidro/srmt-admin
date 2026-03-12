@@ -43,6 +43,7 @@ type Piezometer struct {
 	OrganizationID int64          `json:"organization_id"`
 	Name           string         `json:"name"`
 	Type           PiezometerType `json:"type"`
+	Count          int            `json:"count"`
 	Norm           *float64       `json:"norm"`
 	SortOrder      int            `json:"sort_order"`
 	CreatedAt      time.Time      `json:"created_at"`
@@ -53,6 +54,7 @@ type CreatePiezometerRequest struct {
 	OrganizationID int64          `json:"organization_id" validate:"required"`
 	Name           string         `json:"name" validate:"required"`
 	Type           PiezometerType `json:"type" validate:"required,oneof=pressure non_pressure"`
+	Count          *int           `json:"count"`
 	Norm           *float64       `json:"norm"`
 	SortOrder      *int           `json:"sort_order"`
 }
@@ -60,6 +62,7 @@ type CreatePiezometerRequest struct {
 type UpdatePiezometerRequest struct {
 	Name      *string         `json:"name"`
 	Type      *PiezometerType `json:"type" validate:"omitempty,oneof=pressure non_pressure"`
+	Count     *int            `json:"count"`
 	Norm      *float64        `json:"norm"`
 	SortOrder *int            `json:"sort_order"`
 }

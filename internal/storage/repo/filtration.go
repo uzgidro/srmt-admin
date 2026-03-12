@@ -155,12 +155,12 @@ func (r *Repo) CreatePiezometer(ctx context.Context, req filtration.CreatePiezom
 	const op = "storage.repo.Filtration.CreatePiezometer"
 
 	const query = `
-		INSERT INTO piezometers (organization_id, name, type, norm, sort_order, created_by_user_id, updated_by_user_id, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, COALESCE($5, 0), $6, $6, NOW(), NOW())
+		INSERT INTO piezometers (organization_id, name, type, count, norm, sort_order, created_by_user_id, updated_by_user_id, created_at, updated_at)
+		VALUES ($1, $2, $3, COALESCE($4, 0), $5, COALESCE($6, 0), $7, $7, NOW(), NOW())
 		RETURNING id`
 
 	var id int64
-	err := r.db.QueryRowContext(ctx, query, req.OrganizationID, req.Name, req.Type, req.Norm, req.SortOrder, userID).Scan(&id)
+	err := r.db.QueryRowContext(ctx, query, req.OrganizationID, req.Name, req.Type, req.Count, req.Norm, req.SortOrder, userID).Scan(&id)
 	if err != nil {
 		if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
 			return 0, translatedErr
@@ -175,7 +175,7 @@ func (r *Repo) GetPiezometersByOrg(ctx context.Context, orgID int64) ([]filtrati
 	const op = "storage.repo.Filtration.GetPiezometersByOrg"
 
 	const query = `
-		SELECT id, organization_id, name, type, norm, sort_order, created_at, updated_at
+		SELECT id, organization_id, name, type, count, norm, sort_order, created_at, updated_at
 		FROM piezometers
 		WHERE organization_id = $1
 		ORDER BY sort_order, id`
@@ -192,7 +192,7 @@ func (r *Repo) GetPiezometersByOrg(ctx context.Context, orgID int64) ([]filtrati
 		var norm sql.NullFloat64
 		if err := rows.Scan(
 			&p.ID, &p.OrganizationID, &p.Name, &p.Type,
-			&norm, &p.SortOrder, &p.CreatedAt, &p.UpdatedAt,
+			&p.Count, &norm, &p.SortOrder, &p.CreatedAt, &p.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("%s: failed to scan piezometer: %w", op, err)
 		}
@@ -217,7 +217,7 @@ func (r *Repo) GetPiezometerCountsByOrg(ctx context.Context, orgID int64) (filtr
 	const op = "storage.repo.Filtration.GetPiezometerCountsByOrg"
 
 	const query = `
-		SELECT type, COUNT(*)
+		SELECT type, COALESCE(SUM(count), 0)
 		FROM piezometers
 		WHERE organization_id = $1
 		GROUP BY type`
@@ -265,6 +265,11 @@ func (r *Repo) UpdatePiezometer(ctx context.Context, id int64, req filtration.Up
 	if req.Type != nil {
 		updates = append(updates, fmt.Sprintf("type = $%d", argID))
 		args = append(args, *req.Type)
+		argID++
+	}
+	if req.Count != nil {
+		updates = append(updates, fmt.Sprintf("count = $%d", argID))
+		args = append(args, *req.Count)
 		argID++
 	}
 	if req.Norm != nil {
@@ -538,7 +543,7 @@ func (r *Repo) GetOrgFiltrationSummary(ctx context.Context, orgID int64, date st
 
 	// Get piezometers with measurements
 	const piezoQuery = `
-		SELECT p.id, p.organization_id, p.name, p.type, p.norm, p.sort_order, p.created_at, p.updated_at,
+		SELECT p.id, p.organization_id, p.name, p.type, p.count, p.norm, p.sort_order, p.created_at, p.updated_at,
 		       m.level
 		FROM piezometers p
 		LEFT JOIN piezometer_measurements m ON m.piezometer_id = p.id AND m.date = $2::date
@@ -556,7 +561,7 @@ func (r *Repo) GetOrgFiltrationSummary(ctx context.Context, orgID int64, date st
 		var norm, level sql.NullFloat64
 		if err := piezoRows.Scan(
 			&pr.ID, &pr.OrganizationID, &pr.Name, &pr.Type,
-			&norm, &pr.SortOrder, &pr.CreatedAt, &pr.UpdatedAt,
+			&pr.Count, &norm, &pr.SortOrder, &pr.CreatedAt, &pr.UpdatedAt,
 			&level,
 		); err != nil {
 			return nil, fmt.Errorf("%s: failed to scan piezometer reading: %w", op, err)
@@ -582,9 +587,9 @@ func (r *Repo) GetOrgFiltrationSummary(ctx context.Context, orgID int64, date st
 	for _, pr := range summary.Piezometers {
 		switch pr.Type {
 		case filtration.PiezometerTypePressure:
-			summary.PiezoCounts.Pressure++
+			summary.PiezoCounts.Pressure += pr.Count
 		case filtration.PiezometerTypeNonPressure:
-			summary.PiezoCounts.NonPressure++
+			summary.PiezoCounts.NonPressure += pr.Count
 		}
 	}
 

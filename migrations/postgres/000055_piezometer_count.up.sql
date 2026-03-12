@@ -1,0 +1,1 @@
+ALTER TABLE piezometers ADD COLUMN count INT NOT NULL DEFAULT 0;
