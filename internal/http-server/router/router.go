@@ -40,6 +40,7 @@ import (
 	filtrationLocations "srmt-admin/internal/http-server/handlers/filtration/locations"
 	filtrationMeasurements "srmt-admin/internal/http-server/handlers/filtration/measurements"
 	filtrationPiezometers "srmt-admin/internal/http-server/handlers/filtration/piezometers"
+	filtrationComparison "srmt-admin/internal/http-server/handlers/filtration/comparison"
 	filtrationSummary "srmt-admin/internal/http-server/handlers/filtration/summary"
 	eventAdd "srmt-admin/internal/http-server/handlers/events/add"
 	eventDelete "srmt-admin/internal/http-server/handlers/events/delete"
@@ -496,6 +497,9 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 
 			// Summary
 			r.Get("/summary", filtrationSummary.Get(deps.Log, deps.PgRepo))
+
+			// Comparison
+			r.Get("/comparison", filtrationComparison.Get(deps.Log, deps.PgRepo))
 		})
 
 		r.Group(func(r chi.Router) {

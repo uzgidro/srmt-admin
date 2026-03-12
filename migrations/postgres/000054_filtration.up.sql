@@ -81,3 +81,7 @@ CREATE TRIGGER set_timestamp_piezometer_measurements
     BEFORE UPDATE ON piezometer_measurements
     FOR EACH ROW
     EXECUTE FUNCTION trigger_set_timestamp();
+
+-- Роль для операторов водохранилищ
+INSERT INTO roles (name) VALUES ('reservoir')
+ON CONFLICT (name) DO NOTHING;

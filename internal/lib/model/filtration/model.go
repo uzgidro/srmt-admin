@@ -114,3 +114,21 @@ type OrgFiltrationSummary struct {
 	Piezometers      []PiezoReading    `json:"piezometers"`
 	PiezoCounts      PiezometerCounts  `json:"piezometer_counts"`
 }
+
+// --- Comparison ---
+
+type ComparisonSnapshot struct {
+	Date        string            `json:"date"`
+	Level       *float64          `json:"level"`
+	Volume      *float64          `json:"volume"`
+	Locations   []LocationReading `json:"locations"`
+	Piezometers []PiezoReading    `json:"piezometers"`
+	PiezoCounts PiezometerCounts  `json:"piezometer_counts"`
+}
+
+type OrgComparison struct {
+	OrganizationID   int64               `json:"organization_id"`
+	OrganizationName string              `json:"organization_name"`
+	Current          ComparisonSnapshot  `json:"current"`
+	Historical       *ComparisonSnapshot `json:"historical"`
+}

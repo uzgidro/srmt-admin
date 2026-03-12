@@ -620,3 +620,82 @@ func (r *Repo) GetPiezometerOrgID(ctx context.Context, id int64) (int64, error) 
 	}
 	return orgID, nil
 }
+
+// --- Comparison ---
+
+func (r *Repo) GetReservoirLevelVolume(ctx context.Context, orgID int64, date string) (*float64, *float64, error) {
+	const op = "storage.repo.Filtration.GetReservoirLevelVolume"
+
+	var level, volume sql.NullFloat64
+	err := r.db.QueryRowContext(ctx,
+		"SELECT level_m, volume_mln_m3 FROM reservoir_data WHERE organization_id = $1 AND date = $2::date",
+		orgID, date,
+	).Scan(&level, &volume)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil, nil
+		}
+		return nil, nil, fmt.Errorf("%s: %w", op, err)
+	}
+
+	var levelPtr, volumePtr *float64
+	if level.Valid {
+		levelPtr = &level.Float64
+	}
+	if volume.Valid {
+		volumePtr = &volume.Float64
+	}
+	return levelPtr, volumePtr, nil
+}
+
+func (r *Repo) GetClosestLevelDate(ctx context.Context, orgID int64, level float64, excludeDate string) (string, error) {
+	const op = "storage.repo.Filtration.GetClosestLevelDate"
+
+	var date string
+	err := r.db.QueryRowContext(ctx,
+		`SELECT date::text FROM reservoir_data
+		 WHERE organization_id = $1 AND date < $2::date AND level_m IS NOT NULL
+		 ORDER BY ABS(level_m - $3) ASC, date DESC
+		 LIMIT 1`,
+		orgID, excludeDate, level,
+	).Scan(&date)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", storage.ErrNotFound
+		}
+		return "", fmt.Errorf("%s: %w", op, err)
+	}
+	return date, nil
+}
+
+func (r *Repo) GetFiltrationOrgIDs(ctx context.Context) ([]int64, error) {
+	const op = "storage.repo.Filtration.GetFiltrationOrgIDs"
+
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT DISTINCT organization_id FROM (
+			SELECT organization_id FROM filtration_locations
+			UNION
+			SELECT organization_id FROM piezometers
+		) t ORDER BY organization_id`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+	defer rows.Close()
+
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("%s: %w", op, err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+	if ids == nil {
+		ids = make([]int64, 0)
+	}
+	return ids, nil
+}
