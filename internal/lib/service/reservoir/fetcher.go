@@ -23,9 +23,11 @@ type APIResponseItem struct {
 	Weather string  `json:"weather"`
 	Level   float64 `json:"level"`
 	Size    float64 `json:"size"`
-	ToCome  string  `json:"to_come"`
-	ToOut   float64 `json:"to_out"`
-	Gentle  float64 `json:"gentle"`
+	ToCome  string   `json:"to_come"`
+	AvgCome *float64 `json:"avg_come"`
+	ToOut   float64  `json:"to_out"`
+	AvgOut  *float64 `json:"avg_out"`
+	Gentle  float64  `json:"gentle"`
 }
 
 // APIResponse represents the full API response
@@ -341,12 +343,18 @@ func (f *Fetcher) extractDataWithTimestamp(item *APIResponseItem) *dto.Reservoir
 		}
 	}
 
+	// AvgCome (average income) - nullable
+	data.AvgIncome = item.AvgCome
+
 	reservoirAPIID := int64(item.IDWater)
 	data.ReservoirAPIID = &reservoirAPIID
 
 	// Release (to_out)
 	release := item.ToOut
 	data.Release = &release
+
+	// AvgOut (average release) - nullable
+	data.AvgRelease = item.AvgOut
 
 	// Level
 	level := item.Level

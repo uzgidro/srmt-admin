@@ -21,8 +21,10 @@ type ReservoirMetrics struct {
 // ReservoirData represents reservoir water data at a specific point in time
 type ReservoirData struct {
 	ReservoirAPIID *int64     `json:"reservoir_api_id,omitempty"`
-	Income         *float64   `json:"income,omitempty"`  // Water intake (приход)
-	Release        *float64   `json:"release,omitempty"` // Water release (расход)
+	Income         *float64   `json:"income,omitempty"`      // Water intake (приход)
+	AvgIncome      *float64   `json:"avg_income,omitempty"`  // Average water intake (средний приход)
+	Release        *float64   `json:"release,omitempty"`     // Water release (расход)
+	AvgRelease     *float64   `json:"avg_release,omitempty"` // Average water release (средний расход)
 	Level          *float64   `json:"level,omitempty"`   // Water level (уровень)
 	Volume         *float64   `json:"volume,omitempty"`  // Water volume (объем)
 	Time           *time.Time `json:"time,omitempty"`    // Timestamp (combined date+time)
