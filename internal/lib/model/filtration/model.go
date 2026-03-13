@@ -2,15 +2,6 @@ package filtration
 
 import "time"
 
-// --- Piezometer type ---
-
-type PiezometerType string
-
-const (
-	PiezometerTypePressure    PiezometerType = "pressure"
-	PiezometerTypeNonPressure PiezometerType = "non_pressure"
-)
-
 // --- Filtration Location ---
 
 type Location struct {
@@ -39,32 +30,26 @@ type UpdateLocationRequest struct {
 // --- Piezometer ---
 
 type Piezometer struct {
-	ID             int64          `json:"id"`
-	OrganizationID int64          `json:"organization_id"`
-	Name           string         `json:"name"`
-	Type           PiezometerType `json:"type"`
-	Count          int            `json:"count"`
-	Norm           *float64       `json:"norm"`
-	SortOrder      int            `json:"sort_order"`
-	CreatedAt      time.Time      `json:"created_at"`
-	UpdatedAt      time.Time      `json:"updated_at"`
+	ID             int64     `json:"id"`
+	OrganizationID int64     `json:"organization_id"`
+	Name           string    `json:"name"`
+	Norm           *float64  `json:"norm"`
+	SortOrder      int       `json:"sort_order"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 type CreatePiezometerRequest struct {
-	OrganizationID int64          `json:"organization_id" validate:"required"`
-	Name           string         `json:"name" validate:"required"`
-	Type           PiezometerType `json:"type" validate:"required,oneof=pressure non_pressure"`
-	Count          *int           `json:"count"`
-	Norm           *float64       `json:"norm"`
-	SortOrder      *int           `json:"sort_order"`
+	OrganizationID int64    `json:"organization_id" validate:"required"`
+	Name           string   `json:"name" validate:"required"`
+	Norm           *float64 `json:"norm"`
+	SortOrder      *int     `json:"sort_order"`
 }
 
 type UpdatePiezometerRequest struct {
-	Name      *string         `json:"name"`
-	Type      *PiezometerType `json:"type" validate:"omitempty,oneof=pressure non_pressure"`
-	Count     *int            `json:"count"`
-	Norm      *float64        `json:"norm"`
-	SortOrder *int            `json:"sort_order"`
+	Name      *string  `json:"name"`
+	Norm      *float64 `json:"norm"`
+	SortOrder *int     `json:"sort_order"`
 }
 
 // --- Measurements ---
@@ -93,12 +78,29 @@ type PiezometerMeasurementInput struct {
 	Level        *float64 `json:"level"`
 }
 
-// --- Aggregated response ---
+// --- Piezometer Counts (per organization) ---
 
 type PiezometerCounts struct {
 	Pressure    int `json:"pressure"`
 	NonPressure int `json:"non_pressure"`
 }
+
+type PiezometerCountsRecord struct {
+	ID               int64     `json:"id"`
+	OrganizationID   int64     `json:"organization_id"`
+	PressureCount    int       `json:"pressure_count"`
+	NonPressureCount int       `json:"non_pressure_count"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
+}
+
+type UpsertPiezometerCountsRequest struct {
+	OrganizationID   int64 `json:"organization_id" validate:"required"`
+	PressureCount    int   `json:"pressure_count" validate:"gte=0"`
+	NonPressureCount int   `json:"non_pressure_count" validate:"gte=0"`
+}
+
+// --- Aggregated response ---
 
 type LocationReading struct {
 	Location
