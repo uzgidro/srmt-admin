@@ -213,26 +213,6 @@ func (r *Repo) GetPiezometersByOrg(ctx context.Context, orgID int64) ([]filtrati
 	return piezometers, nil
 }
 
-func (r *Repo) GetPiezometerCountsByOrg(ctx context.Context, orgID int64) (filtration.PiezometerCounts, error) {
-	const op = "storage.repo.Filtration.GetPiezometerCountsByOrg"
-
-	const query = `
-		SELECT pressure_count, non_pressure_count
-		FROM piezometer_counts
-		WHERE organization_id = $1`
-
-	var counts filtration.PiezometerCounts
-	err := r.db.QueryRowContext(ctx, query, orgID).Scan(&counts.Pressure, &counts.NonPressure)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return filtration.PiezometerCounts{}, nil
-		}
-		return filtration.PiezometerCounts{}, fmt.Errorf("%s: failed to query piezometer counts: %w", op, err)
-	}
-
-	return counts, nil
-}
-
 func (r *Repo) UpdatePiezometer(ctx context.Context, id int64, req filtration.UpdatePiezometerRequest, userID int64) error {
 	const op = "storage.repo.Filtration.UpdatePiezometer"
 
@@ -557,8 +537,12 @@ func (r *Repo) GetOrgFiltrationSummary(ctx context.Context, orgID int64, date st
 	}
 
 	// Get piezometer counts from piezometer_counts table
-	counts, err := r.GetPiezometerCountsByOrg(ctx, orgID)
-	if err != nil {
+	var counts filtration.PiezometerCounts
+	err = r.db.QueryRowContext(ctx,
+		"SELECT pressure_count, non_pressure_count FROM piezometer_counts WHERE organization_id = $1",
+		orgID,
+	).Scan(&counts.Pressure, &counts.NonPressure)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("%s: failed to get piezometer counts: %w", op, err)
 	}
 	summary.PiezoCounts = counts

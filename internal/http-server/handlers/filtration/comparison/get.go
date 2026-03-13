@@ -156,7 +156,7 @@ func buildOrgComparison(ctx context.Context, getter ComparisonDataGetter, orgID 
 			Volume:      histVolume,
 			Locations:   histSummary.Locations,
 			Piezometers: histSummary.Piezometers,
-			PiezoCounts: histSummary.PiezoCounts,
+			PiezoCounts: summary.PiezoCounts, // counts are date-independent, reuse from current snapshot
 		}
 	}
 

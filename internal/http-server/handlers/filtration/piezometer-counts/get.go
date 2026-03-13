@@ -5,12 +5,13 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
+
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/lib/model/filtration"
 	"srmt-admin/internal/lib/service/auth"
 	"srmt-admin/internal/storage"
-	"strconv"
 
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
@@ -27,6 +28,7 @@ func Get(log *slog.Logger, getter PiezometerCountsGetter) http.HandlerFunc {
 
 		orgIDStr := r.URL.Query().Get("organization_id")
 		if orgIDStr == "" {
+			log.Warn("missing required 'organization_id' parameter")
 			render.Status(r, http.StatusBadRequest)
 			render.JSON(w, r, resp.BadRequest("organization_id is required"))
 			return
@@ -50,8 +52,9 @@ func Get(log *slog.Logger, getter PiezometerCountsGetter) http.HandlerFunc {
 		record, err := getter.GetPiezometerCounts(r.Context(), orgID)
 		if err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
-				log.Info("no piezometer counts for organization", slog.Int64("organization_id", orgID))
-				render.JSON(w, r, filtration.PiezometerCountsRecord{OrganizationID: orgID})
+				log.Warn("piezometer counts not found", slog.Int64("organization_id", orgID))
+				render.Status(r, http.StatusNotFound)
+				render.JSON(w, r, resp.NotFound("Piezometer counts not found"))
 				return
 			}
 			log.Error("failed to get piezometer counts", sl.Err(err))
