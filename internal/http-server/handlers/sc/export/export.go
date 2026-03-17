@@ -245,11 +245,11 @@ func exportPDF(w http.ResponseWriter, excelFile *excelize.File, parsedDate time.
 
 	// Add page margins to Excel file for PDF conversion
 	sheet := excelFile.GetSheetName(0)
-	marginTop := 0.75
+	marginTop := 0.3
 	marginBottom := 0.3
-	marginLeft := 0.7
-	marginRight := 0.7
-	marginHeader := 0.3
+	marginLeft := 0.3
+	marginRight := 0.3
+	marginHeader := 0.1
 	marginFooter := 0.0
 
 	if err := excelFile.SetPageMargins(sheet,

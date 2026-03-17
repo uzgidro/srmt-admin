@@ -361,7 +361,7 @@ func (g *Generator) processDischarges(
 		// M: Reason
 		if row.Reason != nil {
 			set(fmt.Sprintf("M%d", rowNum), *row.Reason)
-			g.autoFitRowHeight(f, sheet, rowNum, *row.Reason, 30)
+			g.autoFitRowHeight(f, sheet, rowNum, *row.Reason, 45)
 		}
 	}
 
@@ -498,7 +498,7 @@ func (g *Generator) processShutdowns(
 			// E: Reason (merged cells E-I)
 			if s.Reason != nil {
 				set(fmt.Sprintf("E%d", currentRow), *s.Reason)
-				g.autoFitRowHeight(f, sheet, currentRow, *s.Reason, 45)
+				g.autoFitRowHeight(f, sheet, currentRow, *s.Reason, 60)
 			}
 
 			// N: GenerationLossMwh (convert from kWh to thousand kWh)
@@ -735,7 +735,7 @@ func (g *Generator) processVisits(
 
 		// F: Description - event name (F-L merged cells, write to first cell)
 		set(fmt.Sprintf("F%d", row), v.Description)
-		g.autoFitRowHeight(f, sheet, row, v.Description, 50)
+		g.autoFitRowHeight(f, sheet, row, v.Description, 70)
 
 		// M: Responsible name (M-O merged cells, write to first cell)
 		set(fmt.Sprintf("M%d", row), v.ResponsibleName)
@@ -798,7 +798,7 @@ func (g *Generator) processIncidents(
 
 		// F: Description (F-O merged cells, write to first cell)
 		set(fmt.Sprintf("F%d", row), inc.Description)
-		g.autoFitRowHeight(f, sheet, row, inc.Description, 60)
+		g.autoFitRowHeight(f, sheet, row, inc.Description, 80)
 	}
 
 	// Restore bottom border for the last data row
