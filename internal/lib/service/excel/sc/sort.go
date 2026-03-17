@@ -56,7 +56,6 @@ func sortOrgIDs(orgIDs []int64, parentMap map[int64]*int64) []int64 {
 		walk(root)
 	}
 
-	// Handle orphans: children whose parent is not in orgIDs and not a root
 	// Handle orphans: children whose parent is not in orgIDs (phantom parent)
 	var orphanParents []int64
 	for parentID := range children {

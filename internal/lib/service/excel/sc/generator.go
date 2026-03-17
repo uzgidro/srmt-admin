@@ -394,8 +394,14 @@ func (g *Generator) applyBottomBorder(f *excelize.File, sheet string, row int, s
 		}
 
 		if existingStyle != nil {
-			// Preserve existing borders (top, left, right) and add bottom
-			newStyle.Border = append(existingStyle.Border, borderStyle)
+			// Preserve existing borders (top, left, right), replace any existing bottom
+			filtered := make([]excelize.Border, 0, len(existingStyle.Border))
+			for _, b := range existingStyle.Border {
+				if b.Type != "bottom" {
+					filtered = append(filtered, b)
+				}
+			}
+			newStyle.Border = append(filtered, borderStyle)
 			newStyle.Fill = existingStyle.Fill
 			newStyle.Font = existingStyle.Font
 			newStyle.Alignment = existingStyle.Alignment
