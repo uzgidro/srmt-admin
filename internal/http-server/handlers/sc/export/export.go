@@ -41,6 +41,11 @@ type OrgTypesGetter interface {
 	GetOrganizationTypesMap(ctx context.Context) (map[int64][]string, error)
 }
 
+// OrgParentGetter defines the interface for fetching organization parent map
+type OrgParentGetter interface {
+	GetOrganizationParentMap(ctx context.Context) (map[int64]*int64, error)
+}
+
 // VisitGetter defines the interface for fetching visit data
 type VisitGetter interface {
 	GetVisits(ctx context.Context, day time.Time) ([]*visit.ResponseModel, error)
@@ -66,6 +71,7 @@ func New(
 	dischargeGetter DischargeGetter,
 	shutdownGetter ShutdownGetter,
 	orgTypesGetter OrgTypesGetter,
+	orgParentGetter OrgParentGetter,
 	visitGetter VisitGetter,
 	incidentGetter IncidentGetter,
 	generator *scgen.Generator,
@@ -139,8 +145,14 @@ func New(
 			return
 		}
 
-		// Group shutdowns by organization type (ges/mini/micro)
-		groupedShutdowns := groupShutdownsByType(shutdowns, orgTypesMap)
+		// Fetch organization parent map
+		orgParentMap, err := orgParentGetter.GetOrganizationParentMap(r.Context())
+		if err != nil {
+			log.Error("failed to fetch organization parent map", sl.Err(err))
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, resp.InternalServerError("Failed to fetch organization parent map"))
+			return
+		}
 
 		// Fetch visit data for the operational day
 		visits, err := visitGetter.GetVisits(r.Context(), startDate)
@@ -167,7 +179,7 @@ func New(
 		}
 
 		// Generate Excel file
-		excelFile, err := generator.GenerateExcel(startDate, endDate, discharges, groupedShutdowns, visits, incidents, loc, authorShort)
+		excelFile, err := generator.GenerateExcel(startDate, endDate, discharges, shutdowns, orgTypesMap, orgParentMap, visits, incidents, loc, authorShort)
 		if err != nil {
 			log.Error("failed to generate Excel file", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)
@@ -298,52 +310,3 @@ func exportPDF(w http.ResponseWriter, excelFile *excelize.File, parsedDate time.
 	return nil
 }
 
-// groupShutdownsByType groups shutdowns by organization type (ges, mini, micro)
-func groupShutdownsByType(shutdowns []*shutdown.ResponseModel, orgTypesMap map[int64][]string) *scgen.GroupedShutdowns {
-	result := &scgen.GroupedShutdowns{
-		Ges:   make([]*shutdown.ResponseModel, 0),
-		Mini:  make([]*shutdown.ResponseModel, 0),
-		Micro: make([]*shutdown.ResponseModel, 0),
-	}
-
-	for _, s := range shutdowns {
-		types, ok := orgTypesMap[s.OrganizationID]
-		if !ok {
-			continue
-		}
-
-		// Determine the type of organization
-		orgType := determineOrgType(types)
-		switch orgType {
-		case "ges":
-			result.Ges = append(result.Ges, s)
-		case "mini":
-			result.Mini = append(result.Mini, s)
-		case "micro":
-			result.Micro = append(result.Micro, s)
-		}
-	}
-
-	return result
-}
-
-// determineOrgType determines the organization type from a list of types
-// Priority: micro > mini > ges (more specific wins)
-func determineOrgType(types []string) string {
-	for _, t := range types {
-		if t == "micro" {
-			return "micro"
-		}
-	}
-	for _, t := range types {
-		if t == "mini" {
-			return "mini"
-		}
-	}
-	for _, t := range types {
-		if t == "ges" {
-			return "ges"
-		}
-	}
-	return ""
-}
