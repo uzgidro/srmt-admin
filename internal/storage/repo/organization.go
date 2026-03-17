@@ -838,3 +838,31 @@ func (r *Repo) GetOrganizationNamesByIDs(ctx context.Context, ids []int64) (map[
 
 	return result, nil
 }
+
+// GetOrganizationParentMap returns a map of org_id -> parent_org_id for all organizations.
+func (r *Repo) GetOrganizationParentMap(ctx context.Context) (map[int64]*int64, error) {
+	const op = "storage.repo.GetOrganizationParentMap"
+	const query = `SELECT id, parent_organization_id FROM organizations`
+
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+	defer rows.Close()
+
+	result := make(map[int64]*int64)
+	for rows.Next() {
+		var id int64
+		var parentID *int64
+		if err := rows.Scan(&id, &parentID); err != nil {
+			return nil, fmt.Errorf("%s: scan: %w", op, err)
+		}
+		result[id] = parentID
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: rows: %w", op, err)
+	}
+
+	return result, nil
+}
