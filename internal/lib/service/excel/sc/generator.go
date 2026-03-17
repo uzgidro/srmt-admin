@@ -300,6 +300,14 @@ func (g *Generator) processDischarges(
 	// Aggregate data by organization
 	aggregated := g.aggregateDischargesByOrganization(data, loc)
 
+	// All records may have nil Organization — aggregated can be empty
+	if len(aggregated) == 0 {
+		if err := f.RemoveRow(sheet, section.TemplateRow); err != nil {
+			return fmt.Errorf("failed to remove template row %d: %w", section.TemplateRow, err)
+		}
+		return nil
+	}
+
 	// Collect org IDs and sort by parent hierarchy
 	orgIDs := make([]int64, 0, len(aggregated))
 	for orgID := range aggregated {
