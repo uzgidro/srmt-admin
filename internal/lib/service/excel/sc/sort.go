@@ -57,14 +57,10 @@ func sortOrgIDs(orgIDs []int64, parentMap map[int64]*int64) []int64 {
 	}
 
 	// Handle orphans: children whose parent is not in orgIDs and not a root
-	emitted := make(map[int64]bool, len(result))
-	for _, id := range result {
-		emitted[id] = true
-	}
-
+	// Handle orphans: children whose parent is not in orgIDs (phantom parent)
 	var orphanParents []int64
 	for parentID := range children {
-		if !emitted[children[parentID][0]] {
+		if !orgIDSet[parentID] {
 			orphanParents = append(orphanParents, parentID)
 		}
 	}
@@ -72,10 +68,7 @@ func sortOrgIDs(orgIDs []int64, parentMap map[int64]*int64) []int64 {
 
 	for _, parentID := range orphanParents {
 		for _, child := range children[parentID] {
-			if !emitted[child] {
-				result = append(result, child)
-				emitted[child] = true
-			}
+			result = append(result, child)
 		}
 	}
 
