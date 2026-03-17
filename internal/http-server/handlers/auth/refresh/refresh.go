@@ -70,6 +70,13 @@ func New(log *slog.Logger, userService UserGetter, refresher TokenRefresher) htt
 			return
 		}
 
+		if !u.IsActive {
+			log.Warn("user is not active", slog.Int64("user_id", u.ID))
+			render.Status(r, http.StatusForbidden)
+			render.JSON(w, r, resp.Forbidden("User account is deactivated"))
+			return
+		}
+
 		pair, err := refresher.Create(u)
 		if err != nil {
 			log.Warn("failed to create pair", sl.Err(err))
