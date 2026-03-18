@@ -7,13 +7,14 @@ import (
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
 	reservoirdevicesummary "srmt-admin/internal/lib/model/reservoir-device-summary"
+	"time"
 
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
 )
 
 type reservoirDeviceSummaryGetter interface {
-	GetReservoirDeviceSummary(ctx context.Context) ([]*reservoirdevicesummary.ResponseModel, error)
+	GetReservoirDeviceSummary(ctx context.Context, date *time.Time) ([]*reservoirdevicesummary.ResponseModel, error)
 }
 
 func Get(log *slog.Logger, getter reservoirDeviceSummaryGetter) http.HandlerFunc {
@@ -21,7 +22,21 @@ func Get(log *slog.Logger, getter reservoirDeviceSummaryGetter) http.HandlerFunc
 		const op = "handlers.reservoirdevicesummary.Get"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
 
-		summaries, err := getter.GetReservoirDeviceSummary(r.Context())
+		var date *time.Time
+		if dateStr := r.URL.Query().Get("date"); dateStr != "" {
+			parsed, err := time.Parse("2006-01-02", dateStr)
+			if err != nil {
+				log.Warn("invalid date format", sl.Err(err))
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest("Invalid date format. Expected YYYY-MM-DD"))
+				return
+			}
+			// End of the given day
+			eod := time.Date(parsed.Year(), parsed.Month(), parsed.Day(), 23, 59, 59, 999999999, time.UTC)
+			date = &eod
+		}
+
+		summaries, err := getter.GetReservoirDeviceSummary(r.Context(), date)
 		if err != nil {
 			log.Error("failed to get reservoir device summaries", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)

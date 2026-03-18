@@ -55,13 +55,7 @@ func Patch(log *slog.Logger, patcher reservoirDeviceSummaryPatcher) http.Handler
 				render.JSON(w, r, resp.BadRequest("Missing organization_id in one or more updates"))
 				return
 			}
-			if update.DeviceTypeName == "" {
-				log.Warn("missing device_type_name in update", slog.Int("index", i))
-				render.Status(r, http.StatusBadRequest)
-				render.JSON(w, r, resp.BadRequest("Missing device_type_name in one or more updates"))
-				return
 			}
-		}
 
 		err = patcher.PatchReservoirDeviceSummary(r.Context(), req, userID)
 		if err != nil {

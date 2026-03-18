@@ -2,12 +2,12 @@ package sc
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
 	"srmt-admin/internal/lib/model/discharge"
 	"srmt-admin/internal/lib/model/incident"
+	reservoirdevicesummary "srmt-admin/internal/lib/model/reservoir-device-summary"
 	"srmt-admin/internal/lib/model/shutdown"
 	"srmt-admin/internal/lib/model/visit"
 
@@ -16,16 +16,9 @@ import (
 
 // SectionInfo holds information about a section in the template
 type SectionInfo struct {
-	Tag       string        // "discharges", "ges", "mini", "micro", "visits", "incidents"
-	HeaderRow int           // row number of section header
-	OrgRows   map[int64]int // organization_id -> row_number
-}
-
-// GroupedShutdowns holds shutdowns grouped by organization type
-type GroupedShutdowns struct {
-	Ges   []*shutdown.ResponseModel
-	Mini  []*shutdown.ResponseModel
-	Micro []*shutdown.ResponseModel
+	Tag         string
+	HeaderRow   int
+	TemplateRow int // HeaderRow + 1
 }
 
 // Generator handles Excel file generation for SC reports
@@ -44,9 +37,12 @@ func New(templatePath string) *Generator {
 func (g *Generator) GenerateExcel(
 	dateStart, dateEnd time.Time,
 	discharges []discharge.Model,
-	shutdowns *GroupedShutdowns,
+	shutdowns []*shutdown.ResponseModel,
+	orgTypesMap map[int64][]string,
+	orgParentMap map[int64]*int64,
 	visits []*visit.ResponseModel,
 	incidents []*incident.ResponseModel,
+	resDevices []*reservoirdevicesummary.ResponseModel,
 	loc *time.Location,
 	authorShortName string,
 ) (*excelize.File, error) {
@@ -83,7 +79,7 @@ func (g *Generator) GenerateExcel(
 
 	// Process discharges section
 	if dischargesSection, ok := sections["discharges"]; ok {
-		if err := g.processDischarges(f, sheet, dischargesSection, discharges, loc, set); err != nil {
+		if err := g.processDischarges(f, sheet, dischargesSection, discharges, orgParentMap, loc, set); err != nil {
 			f.Close()
 			return nil, fmt.Errorf("failed to process discharges: %w", err)
 		}
@@ -94,47 +90,28 @@ func (g *Generator) GenerateExcel(
 		return nil, writeErr
 	}
 
+	// Group shutdowns by organization type
+	shutdownsByType := map[string][]*shutdown.ResponseModel{"ges": {}, "mini": {}, "micro": {}}
+	for _, s := range shutdowns {
+		orgType := determineOrgType(orgTypesMap[s.OrganizationID])
+		if orgType != "" {
+			shutdownsByType[orgType] = append(shutdownsByType[orgType], s)
+		}
+	}
+
 	// Process shutdown sections (ges, mini, micro)
-	if shutdowns != nil {
-		// Re-scan sections after discharges processing (rows may have shifted)
+	for _, sType := range []string{"ges", "mini", "micro"} {
+		// Re-scan sections (rows may have shifted)
 		sections, err = g.scanSections(f, sheet)
 		if err != nil {
 			f.Close()
 			return nil, fmt.Errorf("failed to re-scan sections: %w", err)
 		}
 
-		if gesSection, ok := sections["ges"]; ok {
-			if err := g.processShutdowns(f, sheet, gesSection, shutdowns.Ges, loc, set); err != nil {
+		if section, ok := sections[sType]; ok {
+			if err := g.processShutdowns(f, sheet, section, shutdownsByType[sType], orgParentMap, loc, set); err != nil {
 				f.Close()
-				return nil, fmt.Errorf("failed to process ges shutdowns: %w", err)
-			}
-		}
-
-		// Re-scan sections after ges processing
-		sections, err = g.scanSections(f, sheet)
-		if err != nil {
-			f.Close()
-			return nil, fmt.Errorf("failed to re-scan sections: %w", err)
-		}
-
-		if miniSection, ok := sections["mini"]; ok {
-			if err := g.processShutdowns(f, sheet, miniSection, shutdowns.Mini, loc, set); err != nil {
-				f.Close()
-				return nil, fmt.Errorf("failed to process mini shutdowns: %w", err)
-			}
-		}
-
-		// Re-scan sections after mini processing
-		sections, err = g.scanSections(f, sheet)
-		if err != nil {
-			f.Close()
-			return nil, fmt.Errorf("failed to re-scan sections: %w", err)
-		}
-
-		if microSection, ok := sections["micro"]; ok {
-			if err := g.processShutdowns(f, sheet, microSection, shutdowns.Micro, loc, set); err != nil {
-				f.Close()
-				return nil, fmt.Errorf("failed to process micro shutdowns: %w", err)
+				return nil, fmt.Errorf("failed to process %s shutdowns: %w", sType, err)
 			}
 		}
 	}
@@ -145,7 +122,6 @@ func (g *Generator) GenerateExcel(
 	}
 
 	// Process visits section
-	// Re-scan sections after shutdowns processing (rows may have shifted)
 	sections, err = g.scanSections(f, sheet)
 	if err != nil {
 		f.Close()
@@ -153,7 +129,7 @@ func (g *Generator) GenerateExcel(
 	}
 
 	if visitsSection, ok := sections["visits"]; ok {
-		if err := g.processVisits(f, sheet, visitsSection, visits, loc, set); err != nil {
+		if err := g.processVisits(f, sheet, visitsSection, visits, orgParentMap, loc, set); err != nil {
 			f.Close()
 			return nil, fmt.Errorf("failed to process visits: %w", err)
 		}
@@ -165,7 +141,6 @@ func (g *Generator) GenerateExcel(
 	}
 
 	// Process incidents section
-	// Re-scan sections after visits processing (rows may have shifted)
 	sections, err = g.scanSections(f, sheet)
 	if err != nil {
 		f.Close()
@@ -173,12 +148,29 @@ func (g *Generator) GenerateExcel(
 	}
 
 	if incidentsSection, ok := sections["incidents"]; ok {
-		if err := g.processIncidents(f, sheet, incidentsSection, incidents, loc, set); err != nil {
+		if err := g.processIncidents(f, sheet, incidentsSection, incidents, orgParentMap, loc, set); err != nil {
 			f.Close()
 			return nil, fmt.Errorf("failed to process incidents: %w", err)
 		}
 	}
 
+	if writeErr != nil {
+		f.Close()
+		return nil, writeErr
+	}
+
+	// Process reservoir devices
+	sections, err = g.scanSections(f, sheet)
+	if err != nil {
+		f.Close()
+		return nil, fmt.Errorf("failed to re-scan sections for res: %w", err)
+	}
+	if sec, ok := sections["res"]; ok {
+		if err := g.processReservoirDevices(f, sheet, sec, resDevices, orgParentMap, set); err != nil {
+			f.Close()
+			return nil, fmt.Errorf("failed to process reservoir devices: %w", err)
+		}
+	}
 	if writeErr != nil {
 		f.Close()
 		return nil, writeErr
@@ -192,7 +184,7 @@ func (g *Generator) GenerateExcel(
 
 	// Set print area (delete existing first to avoid "name already exists" error)
 	lastRow := g.findLastDataRow(f, sheet)
-	printArea := fmt.Sprintf("$A$1:$P$%d", lastRow)
+	printArea := fmt.Sprintf("$A$1:$O$%d", lastRow)
 
 	// Delete existing print area if it exists
 	_ = f.DeleteDefinedName(&excelize.DefinedName{
@@ -278,49 +270,31 @@ func monthNameCyrillic(m time.Month) string {
 	return months[m-1]
 }
 
-// scanSections reads column P to identify sections and their organization rows
+// scanSections reads column P to identify sections and their template rows
 func (g *Generator) scanSections(f *excelize.File, sheet string) (map[string]*SectionInfo, error) {
 	sections := make(map[string]*SectionInfo)
-
 	rows, err := f.GetRows(sheet)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get rows: %w", err)
 	}
-
-	var currentSection *SectionInfo
-
 	for rowIdx, row := range rows {
 		rowNum := rowIdx + 1
-
-		// Column P is index 15 (0-based)
 		if len(row) <= 15 {
 			continue
 		}
-
 		cellValue := row[15]
 		if cellValue == "" {
 			continue
 		}
-
-		// Check if it's a section tag
 		switch cellValue {
 		case "ges", "mini", "micro", "discharges", "visits", "incidents", "res":
-			currentSection = &SectionInfo{
-				Tag:       cellValue,
-				HeaderRow: rowNum,
-				OrgRows:   make(map[int64]int),
-			}
-			sections[cellValue] = currentSection
-		default:
-			// Try to parse as organization ID
-			if orgID, err := strconv.ParseInt(cellValue, 10, 64); err == nil {
-				if currentSection != nil {
-					currentSection.OrgRows[orgID] = rowNum
-				}
+			sections[cellValue] = &SectionInfo{
+				Tag:         cellValue,
+				HeaderRow:   rowNum,
+				TemplateRow: rowNum + 1,
 			}
 		}
 	}
-
 	return sections, nil
 }
 
@@ -330,47 +304,53 @@ func (g *Generator) processDischarges(
 	sheet string,
 	section *SectionInfo,
 	data []discharge.Model,
+	orgParentMap map[int64]*int64,
 	loc *time.Location,
 	set func(cell string, value interface{}),
 ) error {
+	// If no data, delete template row
+	if len(data) == 0 {
+		if err := f.RemoveRow(sheet, section.TemplateRow); err != nil {
+			return fmt.Errorf("failed to remove template row %d: %w", section.TemplateRow, err)
+		}
+		return nil
+	}
+
 	// Aggregate data by organization
 	aggregated := g.aggregateDischargesByOrganization(data, loc)
 
-	// Collect rows to delete (organizations without data)
-	var rowsToDelete []int
-	var orgsToDelete []int64
-	for orgID, rowNum := range section.OrgRows {
-		if _, hasData := aggregated[orgID]; !hasData {
-			rowsToDelete = append(rowsToDelete, rowNum)
-			orgsToDelete = append(orgsToDelete, orgID)
+	// All records may have nil Organization — aggregated can be empty
+	if len(aggregated) == 0 {
+		if err := f.RemoveRow(sheet, section.TemplateRow); err != nil {
+			return fmt.Errorf("failed to remove template row %d: %w", section.TemplateRow, err)
+		}
+		return nil
+	}
+
+	// Collect org IDs and sort by parent hierarchy
+	orgIDs := make([]int64, 0, len(aggregated))
+	for orgID := range aggregated {
+		orgIDs = append(orgIDs, orgID)
+	}
+	orgIDs = sortOrgIDs(orgIDs, orgParentMap)
+
+	// Duplicate template row N-1 times
+	for i := 1; i < len(orgIDs); i++ {
+		if err := f.DuplicateRow(sheet, section.TemplateRow); err != nil {
+			return fmt.Errorf("failed to duplicate row %d: %w", section.TemplateRow, err)
 		}
 	}
 
-	// Delete rows in reverse order
-	sortReverse(rowsToDelete)
-	for _, rowNum := range rowsToDelete {
-		if err := f.RemoveRow(sheet, rowNum); err != nil {
-			return fmt.Errorf("failed to remove row %d: %w", rowNum, err)
-		}
-		// Update orgRowMap for remaining rows
-		for oid, r := range section.OrgRows {
-			if r > rowNum {
-				section.OrgRows[oid] = r - 1
-			}
-		}
-	}
+	// Fill data for each organization
+	for i, orgID := range orgIDs {
+		rowNum := section.TemplateRow + i
+		row := aggregated[orgID]
 
-	// Remove deleted organizations from map
-	for _, orgID := range orgsToDelete {
-		delete(section.OrgRows, orgID)
-	}
+		// A: № (numbering)
+		set(fmt.Sprintf("A%d", rowNum), i+1)
 
-	// Fill data for organizations that have discharges
-	for orgID, row := range aggregated {
-		rowNum, exists := section.OrgRows[orgID]
-		if !exists {
-			continue
-		}
+		// B: Organization name
+		set(fmt.Sprintf("B%d", rowNum), row.OrganizationName)
 
 		// C: Start date (dd.MM.yyyy)
 		set(fmt.Sprintf("C%d", rowNum), row.StartDate.Format("02.01.2006"))
@@ -400,26 +380,14 @@ func (g *Generator) processDischarges(
 		// M: Reason
 		if row.Reason != nil {
 			set(fmt.Sprintf("M%d", rowNum), *row.Reason)
+			g.autoFitRowHeight(f, sheet, rowNum, *row.Reason, 45)
 		}
 	}
 
-	// Recalculate numbering in column A
-	var remainingRows []int
-	for _, rowNum := range section.OrgRows {
-		remainingRows = append(remainingRows, rowNum)
-	}
-	sortAsc(remainingRows)
-
-	for i, rowNum := range remainingRows {
-		set(fmt.Sprintf("A%d", rowNum), i+1) // 1-based numbering
-	}
-
-	// Restore bottom border for the last data row (lost after row deletion)
-	if len(remainingRows) > 0 {
-		lastRow := remainingRows[len(remainingRows)-1]
-		if err := g.applyBottomBorder(f, sheet, lastRow, "A", "O"); err != nil {
-			return fmt.Errorf("failed to apply bottom border: %w", err)
-		}
+	// Restore bottom border for the last data row
+	lastRow := section.TemplateRow + len(orgIDs) - 1
+	if err := g.applyBottomBorder(f, sheet, lastRow, "A", "O"); err != nil {
+		return fmt.Errorf("failed to apply bottom border: %w", err)
 	}
 
 	return nil
@@ -454,8 +422,14 @@ func (g *Generator) applyBottomBorder(f *excelize.File, sheet string, row int, s
 		}
 
 		if existingStyle != nil {
-			// Preserve existing borders (top, left, right) and add bottom
-			newStyle.Border = append(existingStyle.Border, borderStyle)
+			// Preserve existing borders (top, left, right), replace any existing bottom
+			filtered := make([]excelize.Border, 0, len(existingStyle.Border))
+			for _, b := range existingStyle.Border {
+				if b.Type != "bottom" {
+					filtered = append(filtered, b)
+				}
+			}
+			newStyle.Border = append(filtered, borderStyle)
 			newStyle.Fill = existingStyle.Fill
 			newStyle.Font = existingStyle.Font
 			newStyle.Alignment = existingStyle.Alignment
@@ -481,94 +455,56 @@ func (g *Generator) processShutdowns(
 	sheet string,
 	section *SectionInfo,
 	shutdowns []*shutdown.ResponseModel,
+	orgParentMap map[int64]*int64,
 	loc *time.Location,
 	set func(cell string, value interface{}),
 ) error {
+	// If no data, delete template row
+	if len(shutdowns) == 0 {
+		if err := f.RemoveRow(sheet, section.TemplateRow); err != nil {
+			return fmt.Errorf("failed to remove template row %d: %w", section.TemplateRow, err)
+		}
+		return nil
+	}
+
 	// Group shutdowns by organization ID
 	shutdownsByOrg := make(map[int64][]*shutdown.ResponseModel)
 	for _, s := range shutdowns {
 		shutdownsByOrg[s.OrganizationID] = append(shutdownsByOrg[s.OrganizationID], s)
 	}
 
-	// Collect rows to delete (organizations without data)
-	var rowsToDelete []int
-	var orgsToDelete []int64
-	for orgID, rowNum := range section.OrgRows {
-		if _, hasData := shutdownsByOrg[orgID]; !hasData {
-			rowsToDelete = append(rowsToDelete, rowNum)
-			orgsToDelete = append(orgsToDelete, orgID)
+	// Collect org IDs and sort by parent hierarchy
+	orgIDs := make([]int64, 0, len(shutdownsByOrg))
+	for orgID := range shutdownsByOrg {
+		orgIDs = append(orgIDs, orgID)
+	}
+	orgIDs = sortOrgIDs(orgIDs, orgParentMap)
+
+	// Calculate total rows needed
+	totalRows := 0
+	for _, list := range shutdownsByOrg {
+		totalRows += len(list)
+	}
+
+	// Duplicate template row totalRows-1 times
+	for i := 1; i < totalRows; i++ {
+		if err := f.DuplicateRow(sheet, section.TemplateRow); err != nil {
+			return fmt.Errorf("failed to duplicate row %d: %w", section.TemplateRow, err)
 		}
 	}
 
-	// Delete rows in reverse order to preserve row numbers
-	sortReverse(rowsToDelete)
-	for _, rowNum := range rowsToDelete {
-		if err := f.RemoveRow(sheet, rowNum); err != nil {
-			return fmt.Errorf("failed to remove row %d: %w", rowNum, err)
-		}
-		// Update orgRowMap for remaining rows
-		for oid, r := range section.OrgRows {
-			if r > rowNum {
-				section.OrgRows[oid] = r - 1
-			}
-		}
-	}
-
-	// Remove deleted organizations from map
-	for _, orgID := range orgsToDelete {
-		delete(section.OrgRows, orgID)
-	}
-
-	// Track all data rows (for numbering and totals)
+	// Fill data sequentially
 	var allDataRows []int
 	var totalGenerationLoss float64
 	var totalIdleDischargeVolume float64
+	currentRow := section.TemplateRow
 
-	// Process organizations with shutdowns
-	// We need to handle row duplication for multiple shutdowns per org
-	// Collect orgs sorted by row number to process in order
-	type orgRow struct {
-		orgID  int64
-		rowNum int
-	}
-	var orgRows []orgRow
-	for orgID, rowNum := range section.OrgRows {
-		orgRows = append(orgRows, orgRow{orgID: orgID, rowNum: rowNum})
-	}
-	// Sort by row number ascending
-	for i := 0; i < len(orgRows)-1; i++ {
-		for j := i + 1; j < len(orgRows); j++ {
-			if orgRows[i].rowNum > orgRows[j].rowNum {
-				orgRows[i], orgRows[j] = orgRows[j], orgRows[i]
-			}
-		}
-	}
-
-	// Track row offset due to insertions
-	rowOffset := 0
-
-	for _, or := range orgRows {
-		orgID := or.orgID
-		baseRowNum := or.rowNum + rowOffset
-		shutdownList := shutdownsByOrg[orgID]
-
-		if len(shutdownList) == 0 {
-			continue
-		}
-
-		// For multiple shutdowns, we need to duplicate the row
-		for i := 1; i < len(shutdownList); i++ {
-			// Duplicate the row (insert after baseRowNum)
-			if err := f.DuplicateRow(sheet, baseRowNum); err != nil {
-				return fmt.Errorf("failed to duplicate row %d: %w", baseRowNum, err)
-			}
-			rowOffset++
-		}
-
-		// Fill data for each shutdown
-		for i, s := range shutdownList {
-			currentRow := baseRowNum + i
+	for _, orgID := range orgIDs {
+		for _, s := range shutdownsByOrg[orgID] {
 			allDataRows = append(allDataRows, currentRow)
+
+			// B: Organization name
+			set(fmt.Sprintf("B%d", currentRow), s.OrganizationName)
 
 			// C: StartedAt (dd.MM.yyyy HH:mm)
 			set(fmt.Sprintf("C%d", currentRow), s.StartedAt.In(loc).Format("02.01.2006 15:04"))
@@ -581,9 +517,8 @@ func (g *Generator) processShutdowns(
 			// E: Reason (merged cells E-I)
 			if s.Reason != nil {
 				set(fmt.Sprintf("E%d", currentRow), *s.Reason)
+				g.autoFitRowHeight(f, sheet, currentRow, *s.Reason, 60)
 			}
-
-			// J-M: leave empty (already empty in template)
 
 			// N: GenerationLossMwh (convert from kWh to thousand kWh)
 			if s.GenerationLossMwh != nil {
@@ -597,18 +532,17 @@ func (g *Generator) processShutdowns(
 				set(fmt.Sprintf("O%d", currentRow), *s.IdleDischargeVolumeThousandM3)
 				totalIdleDischargeVolume += *s.IdleDischargeVolumeThousandM3
 			}
+
+			currentRow++
 		}
 	}
-
-	// Sort allDataRows for numbering
-	sortAsc(allDataRows)
 
 	// Recalculate numbering in column A
 	for i, rowNum := range allDataRows {
 		set(fmt.Sprintf("A%d", rowNum), i+1) // 1-based numbering
 	}
 
-	// Restore bottom border for the last data row (lost after row deletion)
+	// Restore bottom border for the last data row
 	if len(allDataRows) > 0 {
 		lastDataRow := allDataRows[len(allDataRows)-1]
 		if err := g.applyBottomBorder(f, sheet, lastDataRow, "A", "O"); err != nil {
@@ -616,23 +550,19 @@ func (g *Generator) processShutdowns(
 		}
 
 		// Find and update "Жами" row (totals)
-		// "Жами" should be somewhere after the last data row
 		rows, err := f.GetRows(sheet)
 		if err == nil {
-			// Look for "Жами" in columns B or C within the next 5 rows
 			for rowIdx := lastDataRow; rowIdx < lastDataRow+5 && rowIdx <= len(rows); rowIdx++ {
 				if rowIdx-1 < len(rows) {
 					row := rows[rowIdx-1]
-					for colIdx, cellValue := range row {
+					for _, cellValue := range row {
 						if cellValue == "Жами" || cellValue == "Жами:" {
-							// Found "Жами" row - update totals in columns N and O
 							if totalGenerationLoss > 0 {
 								set(fmt.Sprintf("N%d", rowIdx), totalGenerationLoss)
 							}
 							if totalIdleDischargeVolume > 0 {
 								set(fmt.Sprintf("O%d", rowIdx), totalIdleDischargeVolume)
 							}
-							_ = colIdx // suppress unused warning
 							break
 						}
 					}
@@ -709,6 +639,151 @@ func (g *Generator) aggregateDischargesByOrganization(data []discharge.Model, lo
 	return result
 }
 
+// processReservoirDevices fills the reservoir devices section with data
+func (g *Generator) processReservoirDevices(
+	f *excelize.File,
+	sheet string,
+	section *SectionInfo,
+	devices []*reservoirdevicesummary.ResponseModel,
+	orgParentMap map[int64]*int64,
+	set func(cell string, value interface{}),
+) error {
+	if len(devices) == 0 {
+		if err := f.RemoveRow(sheet, section.TemplateRow); err != nil {
+			return fmt.Errorf("failed to remove template row: %w", err)
+		}
+		return nil
+	}
+
+	// Sort by parent_id → org_id
+	orgIDs := make([]int64, 0, len(devices))
+	deviceByOrg := make(map[int64]*reservoirdevicesummary.ResponseModel, len(devices))
+	for _, d := range devices {
+		orgIDs = append(orgIDs, d.OrganizationID)
+		deviceByOrg[d.OrganizationID] = d
+	}
+	orgIDs = sortOrgIDs(orgIDs, orgParentMap)
+
+	// Duplicate template row N-1 times
+	for i := 1; i < len(orgIDs); i++ {
+		if err := f.DuplicateRow(sheet, section.TemplateRow); err != nil {
+			return fmt.Errorf("failed to duplicate row %d: %w", section.TemplateRow, err)
+		}
+	}
+
+	// Totals for "ЖАМИ" row
+	var totalTotal, totalInstalled, totalOperational, totalFaulty, totalActive, totalAutomation int
+
+	for i, orgID := range orgIDs {
+		rowNum := section.TemplateRow + i
+		d := deviceByOrg[orgID]
+
+		set(fmt.Sprintf("A%d", rowNum), i+1)
+		set(fmt.Sprintf("B%d", rowNum), d.OrganizationName)
+		set(fmt.Sprintf("D%d", rowNum), d.CountTotal)
+		set(fmt.Sprintf("E%d", rowNum), d.CountActive)
+		set(fmt.Sprintf("F%d", rowNum), d.CountAutomationScope)
+
+		// G: percentage of automation scope vs total
+		if d.CountTotal > 0 {
+			set(fmt.Sprintf("G%d", rowNum), fmt.Sprintf("(%d%%)", d.CountAutomationScope*100/d.CountTotal))
+		}
+
+		set(fmt.Sprintf("H%d", rowNum), d.CountInstalled)
+		if d.CountTotal > 0 {
+			set(fmt.Sprintf("I%d", rowNum), fmt.Sprintf("(%d%%)", d.CountInstalled*100/d.CountTotal))
+		}
+
+		set(fmt.Sprintf("J%d", rowNum), d.CountOperational)
+		if d.CountTotal > 0 {
+			set(fmt.Sprintf("K%d", rowNum), fmt.Sprintf("(%d%%)", d.CountOperational*100/d.CountTotal))
+		}
+
+		set(fmt.Sprintf("L%d", rowNum), d.CountFaulty)
+		if d.CountTotal > 0 {
+			set(fmt.Sprintf("M%d", rowNum), fmt.Sprintf("(%d%%)", d.CountFaulty*100/d.CountTotal))
+		}
+
+		if d.Criterion1 != nil {
+			set(fmt.Sprintf("N%d", rowNum), *d.Criterion1)
+		}
+		if d.Criterion2 != nil {
+			set(fmt.Sprintf("O%d", rowNum), *d.Criterion2)
+		}
+
+		totalTotal += d.CountTotal
+		totalInstalled += d.CountInstalled
+		totalOperational += d.CountOperational
+		totalFaulty += d.CountFaulty
+		totalActive += d.CountActive
+		totalAutomation += d.CountAutomationScope
+	}
+
+	// Bottom border
+	lastRow := section.TemplateRow + len(orgIDs) - 1
+	if err := g.applyBottomBorder(f, sheet, lastRow, "A", "O"); err != nil {
+		return fmt.Errorf("failed to apply bottom border: %w", err)
+	}
+
+	// Update "ЖАМИ" totals row
+	rows, err := f.GetRows(sheet)
+	if err == nil {
+		for rowIdx := lastRow + 1; rowIdx < lastRow+5 && rowIdx <= len(rows); rowIdx++ {
+			if rowIdx-1 < len(rows) {
+				row := rows[rowIdx-1]
+				for _, cellValue := range row {
+					if cellValue == "ЖАМИ:" || cellValue == "ЖАМИ" {
+						set(fmt.Sprintf("D%d", rowIdx), totalTotal)
+						set(fmt.Sprintf("E%d", rowIdx), totalActive)
+						set(fmt.Sprintf("F%d", rowIdx), totalAutomation)
+						if totalTotal > 0 {
+							set(fmt.Sprintf("G%d", rowIdx), fmt.Sprintf("(%d%%)", totalAutomation*100/totalTotal))
+						}
+						set(fmt.Sprintf("H%d", rowIdx), totalInstalled)
+						if totalTotal > 0 {
+							set(fmt.Sprintf("I%d", rowIdx), fmt.Sprintf("(%d%%)", totalInstalled*100/totalTotal))
+						}
+						set(fmt.Sprintf("J%d", rowIdx), totalOperational)
+						if totalTotal > 0 {
+							set(fmt.Sprintf("K%d", rowIdx), fmt.Sprintf("(%d%%)", totalOperational*100/totalTotal))
+						}
+						set(fmt.Sprintf("L%d", rowIdx), totalFaulty)
+						if totalTotal > 0 {
+							set(fmt.Sprintf("M%d", rowIdx), fmt.Sprintf("(%d%%)", totalFaulty*100/totalTotal))
+						}
+						break
+					}
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// autoFitRowHeight sets row height based on text length and column width in characters.
+func (g *Generator) autoFitRowHeight(f *excelize.File, sheet string, row int, text string, colWidthChars int) {
+	const lineHeight = 15.0
+	const defaultHeight = 15.0
+
+	lines := 1
+	for _, seg := range strings.Split(text, "\n") {
+		runeLen := len([]rune(seg))
+		segLines := (runeLen + colWidthChars - 1) / colWidthChars
+		if segLines < 1 {
+			segLines = 1
+		}
+		lines += segLines - 1
+	}
+	lines += strings.Count(text, "\n")
+
+	height := float64(lines) * lineHeight
+	if height < defaultHeight {
+		height = defaultHeight
+	}
+	_ = f.SetRowHeight(sheet, row, height)
+}
+
 // clearColumn clears all values in a column
 func (g *Generator) clearColumn(f *excelize.File, sheet, col string) error {
 	rows, err := f.GetRows(sheet)
@@ -761,55 +836,37 @@ func formatDuration(d time.Duration) string {
 	return result
 }
 
-// sortReverse sorts integers in descending order
-func sortReverse(arr []int) {
-	for i := 0; i < len(arr)-1; i++ {
-		for j := i + 1; j < len(arr); j++ {
-			if arr[i] < arr[j] {
-				arr[i], arr[j] = arr[j], arr[i]
-			}
-		}
-	}
-}
-
-// sortAsc sorts integers in ascending order
-func sortAsc(arr []int) {
-	for i := 0; i < len(arr)-1; i++ {
-		for j := i + 1; j < len(arr); j++ {
-			if arr[i] > arr[j] {
-				arr[i], arr[j] = arr[j], arr[i]
-			}
-		}
-	}
-}
-
 // processVisits fills the visits section with data
 func (g *Generator) processVisits(
 	f *excelize.File,
 	sheet string,
 	section *SectionInfo,
 	visits []*visit.ResponseModel,
+	orgParentMap map[int64]*int64,
 	loc *time.Location,
 	set func(cell string, value interface{}),
 ) error {
-	// The template has one row after the "visits" tag as a template row
-	templateRow := section.HeaderRow + 1
-
-	// If no visits, leave empty template row (don't delete)
+	// If no visits, delete template row
 	if len(visits) == 0 {
+		if err := f.RemoveRow(sheet, section.TemplateRow); err != nil {
+			return fmt.Errorf("failed to remove template row %d: %w", section.TemplateRow, err)
+		}
 		return nil
 	}
 
+	// Sort visits by org hierarchy
+	sortVisitsByOrg(visits, orgParentMap)
+
 	// Duplicate the template row for additional visits (len(visits) - 1) times
 	for i := 1; i < len(visits); i++ {
-		if err := f.DuplicateRow(sheet, templateRow); err != nil {
-			return fmt.Errorf("failed to duplicate row %d: %w", templateRow, err)
+		if err := f.DuplicateRow(sheet, section.TemplateRow); err != nil {
+			return fmt.Errorf("failed to duplicate row %d: %w", section.TemplateRow, err)
 		}
 	}
 
 	// Fill data for each visit
 	for i, v := range visits {
-		row := templateRow + i
+		row := section.TemplateRow + i
 
 		// A: № (numbering)
 		set(fmt.Sprintf("A%d", row), i+1)
@@ -819,17 +876,16 @@ func (g *Generator) processVisits(
 
 		// F: Description - event name (F-L merged cells, write to first cell)
 		set(fmt.Sprintf("F%d", row), v.Description)
+		g.autoFitRowHeight(f, sheet, row, v.Description, 70)
 
 		// M: Responsible name (M-O merged cells, write to first cell)
 		set(fmt.Sprintf("M%d", row), v.ResponsibleName)
 	}
 
 	// Restore bottom border for the last data row
-	if len(visits) > 0 {
-		lastRow := templateRow + len(visits) - 1
-		if err := g.applyBottomBorder(f, sheet, lastRow, "A", "O"); err != nil {
-			return fmt.Errorf("failed to apply bottom border: %w", err)
-		}
+	lastRow := section.TemplateRow + len(visits) - 1
+	if err := g.applyBottomBorder(f, sheet, lastRow, "A", "O"); err != nil {
+		return fmt.Errorf("failed to apply bottom border: %w", err)
 	}
 
 	return nil
@@ -841,27 +897,31 @@ func (g *Generator) processIncidents(
 	sheet string,
 	section *SectionInfo,
 	incidents []*incident.ResponseModel,
+	orgParentMap map[int64]*int64,
 	loc *time.Location,
 	set func(cell string, value interface{}),
 ) error {
-	// The template has one row after the "incidents" tag as a template row
-	templateRow := section.HeaderRow + 1
-
-	// If no incidents, leave empty template row (don't delete)
+	// If no incidents, delete template row
 	if len(incidents) == 0 {
+		if err := f.RemoveRow(sheet, section.TemplateRow); err != nil {
+			return fmt.Errorf("failed to remove template row %d: %w", section.TemplateRow, err)
+		}
 		return nil
 	}
 
+	// Sort incidents by org hierarchy (NULL org_id first)
+	sortIncidentsByOrg(incidents, orgParentMap)
+
 	// Duplicate the template row for additional incidents (len(incidents) - 1) times
 	for i := 1; i < len(incidents); i++ {
-		if err := f.DuplicateRow(sheet, templateRow); err != nil {
-			return fmt.Errorf("failed to duplicate row %d: %w", templateRow, err)
+		if err := f.DuplicateRow(sheet, section.TemplateRow); err != nil {
+			return fmt.Errorf("failed to duplicate row %d: %w", section.TemplateRow, err)
 		}
 	}
 
 	// Fill data for each incident
 	for i, inc := range incidents {
-		row := templateRow + i
+		row := section.TemplateRow + i
 
 		// A: № (numbering)
 		set(fmt.Sprintf("A%d", row), i+1)
@@ -879,14 +939,13 @@ func (g *Generator) processIncidents(
 
 		// F: Description (F-O merged cells, write to first cell)
 		set(fmt.Sprintf("F%d", row), inc.Description)
+		g.autoFitRowHeight(f, sheet, row, inc.Description, 80)
 	}
 
 	// Restore bottom border for the last data row
-	if len(incidents) > 0 {
-		lastRow := templateRow + len(incidents) - 1
-		if err := g.applyBottomBorder(f, sheet, lastRow, "A", "O"); err != nil {
-			return fmt.Errorf("failed to apply bottom border: %w", err)
-		}
+	lastRow := section.TemplateRow + len(incidents) - 1
+	if err := g.applyBottomBorder(f, sheet, lastRow, "A", "O"); err != nil {
+		return fmt.Errorf("failed to apply bottom border: %w", err)
 	}
 
 	return nil

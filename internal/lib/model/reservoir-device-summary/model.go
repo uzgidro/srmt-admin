@@ -8,7 +8,6 @@ type ResponseModel struct {
 	ID                   int64      `json:"id"`
 	OrganizationID       int64      `json:"organization_id"`
 	OrganizationName     string     `json:"organization_name"`
-	DeviceTypeName       string     `json:"device_type_name"`
 	CountTotal           int        `json:"count_total"`
 	CountInstalled       int        `json:"count_installed"`
 	CountOperational     int        `json:"count_operational"`

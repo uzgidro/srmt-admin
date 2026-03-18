@@ -227,6 +227,20 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 	router.Post("/auth/refresh", refresh.New(deps.Log, deps.PgRepo, deps.Token))
 	router.Post("/auth/sign-out", signOut.New(deps.Log))
 
+	// TODO: remove after testing — temporary unprotected SC export
+	router.Get("/debug/sc/export", scExport.New(
+		deps.Log,
+		deps.PgRepo,
+		deps.PgRepo,
+		deps.PgRepo,
+		deps.PgRepo,
+		deps.PgRepo,
+		deps.PgRepo,
+		deps.PgRepo, // ResDeviceGetter
+		scExcelGen.New(deps.SCExcelTemplatePath),
+		loc,
+	))
+
 	router.Route("/api/v3", func(r chi.Router) {
 		r.Get("/modsnow", table.Get(deps.Log, deps.MongoRepo))
 		r.Get("/stock", stock.Get(deps.Log, deps.MongoRepo))
@@ -468,8 +482,10 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 				deps.PgRepo, // DischargeGetter
 				deps.PgRepo, // ShutdownGetter
 				deps.PgRepo, // OrgTypesGetter
+				deps.PgRepo, // OrgParentGetter
 				deps.PgRepo, // VisitGetter
 				deps.PgRepo, // IncidentGetter
+				deps.PgRepo, // ResDeviceGetter
 				scExcelGen.New(deps.SCExcelTemplatePath),
 				loc,
 			))
