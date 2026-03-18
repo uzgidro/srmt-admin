@@ -113,7 +113,7 @@ func New(
 		}
 
 		sheet := excelFile.GetSheetName(0)
-		if err := filterGen.FillFiltrationBlocks(excelFile, sheet, comparisons); err != nil {
+		if err := filterGen.FillFiltrationBlocks(excelFile, sheet, comparisons, authorShort); err != nil {
 			log.Error("failed to fill filtration blocks", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)
 			render.JSON(w, r, resp.InternalServerError("Failed to fill filtration blocks"))
@@ -235,11 +235,13 @@ func exportPDF(w http.ResponseWriter, excelFile *excelize.File, date time.Time, 
 	defer os.RemoveAll(tempDir)
 
 	sheet := excelFile.GetSheetName(0)
-	marginTop := 0.3
-	marginBottom := 0.3
-	marginLeft := 0.3
-	marginRight := 0.3
-	marginHeader := 0.1
+
+	// Minimal margins
+	marginTop := 0.2
+	marginBottom := 0.2
+	marginLeft := 0.1
+	marginRight := 0.1
+	marginHeader := 0.0
 	marginFooter := 0.0
 	_ = excelFile.SetPageMargins(sheet, &excelize.PageLayoutMarginsOptions{
 		Top:    &marginTop,
@@ -248,6 +250,16 @@ func exportPDF(w http.ResponseWriter, excelFile *excelize.File, date time.Time, 
 		Right:  &marginRight,
 		Header: &marginHeader,
 		Footer: &marginFooter,
+	})
+
+	// Portrait orientation, fit everything on one page
+	orientation := "portrait"
+	fitToHeight := 1
+	fitToWidth := 1
+	_ = excelFile.SetPageLayout(sheet, &excelize.PageLayoutOptions{
+		Orientation:  &orientation,
+		FitToHeight:  &fitToHeight,
+		FitToWidth:   &fitToWidth,
 	})
 
 	excelPath := filepath.Join(tempDir, "filter.xlsx")

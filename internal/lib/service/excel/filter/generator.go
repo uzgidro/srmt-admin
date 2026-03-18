@@ -19,20 +19,23 @@ func New() *Generator {
 	return &Generator{}
 }
 
-// blockStyles holds style IDs extracted from the template filtration block (rows 26–33).
+// blockStyles holds style IDs extracted from the template filtration block (rows 26–34).
 type blockStyles struct {
-	header      int // A26
-	labelBold   int // A27
-	colHeader   int // B27
-	diffHeader  int // D27
-	normHeader  int // E27
-	dataNumBold int // B28
-	dataNum     int // K28
-	piezoLabel  int // I28
-	countsLabel int // I29
-	countsNum   int // K29
-	normText    int // L29
-	sigLeft     int // D34
+	header       int // A26 — reservoir name header
+	labelBold    int // A28 — "Жами, л/с" label
+	colHeader    int // B28 — date column header
+	diffHeader   int // D28 — "+,-" header
+	normHeader   int // E28 — "меъёр" header
+	totalFlowNum int // B29 — filtration total (bold)
+	subFlowLabel int // A30 — sub-location label (not bold, left-aligned)
+	subFlowNum   int // B30 — sub-location flow (not bold)
+	piezoLabel   int // I29 — piezometer name (not bold)
+	piezoNum     int // K29 — piezometer level (not bold)
+	countsLabel  int // I30 — "Жами, дона" (bold)
+	countsNum    int // K30 — count value (bold)
+	normText     int // L30 — norm assessment text
+	sigLeft  int // D34 — signature left
+	sigRight int // L34 — signature right (author name)
 }
 
 // filtrationOrder defines the display order of filtration blocks.
@@ -50,6 +53,7 @@ var filtrationOrder = map[string]int{
 func (g *Generator) FillFiltrationBlocks(
 	f *excelize.File, sheet string,
 	comparisons []filtration.OrgComparison,
+	authorShort string,
 ) error {
 	styles := extractStyles(f, sheet)
 	clearTemplateBlock(f, sheet)
@@ -65,8 +69,17 @@ func (g *Generator) FillFiltrationBlocks(
 	_ = f.MergeCell(sheet, cell("D", cursor), cell("G", cursor))
 	_ = f.SetCellValue(sheet, cell("D", cursor), "Вазиятлар маркази \nтезкор навбатчиси")
 	_ = f.SetCellStyle(sheet, cell("D", cursor), cell("G", cursor), styles.sigLeft)
+	_ = f.SetRowHeight(sheet, cursor, 30)
 
-	// Print area
+	_ = f.MergeCell(sheet, cell("J", cursor), cell("N", cursor))
+	_ = f.SetCellValue(sheet, cell("J", cursor), authorShort)
+	_ = f.SetCellStyle(sheet, cell("J", cursor), cell("N", cursor), styles.sigRight)
+
+	// Print area — delete any existing one first, then set new
+	_ = f.DeleteDefinedName(&excelize.DefinedName{
+		Name:  "_xlnm.Print_Area",
+		Scope: sheet,
+	})
 	_ = f.SetDefinedName(&excelize.DefinedName{
 		Name:     "_xlnm.Print_Area",
 		RefersTo: fmt.Sprintf("'%s'!$A$1:$O$%d", sheet, cursor+1),
@@ -86,26 +99,29 @@ func extractStyles(f *excelize.File, sheet string) blockStyles {
 		return id
 	}
 	return blockStyles{
-		header:      get("A26"),
-		labelBold:   get("A27"),
-		colHeader:   get("B27"),
-		diffHeader:  get("D27"),
-		normHeader:  get("E27"),
-		dataNumBold: get("B28"),
-		dataNum:     get("K28"),
-		piezoLabel:  get("I28"),
-		countsLabel: get("I29"),
-		countsNum:   get("K29"),
-		normText:    get("L29"),
-		sigLeft:     get("D34"),
+		header:       get("A26"),
+		labelBold:    get("A28"),
+		colHeader:    get("B28"),
+		diffHeader:   get("D28"),
+		normHeader:   get("E28"),
+		totalFlowNum: get("B29"),
+		subFlowLabel: get("A30"),
+		subFlowNum:   get("B30"),
+		piezoLabel:   get("I29"),
+		piezoNum:     get("K29"),
+		countsLabel:  get("I30"),
+		countsNum:    get("K30"),
+		normText:     get("L30"),
+		sigLeft:  get("D34"),
+		sigRight: get("L34"),
 	}
 }
 
 func clearTemplateBlock(f *excelize.File, sheet string) {
 	merges := [][2]string{
-		{"A26", "O26"}, {"A27", "A28"},
-		{"I27", "J27"}, {"I28", "J28"}, {"I29", "J29"},
-		{"I30", "J30"}, {"I31", "J31"}, {"L29", "O31"},
+		{"A26", "O26"}, {"A28", "A29"},
+		{"I28", "J28"}, {"I29", "J29"}, {"I30", "J30"},
+		{"I31", "J31"}, {"I32", "J32"}, {"L30", "O32"},
 		{"D34", "G34"}, {"L34", "N34"},
 	}
 	for _, m := range merges {
@@ -159,10 +175,14 @@ func writeBlock(
 	setRowStyle(f, sheet, cursor, 1, 15, st.header)
 	cursor++
 
+	// --- Spacer row ---
+	_ = f.SetRowHeight(sheet, cursor, 12.6)
+	cursor++
+
 	// --- Column headers row ---
 	colRow := cursor
 	_ = f.MergeCell(sheet, cell("A", colRow), cell("A", colRow+1))
-	_ = f.SetCellValue(sheet, cell("A", colRow), "жами, л/с")
+	_ = f.SetCellValue(sheet, cell("A", colRow), "Жами, л/с")
 	_ = f.SetCellStyle(sheet, cell("A", colRow), cell("A", colRow+1), st.labelBold)
 
 	histDate := fmtDate(comp.Historical)
@@ -175,7 +195,7 @@ func writeBlock(
 	_ = f.SetCellValue(sheet, cell("F", colRow), " +,-")
 
 	_ = f.MergeCell(sheet, cell("I", colRow), cell("J", colRow))
-	_ = f.SetCellValue(sheet, cell("I", colRow), "асосий пьезометрлар №")
+	_ = f.SetCellValue(sheet, cell("I", colRow), "Асосий пьезометрлар №")
 	_ = f.SetCellStyle(sheet, cell("I", colRow), cell("J", colRow), st.labelBold)
 	_ = f.SetCellValue(sheet, cell("K", colRow), histDate)
 	_ = f.SetCellValue(sheet, cell("L", colRow), currDate)
@@ -210,18 +230,21 @@ func writeBlock(
 
 		// Left side: filtration
 		if i == 0 {
-			setFlowCells(f, sheet, row, totalHist, totalCurr, totalNorm, st.dataNumBold)
+			// Total row (bold, from row 29 style)
+			setFlowCells(f, sheet, row, totalHist, totalCurr, totalNorm, st.totalFlowNum)
 		} else if i-1 < len(locations) {
+			// Sub-location rows (not bold, from row 30 style)
 			loc := locations[i-1]
 			label := loc.Name
 			if i == 1 {
 				label = "шундан: " + label
 			}
 			_ = f.SetCellValue(sheet, cell("A", row), label)
-			setFlowCells(f, sheet, row, pval(histLocMap[loc.ID]), pval(loc.FlowRate), pval(loc.Norm), st.dataNumBold)
+			_ = f.SetCellStyle(sheet, cell("A", row), cell("A", row), st.subFlowLabel)
+			setFlowCells(f, sheet, row, pval(histLocMap[loc.ID]), pval(loc.FlowRate), pval(loc.Norm), st.subFlowNum)
 		}
 
-		// Right side: piezometers + counts
+		// Right side: piezometers + counts (from row 29 I-O style)
 		if i < len(piezometers) {
 			p := piezometers[i]
 			_ = f.MergeCell(sheet, cell("I", row), cell("J", row))
@@ -240,7 +263,7 @@ func writeBlock(
 				_ = f.SetCellValue(sheet, cell("O", row), round2(currLevel-norm))
 			}
 			for _, c := range []string{"K", "L", "M", "N", "O"} {
-				_ = f.SetCellStyle(sheet, cell(c, row), cell(c, row), st.dataNum)
+				_ = f.SetCellStyle(sheet, cell(c, row), cell(c, row), st.piezoNum)
 			}
 		} else {
 			countIdx := i - len(piezometers)
