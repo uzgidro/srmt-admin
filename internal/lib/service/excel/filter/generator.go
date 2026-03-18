@@ -56,6 +56,7 @@ func (g *Generator) FillFiltrationBlocks(
 	authorShort string,
 ) error {
 	styles := extractStyles(f, sheet)
+	_ = f.SetCellValue(sheet, "K25", "")
 	clearTemplateBlock(f, sheet)
 	sortComparisons(comparisons)
 
@@ -66,10 +67,10 @@ func (g *Generator) FillFiltrationBlocks(
 	}
 
 	// Signature
-	_ = f.MergeCell(sheet, cell("D", cursor), cell("G", cursor))
-	_ = f.SetCellValue(sheet, cell("D", cursor), "Вазиятлар маркази \nтезкор навбатчиси")
-	_ = f.SetCellStyle(sheet, cell("D", cursor), cell("G", cursor), styles.sigLeft)
-	_ = f.SetRowHeight(sheet, cursor, 30)
+	_ = f.MergeCell(sheet, cell("C", cursor), cell("G", cursor))
+	_ = f.SetCellValue(sheet, cell("C", cursor), "Вазиятлар маркази \nтезкор навбатчиси")
+	_ = f.SetCellStyle(sheet, cell("C", cursor), cell("G", cursor), styles.sigLeft)
+	_ = f.SetRowHeight(sheet, cursor, 35)
 
 	_ = f.MergeCell(sheet, cell("J", cursor), cell("N", cursor))
 	_ = f.SetCellValue(sheet, cell("J", cursor), authorShort)

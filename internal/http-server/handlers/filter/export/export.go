@@ -92,7 +92,7 @@ func New(
 			return
 		}
 
-		excelFile, err := summaryGen.GenerateExcel(dateStr, summaries, authorShort)
+		excelFile, err := summaryGen.GenerateExcel(dateStr, summaries, "")
 		if err != nil {
 			log.Error("failed to generate summary", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)
