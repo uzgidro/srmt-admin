@@ -155,6 +155,7 @@ import (
 	mwapikey "srmt-admin/internal/http-server/middleware/api-key"
 	asutpauth "srmt-admin/internal/http-server/middleware/asutp-auth"
 	mwauth "srmt-admin/internal/http-server/middleware/auth"
+	"srmt-admin/internal/http-server/middleware/devonly"
 	"srmt-admin/internal/lib/service/alarm"
 	dischargeExcelGen "srmt-admin/internal/lib/service/excel/discharge"
 	excelgen "srmt-admin/internal/lib/service/excel/reservoir-summary"
@@ -227,19 +228,22 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 	router.Post("/auth/refresh", refresh.New(deps.Log, deps.PgRepo, deps.Token))
 	router.Post("/auth/sign-out", signOut.New(deps.Log))
 
-	// TODO: remove after testing — temporary unprotected SC export
-	router.Get("/debug/sc/export", scExport.New(
-		deps.Log,
-		deps.PgRepo,
-		deps.PgRepo,
-		deps.PgRepo,
-		deps.PgRepo,
-		deps.PgRepo,
-		deps.PgRepo,
-		deps.PgRepo, // ResDeviceGetter
-		scExcelGen.New(deps.SCExcelTemplatePath),
-		loc,
-	))
+	// Debug routes — disabled in production (returns 404)
+	router.Route("/debug", func(r chi.Router) {
+		r.Use(devonly.Guard(deps.Config.Env))
+		r.Get("/sc/export", scExport.New(
+			deps.Log,
+			deps.PgRepo,
+			deps.PgRepo,
+			deps.PgRepo,
+			deps.PgRepo,
+			deps.PgRepo,
+			deps.PgRepo,
+			deps.PgRepo, // ResDeviceGetter
+			scExcelGen.New(deps.SCExcelTemplatePath),
+			loc,
+		))
+	})
 
 	router.Route("/api/v3", func(r chi.Router) {
 		r.Get("/modsnow", table.Get(deps.Log, deps.MongoRepo))
