@@ -4,20 +4,40 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"srmt-admin/internal/lib/dto"
 	reservoirdevicesummary "srmt-admin/internal/lib/model/reservoir-device-summary"
 	"srmt-admin/internal/storage"
-	"strings"
+	"time"
+
+	"srmt-admin/internal/lib/dto"
 )
 
-// GetReservoirDeviceSummary retrieves all reservoir device summaries with organization name
-func (r *Repo) GetReservoirDeviceSummary(ctx context.Context) ([]*reservoirdevicesummary.ResponseModel, error) {
+// GetReservoirDeviceSummary retrieves the latest version of each reservoir device summary.
+// If date is non-nil, returns the latest version on or before that date.
+func (r *Repo) GetReservoirDeviceSummary(ctx context.Context, date *time.Time) ([]*reservoirdevicesummary.ResponseModel, error) {
 	const op = "storage.repo.GetReservoirDeviceSummary"
 
-	query := selectReservoirDeviceSummaryFields + fromReservoirDeviceSummaryJoins +
-		`ORDER BY rds.organization_id, rds.device_type_name`
+	query := `
+		SELECT DISTINCT ON (rds.organization_id)
+			rds.id,
+			rds.organization_id,
+			COALESCE(o.name, '') AS organization_name,
+			rds.count_total,
+			rds.count_installed,
+			rds.count_operational,
+			rds.count_faulty,
+			rds.count_active,
+			rds.count_automation_scope,
+			rds.criterion_1,
+			rds.criterion_2,
+			rds.created_at,
+			rds.updated_at,
+			rds.updated_by_user_id
+		FROM reservoir_device_summary rds
+		LEFT JOIN organizations o ON rds.organization_id = o.id
+		WHERE ($1::timestamptz IS NULL OR rds.created_at <= $1)
+		ORDER BY rds.organization_id, rds.created_at DESC`
 
-	rows, err := r.db.QueryContext(ctx, query)
+	rows, err := r.db.QueryContext(ctx, query, date)
 	if err != nil {
 		return nil, fmt.Errorf("%s: failed to query reservoir device summaries: %w", op, err)
 	}
@@ -41,12 +61,13 @@ func (r *Repo) GetReservoirDeviceSummary(ctx context.Context) ([]*reservoirdevic
 	return summaries, nil
 }
 
-// PatchReservoirDeviceSummary updates multiple reservoir device summaries in a single transaction
+// PatchReservoirDeviceSummary creates new versioned rows for reservoir device summaries.
+// For each item, it fetches the current (latest) version, merges non-nil fields, and INSERTs a new row.
 func (r *Repo) PatchReservoirDeviceSummary(ctx context.Context, req dto.PatchReservoirDeviceSummaryRequest, updatedByUserID int64) error {
 	const op = "storage.repo.PatchReservoirDeviceSummary"
 
 	if len(req.Updates) == 0 {
-		return nil // Nothing to update
+		return nil
 	}
 
 	tx, err := r.db.BeginTx(ctx, nil)
@@ -56,95 +77,86 @@ func (r *Repo) PatchReservoirDeviceSummary(ctx context.Context, req dto.PatchRes
 	defer tx.Rollback()
 
 	for _, item := range req.Updates {
-		// Check if record exists
-		var exists bool
-		err := tx.QueryRowContext(ctx,
-			"SELECT EXISTS(SELECT 1 FROM reservoir_device_summary WHERE organization_id = $1 AND device_type_name = $2)",
-			item.OrganizationID, item.DeviceTypeName,
-		).Scan(&exists)
+		// Fetch the latest version for this organization
+		var cur reservoirdevicesummary.ResponseModel
+		var criterion1, criterion2 sql.NullFloat64
+
+		err := tx.QueryRowContext(ctx, `
+			SELECT
+				organization_id,
+				count_total, count_installed, count_operational,
+				count_faulty, count_active, count_automation_scope,
+				criterion_1, criterion_2
+			FROM reservoir_device_summary
+			WHERE organization_id = $1
+			ORDER BY created_at DESC
+			LIMIT 1`, item.OrganizationID,
+		).Scan(
+			&cur.OrganizationID,
+			&cur.CountTotal, &cur.CountInstalled, &cur.CountOperational,
+			&cur.CountFaulty, &cur.CountActive, &cur.CountAutomationScope,
+			&criterion1, &criterion2,
+		)
 		if err != nil {
-			return fmt.Errorf("%s: failed to check existence: %w", op, err)
-		}
-		if !exists {
-			return storage.ErrNotFound
+			if err == sql.ErrNoRows {
+				return storage.ErrNotFound
+			}
+			return fmt.Errorf("%s: failed to fetch current version: %w", op, err)
 		}
 
-		// Build dynamic UPDATE query
-		var updates []string
-		var args []interface{}
-		argID := 1
+		if criterion1.Valid {
+			cur.Criterion1 = &criterion1.Float64
+		}
+		if criterion2.Valid {
+			cur.Criterion2 = &criterion2.Float64
+		}
 
+		// Merge: apply non-nil fields from the request
 		if item.CountTotal != nil {
-			updates = append(updates, fmt.Sprintf("count_total = $%d", argID))
-			args = append(args, *item.CountTotal)
-			argID++
+			cur.CountTotal = *item.CountTotal
 		}
 		if item.CountInstalled != nil {
-			updates = append(updates, fmt.Sprintf("count_installed = $%d", argID))
-			args = append(args, *item.CountInstalled)
-			argID++
+			cur.CountInstalled = *item.CountInstalled
 		}
 		if item.CountOperational != nil {
-			updates = append(updates, fmt.Sprintf("count_operational = $%d", argID))
-			args = append(args, *item.CountOperational)
-			argID++
+			cur.CountOperational = *item.CountOperational
 		}
 		if item.CountFaulty != nil {
-			updates = append(updates, fmt.Sprintf("count_faulty = $%d", argID))
-			args = append(args, *item.CountFaulty)
-			argID++
+			cur.CountFaulty = *item.CountFaulty
 		}
 		if item.CountActive != nil {
-			updates = append(updates, fmt.Sprintf("count_active = $%d", argID))
-			args = append(args, *item.CountActive)
-			argID++
+			cur.CountActive = *item.CountActive
 		}
 		if item.CountAutomationScope != nil {
-			updates = append(updates, fmt.Sprintf("count_automation_scope = $%d", argID))
-			args = append(args, *item.CountAutomationScope)
-			argID++
+			cur.CountAutomationScope = *item.CountAutomationScope
 		}
 		if item.Criterion1 != nil {
-			updates = append(updates, fmt.Sprintf("criterion_1 = $%d", argID))
-			args = append(args, *item.Criterion1)
-			argID++
+			cur.Criterion1 = item.Criterion1
 		}
 		if item.Criterion2 != nil {
-			updates = append(updates, fmt.Sprintf("criterion_2 = $%d", argID))
-			args = append(args, *item.Criterion2)
-			argID++
+			cur.Criterion2 = item.Criterion2
 		}
 
-		if len(updates) == 0 {
-			continue // Nothing to update for this item
-		}
-
-		// Add updated_at and updated_by_user_id
-		updates = append(updates, fmt.Sprintf("updated_at = NOW()"))
-		updates = append(updates, fmt.Sprintf("updated_by_user_id = $%d", argID))
-		args = append(args, updatedByUserID)
-		argID++
-
-		// Add WHERE clause parameters
-		query := fmt.Sprintf(
-			"UPDATE reservoir_device_summary SET %s WHERE organization_id = $%d AND device_type_name = $%d",
-			strings.Join(updates, ", "),
-			argID,
-			argID+1,
+		// INSERT new versioned row
+		_, err = tx.ExecContext(ctx, `
+			INSERT INTO reservoir_device_summary (
+				organization_id,
+				count_total, count_installed, count_operational,
+				count_faulty, count_active, count_automation_scope,
+				criterion_1, criterion_2,
+				updated_by_user_id
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+			item.OrganizationID,
+			cur.CountTotal, cur.CountInstalled, cur.CountOperational,
+			cur.CountFaulty, cur.CountActive, cur.CountAutomationScope,
+			cur.Criterion1, cur.Criterion2,
+			updatedByUserID,
 		)
-		args = append(args, item.OrganizationID, item.DeviceTypeName)
-
-		res, err := tx.ExecContext(ctx, query, args...)
 		if err != nil {
 			if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
 				return translatedErr
 			}
-			return fmt.Errorf("%s: failed to update reservoir device summary: %w", op, err)
-		}
-
-		rowsAffected, _ := res.RowsAffected()
-		if rowsAffected == 0 {
-			return storage.ErrNotFound
+			return fmt.Errorf("%s: failed to insert reservoir device summary version: %w", op, err)
 		}
 	}
 
@@ -165,7 +177,6 @@ func scanReservoirDeviceSummaryRow(scanner interface {
 		&m.ID,
 		&m.OrganizationID,
 		&m.OrganizationName,
-		&m.DeviceTypeName,
 		&m.CountTotal,
 		&m.CountInstalled,
 		&m.CountOperational,
@@ -197,30 +208,3 @@ func scanReservoirDeviceSummaryRow(scanner interface {
 
 	return &m, nil
 }
-
-const (
-	selectReservoirDeviceSummaryFields = `
-		SELECT
-			rds.id,
-			rds.organization_id,
-			COALESCE(o.name, '') as organization_name,
-			rds.device_type_name,
-			rds.count_total,
-			rds.count_installed,
-			rds.count_operational,
-			rds.count_faulty,
-			rds.count_active,
-			rds.count_automation_scope,
-			rds.criterion_1,
-			rds.criterion_2,
-			rds.created_at,
-			rds.updated_at,
-			rds.updated_by_user_id
-	`
-	fromReservoirDeviceSummaryJoins = `
-		FROM
-			reservoir_device_summary rds
-		LEFT JOIN
-			organizations o ON rds.organization_id = o.id
-	`
-)

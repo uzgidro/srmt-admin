@@ -236,6 +236,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 		deps.PgRepo,
 		deps.PgRepo,
 		deps.PgRepo,
+		deps.PgRepo, // ResDeviceGetter
 		scExcelGen.New(deps.SCExcelTemplatePath),
 		loc,
 	))
@@ -484,6 +485,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 				deps.PgRepo, // OrgParentGetter
 				deps.PgRepo, // VisitGetter
 				deps.PgRepo, // IncidentGetter
+				deps.PgRepo, // ResDeviceGetter
 				scExcelGen.New(deps.SCExcelTemplatePath),
 				loc,
 			))

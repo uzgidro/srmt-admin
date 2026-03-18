@@ -7,6 +7,7 @@ import (
 
 	"srmt-admin/internal/lib/model/discharge"
 	"srmt-admin/internal/lib/model/incident"
+	reservoirdevicesummary "srmt-admin/internal/lib/model/reservoir-device-summary"
 	"srmt-admin/internal/lib/model/shutdown"
 	"srmt-admin/internal/lib/model/visit"
 
@@ -41,6 +42,7 @@ func (g *Generator) GenerateExcel(
 	orgParentMap map[int64]*int64,
 	visits []*visit.ResponseModel,
 	incidents []*incident.ResponseModel,
+	resDevices []*reservoirdevicesummary.ResponseModel,
 	loc *time.Location,
 	authorShortName string,
 ) (*excelize.File, error) {
@@ -152,6 +154,23 @@ func (g *Generator) GenerateExcel(
 		}
 	}
 
+	if writeErr != nil {
+		f.Close()
+		return nil, writeErr
+	}
+
+	// Process reservoir devices
+	sections, err = g.scanSections(f, sheet)
+	if err != nil {
+		f.Close()
+		return nil, fmt.Errorf("failed to re-scan sections for res: %w", err)
+	}
+	if sec, ok := sections["res"]; ok {
+		if err := g.processReservoirDevices(f, sheet, sec, resDevices, orgParentMap, set); err != nil {
+			f.Close()
+			return nil, fmt.Errorf("failed to process reservoir devices: %w", err)
+		}
+	}
 	if writeErr != nil {
 		f.Close()
 		return nil, writeErr
@@ -618,6 +637,128 @@ func (g *Generator) aggregateDischargesByOrganization(data []discharge.Model, lo
 	}
 
 	return result
+}
+
+// processReservoirDevices fills the reservoir devices section with data
+func (g *Generator) processReservoirDevices(
+	f *excelize.File,
+	sheet string,
+	section *SectionInfo,
+	devices []*reservoirdevicesummary.ResponseModel,
+	orgParentMap map[int64]*int64,
+	set func(cell string, value interface{}),
+) error {
+	if len(devices) == 0 {
+		if err := f.RemoveRow(sheet, section.TemplateRow); err != nil {
+			return fmt.Errorf("failed to remove template row: %w", err)
+		}
+		return nil
+	}
+
+	// Sort by parent_id → org_id
+	orgIDs := make([]int64, 0, len(devices))
+	deviceByOrg := make(map[int64]*reservoirdevicesummary.ResponseModel, len(devices))
+	for _, d := range devices {
+		orgIDs = append(orgIDs, d.OrganizationID)
+		deviceByOrg[d.OrganizationID] = d
+	}
+	orgIDs = sortOrgIDs(orgIDs, orgParentMap)
+
+	// Duplicate template row N-1 times
+	for i := 1; i < len(orgIDs); i++ {
+		if err := f.DuplicateRow(sheet, section.TemplateRow); err != nil {
+			return fmt.Errorf("failed to duplicate row %d: %w", section.TemplateRow, err)
+		}
+	}
+
+	// Totals for "ЖАМИ" row
+	var totalTotal, totalInstalled, totalOperational, totalFaulty, totalActive, totalAutomation int
+
+	for i, orgID := range orgIDs {
+		rowNum := section.TemplateRow + i
+		d := deviceByOrg[orgID]
+
+		set(fmt.Sprintf("A%d", rowNum), i+1)
+		set(fmt.Sprintf("B%d", rowNum), d.OrganizationName)
+		set(fmt.Sprintf("D%d", rowNum), d.CountTotal)
+		set(fmt.Sprintf("E%d", rowNum), d.CountActive)
+		set(fmt.Sprintf("F%d", rowNum), d.CountAutomationScope)
+
+		// G: percentage of automation scope vs total
+		if d.CountTotal > 0 {
+			set(fmt.Sprintf("G%d", rowNum), fmt.Sprintf("(%d%%)", d.CountAutomationScope*100/d.CountTotal))
+		}
+
+		set(fmt.Sprintf("H%d", rowNum), d.CountInstalled)
+		if d.CountTotal > 0 {
+			set(fmt.Sprintf("I%d", rowNum), fmt.Sprintf("(%d%%)", d.CountInstalled*100/d.CountTotal))
+		}
+
+		set(fmt.Sprintf("J%d", rowNum), d.CountOperational)
+		if d.CountTotal > 0 {
+			set(fmt.Sprintf("K%d", rowNum), fmt.Sprintf("(%d%%)", d.CountOperational*100/d.CountTotal))
+		}
+
+		set(fmt.Sprintf("L%d", rowNum), d.CountFaulty)
+		if d.CountTotal > 0 {
+			set(fmt.Sprintf("M%d", rowNum), fmt.Sprintf("(%d%%)", d.CountFaulty*100/d.CountTotal))
+		}
+
+		if d.Criterion1 != nil {
+			set(fmt.Sprintf("N%d", rowNum), *d.Criterion1)
+		}
+		if d.Criterion2 != nil {
+			set(fmt.Sprintf("O%d", rowNum), *d.Criterion2)
+		}
+
+		totalTotal += d.CountTotal
+		totalInstalled += d.CountInstalled
+		totalOperational += d.CountOperational
+		totalFaulty += d.CountFaulty
+		totalActive += d.CountActive
+		totalAutomation += d.CountAutomationScope
+	}
+
+	// Bottom border
+	lastRow := section.TemplateRow + len(orgIDs) - 1
+	if err := g.applyBottomBorder(f, sheet, lastRow, "A", "O"); err != nil {
+		return fmt.Errorf("failed to apply bottom border: %w", err)
+	}
+
+	// Update "ЖАМИ" totals row
+	rows, err := f.GetRows(sheet)
+	if err == nil {
+		for rowIdx := lastRow + 1; rowIdx < lastRow+5 && rowIdx <= len(rows); rowIdx++ {
+			if rowIdx-1 < len(rows) {
+				row := rows[rowIdx-1]
+				for _, cellValue := range row {
+					if cellValue == "ЖАМИ:" || cellValue == "ЖАМИ" {
+						set(fmt.Sprintf("D%d", rowIdx), totalTotal)
+						set(fmt.Sprintf("E%d", rowIdx), totalActive)
+						set(fmt.Sprintf("F%d", rowIdx), totalAutomation)
+						if totalTotal > 0 {
+							set(fmt.Sprintf("G%d", rowIdx), fmt.Sprintf("(%d%%)", totalAutomation*100/totalTotal))
+						}
+						set(fmt.Sprintf("H%d", rowIdx), totalInstalled)
+						if totalTotal > 0 {
+							set(fmt.Sprintf("I%d", rowIdx), fmt.Sprintf("(%d%%)", totalInstalled*100/totalTotal))
+						}
+						set(fmt.Sprintf("J%d", rowIdx), totalOperational)
+						if totalTotal > 0 {
+							set(fmt.Sprintf("K%d", rowIdx), fmt.Sprintf("(%d%%)", totalOperational*100/totalTotal))
+						}
+						set(fmt.Sprintf("L%d", rowIdx), totalFaulty)
+						if totalTotal > 0 {
+							set(fmt.Sprintf("M%d", rowIdx), fmt.Sprintf("(%d%%)", totalFaulty*100/totalTotal))
+						}
+						break
+					}
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 // autoFitRowHeight sets row height based on text length and column width in characters.

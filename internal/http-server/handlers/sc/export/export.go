@@ -15,6 +15,7 @@ import (
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/lib/model/discharge"
 	"srmt-admin/internal/lib/model/incident"
+	reservoirdevicesummary "srmt-admin/internal/lib/model/reservoir-device-summary"
 	"srmt-admin/internal/lib/model/shutdown"
 	"srmt-admin/internal/lib/model/visit"
 	mwauth "srmt-admin/internal/http-server/middleware/auth"
@@ -56,6 +57,11 @@ type IncidentGetter interface {
 	GetIncidents(ctx context.Context, day time.Time) ([]*incident.ResponseModel, error)
 }
 
+// ResDeviceGetter defines the interface for fetching reservoir device summary data
+type ResDeviceGetter interface {
+	GetReservoirDeviceSummary(ctx context.Context, date *time.Time) ([]*reservoirdevicesummary.ResponseModel, error)
+}
+
 func shortenName(fullName string) string {
 	parts := strings.Fields(fullName)
 	if len(parts) < 2 {
@@ -74,6 +80,7 @@ func New(
 	orgParentGetter OrgParentGetter,
 	visitGetter VisitGetter,
 	incidentGetter IncidentGetter,
+	resDeviceGetter ResDeviceGetter,
 	generator *scgen.Generator,
 	loc *time.Location,
 ) http.HandlerFunc {
@@ -172,6 +179,15 @@ func New(
 			return
 		}
 
+		// Fetch reservoir device summary (latest version as of report end date)
+		resDevices, err := resDeviceGetter.GetReservoirDeviceSummary(r.Context(), &endDate)
+		if err != nil {
+			log.Error("failed to fetch reservoir device summary", sl.Err(err))
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, resp.InternalServerError("Failed to fetch reservoir device summary"))
+			return
+		}
+
 		// Get author short name from JWT claims
 		var authorShort string
 		if claims, ok := mwauth.ClaimsFromContext(r.Context()); ok {
@@ -179,7 +195,7 @@ func New(
 		}
 
 		// Generate Excel file
-		excelFile, err := generator.GenerateExcel(startDate, endDate, discharges, shutdowns, orgTypesMap, orgParentMap, visits, incidents, loc, authorShort)
+		excelFile, err := generator.GenerateExcel(startDate, endDate, discharges, shutdowns, orgTypesMap, orgParentMap, visits, incidents, resDevices, loc, authorShort)
 		if err != nil {
 			log.Error("failed to generate Excel file", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)

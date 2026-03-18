@@ -2,7 +2,6 @@ package dto
 
 type PatchReservoirDeviceSummaryItem struct {
 	OrganizationID       int64    `json:"organization_id"`
-	DeviceTypeName       string   `json:"device_type_name"`
 	CountTotal           *int     `json:"count_total,omitempty"`
 	CountInstalled       *int     `json:"count_installed,omitempty"`
 	CountOperational     *int     `json:"count_operational,omitempty"`
