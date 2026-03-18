@@ -134,6 +134,7 @@ import (
 	callbackModsnow "srmt-admin/internal/http-server/handlers/sc/callback/modsnow"
 	callbackStock "srmt-admin/internal/http-server/handlers/sc/callback/stock"
 	"srmt-admin/internal/http-server/handlers/sc/dc"
+	filterExport "srmt-admin/internal/http-server/handlers/filter/export"
 	scExport "srmt-admin/internal/http-server/handlers/sc/export"
 	modsnowImg "srmt-admin/internal/http-server/handlers/sc/modsnow/img"
 	"srmt-admin/internal/http-server/handlers/sc/modsnow/table"
@@ -160,6 +161,7 @@ import (
 	dischargeExcelGen "srmt-admin/internal/lib/service/excel/discharge"
 	excelgen "srmt-admin/internal/lib/service/excel/reservoir-summary"
 	reservoirHourlyExcelGen "srmt-admin/internal/lib/service/excel/reservoir-summary-hourly"
+	filterExcelGen "srmt-admin/internal/lib/service/excel/filter"
 	scExcelGen "srmt-admin/internal/lib/service/excel/sc"
 	hrmaccess "srmt-admin/internal/lib/service/hrm/access"
 	hrmanalytics "srmt-admin/internal/lib/service/hrm/analytics"
@@ -204,6 +206,7 @@ type AppDependencies struct {
 	DischargeExcelTemplatePath string
 	SCExcelTemplatePath        string
 	HourlyExcelTemplatePath    string
+	FilterExcelTemplatePath    string
 	AlarmProcessor             *alarm.Processor
 	HRMPersonnelService        *hrmpersonnel.Service
 	HRMVacationService         *hrmvacation.Service
@@ -241,6 +244,14 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			deps.PgRepo,
 			deps.PgRepo, // ResDeviceGetter
 			scExcelGen.New(deps.SCExcelTemplatePath),
+			loc,
+		))
+		r.Get("/filter/export", filterExport.New(
+			deps.Log,
+			deps.PgRepo, // ReservoirSummaryGetter
+			deps.PgRepo, // FiltrationComparisonGetter
+			excelgen.New(deps.FilterExcelTemplatePath),
+			filterExcelGen.New(),
 			loc,
 		))
 	})
@@ -491,6 +502,16 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 				deps.PgRepo, // IncidentGetter
 				deps.PgRepo, // ResDeviceGetter
 				scExcelGen.New(deps.SCExcelTemplatePath),
+				loc,
+			))
+
+			// Filter Export (сводка + фильтрация/пьезометры)
+			r.Get("/filter/export", filterExport.New(
+				deps.Log,
+				deps.PgRepo, // ReservoirSummaryGetter
+				deps.PgRepo, // FiltrationComparisonGetter
+				excelgen.New(deps.FilterExcelTemplatePath),
+				filterExcelGen.New(),
 				loc,
 			))
 		})
