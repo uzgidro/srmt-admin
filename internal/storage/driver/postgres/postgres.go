@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/golang-migrate/migrate/v4"
-	"github.com/jackc/pgconn"
+	"github.com/jackc/pgx/v5/pgconn"
 	"srmt-admin/internal/storage"
 
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"

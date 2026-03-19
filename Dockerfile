@@ -1,6 +1,6 @@
 # --- Этап 1: Сборка (Builder) ---
 # Используем полный образ Go для компиляции приложения
-FROM golang:1.25.7-alpine AS builder
+FROM golang:1.25.8-alpine AS builder
 
 # Устанавливаем зависимости для сборки
 RUN apk add --no-cache git make
@@ -32,7 +32,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
 
 # --- Этап 2: Финальный образ (Final) ---
 # Используем минимальный базовый образ, который не содержит ничего лишнего
-FROM alpine:3.23
+FROM alpine:3.23.3
 
 # Обновляем системные пакеты для устранения уязвимостей
 # Устанавливаем необходимые runtime зависимости
