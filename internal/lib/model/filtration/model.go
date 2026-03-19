@@ -66,6 +66,7 @@ type PiezometerMeasurement struct {
 	PiezometerID int64    `json:"piezometer_id"`
 	Date         string   `json:"date"`
 	Level        *float64 `json:"level"`
+	Anomaly      bool     `json:"anomaly"`
 }
 
 type FiltrationMeasurementInput struct {
@@ -76,6 +77,7 @@ type FiltrationMeasurementInput struct {
 type PiezometerMeasurementInput struct {
 	PiezometerID int64    `json:"piezometer_id" validate:"required"`
 	Level        *float64 `json:"level"`
+	Anomaly      *bool    `json:"anomaly,omitempty"`
 }
 
 // --- Piezometer Counts (per organization) ---
@@ -109,7 +111,8 @@ type LocationReading struct {
 
 type PiezoReading struct {
 	Piezometer
-	Level *float64 `json:"level"`
+	Level   *float64 `json:"level"`
+	Anomaly bool     `json:"anomaly"`
 }
 
 type OrgFiltrationSummary struct {

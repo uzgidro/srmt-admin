@@ -1,0 +1,1 @@
+ALTER TABLE piezometer_measurements ADD COLUMN anomaly BOOLEAN NOT NULL DEFAULT FALSE;

@@ -371,13 +371,13 @@ func (r *Repo) UpsertPiezometerMeasurements(ctx context.Context, date string, it
 	defer tx.Rollback()
 
 	const query = `
-		INSERT INTO piezometer_measurements (piezometer_id, date, level, created_by_user_id, updated_by_user_id, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $4, NOW(), NOW())
+		INSERT INTO piezometer_measurements (piezometer_id, date, level, anomaly, created_by_user_id, updated_by_user_id, created_at, updated_at)
+		VALUES ($1, $2, $3, COALESCE($4, false), $5, $5, NOW(), NOW())
 		ON CONFLICT (piezometer_id, date)
-		DO UPDATE SET level = EXCLUDED.level, updated_by_user_id = EXCLUDED.updated_by_user_id, updated_at = NOW()`
+		DO UPDATE SET level = EXCLUDED.level, anomaly = EXCLUDED.anomaly, updated_by_user_id = EXCLUDED.updated_by_user_id, updated_at = NOW()`
 
 	for _, item := range items {
-		if _, err := tx.ExecContext(ctx, query, item.PiezometerID, date, item.Level, userID); err != nil {
+		if _, err := tx.ExecContext(ctx, query, item.PiezometerID, date, item.Level, item.Anomaly, userID); err != nil {
 			if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
 				return translatedErr
 			}
@@ -396,7 +396,7 @@ func (r *Repo) GetPiezometerMeasurements(ctx context.Context, orgID int64, date 
 	const op = "storage.repo.Filtration.GetPiezometerMeasurements"
 
 	const query = `
-		SELECT m.id, m.piezometer_id, m.date::text, m.level
+		SELECT m.id, m.piezometer_id, m.date::text, m.level, m.anomaly
 		FROM piezometer_measurements m
 		JOIN piezometers p ON p.id = m.piezometer_id
 		WHERE p.organization_id = $1 AND m.date = $2::date
@@ -412,7 +412,7 @@ func (r *Repo) GetPiezometerMeasurements(ctx context.Context, orgID int64, date 
 	for rows.Next() {
 		var m filtration.PiezometerMeasurement
 		var level sql.NullFloat64
-		if err := rows.Scan(&m.ID, &m.PiezometerID, &m.Date, &level); err != nil {
+		if err := rows.Scan(&m.ID, &m.PiezometerID, &m.Date, &level, &m.Anomaly); err != nil {
 			return nil, fmt.Errorf("%s: failed to scan measurement: %w", op, err)
 		}
 		if level.Valid {
@@ -497,7 +497,7 @@ func (r *Repo) GetOrgFiltrationSummary(ctx context.Context, orgID int64, date st
 	// Get piezometers with measurements
 	const piezoQuery = `
 		SELECT p.id, p.organization_id, p.name, p.norm, p.sort_order, p.created_at, p.updated_at,
-		       m.level
+		       m.level, COALESCE(m.anomaly, false)
 		FROM piezometers p
 		LEFT JOIN piezometer_measurements m ON m.piezometer_id = p.id AND m.date = $2::date
 		WHERE p.organization_id = $1
@@ -515,7 +515,7 @@ func (r *Repo) GetOrgFiltrationSummary(ctx context.Context, orgID int64, date st
 		if err := piezoRows.Scan(
 			&pr.ID, &pr.OrganizationID, &pr.Name, &norm,
 			&pr.SortOrder, &pr.CreatedAt, &pr.UpdatedAt,
-			&level,
+			&level, &pr.Anomaly,
 		); err != nil {
 			return nil, fmt.Errorf("%s: failed to scan piezometer reading: %w", op, err)
 		}
