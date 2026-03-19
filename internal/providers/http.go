@@ -21,6 +21,7 @@ import (
 	hrmtimesheet "srmt-admin/internal/lib/service/hrm/timesheet"
 	hrmtraining "srmt-admin/internal/lib/service/hrm/training"
 	hrmvacation "srmt-admin/internal/lib/service/hrm/vacation"
+	"srmt-admin/internal/lib/service/dayrotation"
 	"srmt-admin/internal/lib/service/metrics"
 	"srmt-admin/internal/lib/service/reservoir"
 	reservoirhourly "srmt-admin/internal/lib/service/reservoir-hourly"
@@ -74,6 +75,7 @@ type AppContainer struct {
 	HRMPerformanceService  *hrmperformance.Service
 	HRMAnalyticsService    *hrmanalytics.Service
 	ReservoirHourlyService *reservoirhourly.Service
+	DayRotationService     *dayrotation.Service
 }
 
 // ProvideAppContainer creates the application container
@@ -106,6 +108,7 @@ func ProvideAppContainer(
 	hrmPerformanceSvc *hrmperformance.Service,
 	hrmAnalyticsSvc *hrmanalytics.Service,
 	reservoirHourlySvc *reservoirhourly.Service,
+	dayRotationSvc *dayrotation.Service,
 ) *AppContainer {
 	return &AppContainer{
 		Router:                 r,
@@ -136,6 +139,7 @@ func ProvideAppContainer(
 		HRMPerformanceService:  hrmPerformanceSvc,
 		HRMAnalyticsService:    hrmAnalyticsSvc,
 		ReservoirHourlyService: reservoirHourlySvc,
+		DayRotationService:     dayRotationSvc,
 	}
 }
 

@@ -33,6 +33,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Start day rotation scheduler
+	rotationCtx, rotationCancel := context.WithCancel(context.Background())
+	defer rotationCancel()
+	if app.DayRotationService != nil {
+		go app.DayRotationService.StartScheduler(rotationCtx)
+	}
+
 	// Start HTTP server with graceful shutdown
 	log.Info("starting http server", "address", app.Config.HttpServer.Address)
 
