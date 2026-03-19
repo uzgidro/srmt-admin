@@ -28,6 +28,13 @@ func New(log *slog.Logger, deleter DischargeDeleter, orgGetter DischargeOrgGette
 		const op = "handlers.discharge.delete.New"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
 
+		if _, err := auth.GetUserID(r.Context()); err != nil {
+			log.Error("failed to get user id from context", sl.Err(err))
+			render.Status(r, http.StatusUnauthorized)
+			render.JSON(w, r, resp.Unauthorized("Not authenticated"))
+			return
+		}
+
 		dischargeID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 		if err != nil {
 			log.Warn("invalid discharge ID format", sl.Err(err))

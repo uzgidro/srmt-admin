@@ -374,7 +374,9 @@ func (r *Repo) UpsertPiezometerMeasurements(ctx context.Context, date string, it
 		INSERT INTO piezometer_measurements (piezometer_id, date, level, anomaly, created_by_user_id, updated_by_user_id, created_at, updated_at)
 		VALUES ($1, $2, $3, COALESCE($4, false), $5, $5, NOW(), NOW())
 		ON CONFLICT (piezometer_id, date)
-		DO UPDATE SET level = EXCLUDED.level, anomaly = EXCLUDED.anomaly, updated_by_user_id = EXCLUDED.updated_by_user_id, updated_at = NOW()`
+		DO UPDATE SET level = EXCLUDED.level,
+			anomaly = CASE WHEN $4::boolean IS NULL THEN piezometer_measurements.anomaly ELSE EXCLUDED.anomaly END,
+			updated_by_user_id = EXCLUDED.updated_by_user_id, updated_at = NOW()`
 
 	for _, item := range items {
 		if _, err := tx.ExecContext(ctx, query, item.PiezometerID, date, item.Level, item.Anomaly, userID); err != nil {

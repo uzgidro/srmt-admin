@@ -52,9 +52,10 @@ func Get(log *slog.Logger, getter PiezometerCountsGetter) http.HandlerFunc {
 		record, err := getter.GetPiezometerCounts(r.Context(), orgID)
 		if err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
-				log.Warn("piezometer counts not found", slog.Int64("organization_id", orgID))
-				render.Status(r, http.StatusNotFound)
-				render.JSON(w, r, resp.NotFound("Piezometer counts not found"))
+				log.Info("piezometer counts not found, returning defaults", slog.Int64("organization_id", orgID))
+				render.JSON(w, r, &filtration.PiezometerCountsRecord{
+					OrganizationID: orgID,
+				})
 				return
 			}
 			log.Error("failed to get piezometer counts", sl.Err(err))

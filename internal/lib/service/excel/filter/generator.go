@@ -275,8 +275,14 @@ func writeBlock(
 				// Norm assessment text merged across 3 count rows
 				endRow := row + 2
 				_ = f.MergeCell(sheet, cell("L", row), cell("O", endRow))
-				_ = f.SetCellValue(sheet, cell("L", row),
-					"Мезон кўрсаткичлари доирасида, аномал кўрсаткичлар мавжуд эмас. ")
+				normLabel := "Мезон кўрсаткичлари доирасида, аномал кўрсаткичлар мавжуд эмас. "
+				for _, p := range piezometers {
+					if p.Anomaly {
+						normLabel = "Мезон кўрсаткичлари доирасида, аномал кўрсаткичлар мавжуд. "
+						break
+					}
+				}
+				_ = f.SetCellValue(sheet, cell("L", row), normLabel)
 				_ = f.SetCellStyle(sheet, cell("L", row), cell("O", endRow), st.normText)
 			case 1:
 				writePiezoCountRow(f, sheet, row, "босимли", comp.Current.PiezoCounts.Pressure, st)
