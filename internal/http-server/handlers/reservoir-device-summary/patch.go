@@ -48,6 +48,7 @@ func Patch(log *slog.Logger, patcher reservoirDeviceSummaryPatcher) http.Handler
 		}
 
 		// Validate that each update has required fields
+		orgIDs := make([]int64, len(req.Updates))
 		for i, update := range req.Updates {
 			if update.OrganizationID == 0 {
 				log.Warn("missing organization_id in update", slog.Int("index", i))
@@ -55,7 +56,16 @@ func Patch(log *slog.Logger, patcher reservoirDeviceSummaryPatcher) http.Handler
 				render.JSON(w, r, resp.BadRequest("Missing organization_id in one or more updates"))
 				return
 			}
-			}
+			orgIDs[i] = update.OrganizationID
+		}
+
+		// Check organization access for all items
+		if err := auth.CheckOrgAccessBatch(r.Context(), orgIDs); err != nil {
+			log.Warn("org access denied for reservoir device summary patch", sl.Err(err))
+			render.Status(r, http.StatusForbidden)
+			render.JSON(w, r, resp.Forbidden("Access denied"))
+			return
+		}
 
 		err = patcher.PatchReservoirDeviceSummary(r.Context(), req, userID)
 		if err != nil {

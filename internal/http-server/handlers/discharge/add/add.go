@@ -102,6 +102,17 @@ func New(log *slog.Logger, adder DischargeAdder, uploader fileupload.FileUploade
 			return
 		}
 
+		// Check organization access
+		if err := auth.CheckOrgAccess(r.Context(), req.OrganizationID); err != nil {
+			if uploadResult != nil {
+				fileupload.CompensateEntityUpload(r.Context(), log, uploader, saver, uploadResult)
+			}
+			log.Warn("org access denied for discharge add", sl.Err(err))
+			render.Status(r, http.StatusForbidden)
+			render.JSON(w, r, resp.Forbidden("Access denied"))
+			return
+		}
+
 		// Create discharge
 		id, err := adder.AddDischarge(r.Context(), req.OrganizationID, userID, req.StartedAt, req.EndedAt, req.FlowRate, req.Reason)
 		if err != nil {

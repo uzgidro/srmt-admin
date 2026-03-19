@@ -442,8 +442,8 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Get("/discharges/current", dischargeGetCurrent.New(deps.Log, deps.PgRepo, deps.MinioRepo))
 			r.Get("/discharges/flat", dischargeGetFlat.New(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
 			r.Post("/discharges", dischargeAdd.New(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
-			r.Patch("/discharges/{id}", dischargePatch.New(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
-			r.Delete("/discharges/{id}", dischargeDelete.New(deps.Log, deps.PgRepo))
+			r.Patch("/discharges/{id}", dischargePatch.New(deps.Log, deps.PgRepo, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
+			r.Delete("/discharges/{id}", dischargeDelete.New(deps.Log, deps.PgRepo, deps.PgRepo))
 			r.Get("/discharges/export", dischargeExport.New(
 				deps.Log,
 				deps.PgRepo,

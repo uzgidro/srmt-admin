@@ -103,6 +103,65 @@ func TestCheckOrgAccess_MultipleRolesWithSC(t *testing.T) {
 	}
 }
 
+// ---------- CheckOrgAccessBatch ----------
+
+func TestCheckOrgAccessBatch_SCRole_AllOrgs(t *testing.T) {
+	ctx := contextWithClaims(&token.Claims{
+		Roles:          []string{"sc"},
+		OrganizationID: 1,
+	})
+
+	if err := CheckOrgAccessBatch(ctx, []int64{1, 2, 3, 999}); err != nil {
+		t.Fatalf("expected nil, got %v", err)
+	}
+}
+
+func TestCheckOrgAccessBatch_ReservoirRole_OwnOrg(t *testing.T) {
+	ctx := contextWithClaims(&token.Claims{
+		Roles:          []string{"reservoir"},
+		OrganizationID: 5,
+	})
+
+	if err := CheckOrgAccessBatch(ctx, []int64{5, 5, 5}); err != nil {
+		t.Fatalf("expected nil, got %v", err)
+	}
+}
+
+func TestCheckOrgAccessBatch_ReservoirRole_ForeignOrg(t *testing.T) {
+	ctx := contextWithClaims(&token.Claims{
+		Roles:          []string{"reservoir"},
+		OrganizationID: 5,
+	})
+
+	err := CheckOrgAccessBatch(ctx, []int64{5, 10})
+	if err != ErrForbidden {
+		t.Fatalf("expected ErrForbidden, got %v", err)
+	}
+}
+
+func TestCheckOrgAccessBatch_EmptySlice(t *testing.T) {
+	ctx := contextWithClaims(&token.Claims{
+		Roles:          []string{"reservoir"},
+		OrganizationID: 5,
+	})
+
+	if err := CheckOrgAccessBatch(ctx, []int64{}); err != nil {
+		t.Fatalf("expected nil, got %v", err)
+	}
+}
+
+func TestCheckOrgAccessBatch_DuplicatesCheckedOnce(t *testing.T) {
+	ctx := contextWithClaims(&token.Claims{
+		Roles:          []string{"reservoir"},
+		OrganizationID: 5,
+	})
+
+	// All duplicates of own org — should pass
+	if err := CheckOrgAccessBatch(ctx, []int64{5, 5, 5, 5}); err != nil {
+		t.Fatalf("expected nil, got %v", err)
+	}
+}
+
 // ---------- GetOrganizationID ----------
 
 func TestGetOrganizationID_HasOrg(t *testing.T) {

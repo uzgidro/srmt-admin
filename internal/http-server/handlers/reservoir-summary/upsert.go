@@ -80,6 +80,18 @@ func New(log *slog.Logger, upserter ReservoirDataUpserter) http.HandlerFunc {
 			}
 		}
 
+		// Check organization access for all items
+		orgIDs := make([]int64, len(data))
+		for i, item := range data {
+			orgIDs[i] = item.OrganizationID
+		}
+		if err := auth.CheckOrgAccessBatch(r.Context(), orgIDs); err != nil {
+			log.Warn("org access denied for reservoir data upsert", sl.Err(err))
+			render.Status(r, http.StatusForbidden)
+			render.JSON(w, r, resp.Forbidden("Access denied"))
+			return
+		}
+
 		// Upsert reservoir data
 		err = upserter.UpsertReservoirData(r.Context(), data, userID)
 		if err != nil {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/lib/pq"
 	"math"
@@ -601,6 +602,22 @@ func (r *Repo) UnlinkDischargeFiles(ctx context.Context, dischargeID int64) erro
 	}
 
 	return nil
+}
+
+// GetDischargeOrgID returns the organization_id for a discharge by its ID.
+func (r *Repo) GetDischargeOrgID(ctx context.Context, id int64) (int64, error) {
+	const op = "storage.repo.discharge.GetDischargeOrgID"
+
+	var orgID int64
+	err := r.db.QueryRowContext(ctx, "SELECT organization_id FROM idle_water_discharges WHERE id = $1", id).Scan(&orgID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, fmt.Errorf("%s: %w", op, storage.ErrNotFound)
+		}
+		return 0, r.translator.Translate(err, op)
+	}
+
+	return orgID, nil
 }
 
 // loadDischargeFiles loads files for a discharge

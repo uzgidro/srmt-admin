@@ -29,6 +29,22 @@ func GetOrganizationID(ctx context.Context) (int64, error) {
 	return claims.OrganizationID, nil
 }
 
+// CheckOrgAccessBatch checks access for multiple organization IDs.
+// Returns the first error encountered, skipping duplicate IDs.
+func CheckOrgAccessBatch(ctx context.Context, orgIDs []int64) error {
+	seen := make(map[int64]struct{})
+	for _, id := range orgIDs {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		if err := CheckOrgAccess(ctx, id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // CheckOrgAccess returns nil if the user has access to the given organization.
 // sc/rais roles have full access; reservoir role is limited to own org only.
 func CheckOrgAccess(ctx context.Context, resourceOrgID int64) error {
