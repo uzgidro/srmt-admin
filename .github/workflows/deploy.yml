@@ -18,6 +18,9 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Generate Wire DI
+        run: go run github.com/google/wire/cmd/wire ./cmd/...
+
       - name: Run tests
         run: go test ./...
 
