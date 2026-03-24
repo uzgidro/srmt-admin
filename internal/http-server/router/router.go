@@ -227,6 +227,10 @@ type AppDependencies struct {
 func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 	loc := deps.Location
 
+	router.Get("/ping", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
 	router.Post("/auth/sign-in", signIn.New(deps.Log, deps.PgRepo, deps.Token))
 	router.Post("/auth/refresh", refresh.New(deps.Log, deps.PgRepo, deps.Token))
 	router.Post("/auth/sign-out", signOut.New(deps.Log))
