@@ -23,12 +23,18 @@ type PiezometerMeasurementGetter interface {
 	GetPiezometerMeasurements(ctx context.Context, orgID int64, date string) ([]filtration.PiezometerMeasurement, error)
 }
 
+type ComparisonDateGetter interface {
+	GetComparisonDates(ctx context.Context, orgID int64, date string) (*string, *string, error)
+}
+
 type GetResponse struct {
 	FiltrationMeasurements []filtration.FiltrationMeasurement `json:"filtration_measurements"`
 	PiezometerMeasurements []filtration.PiezometerMeasurement `json:"piezometer_measurements"`
+	FilterComparisonDate   *string                            `json:"filter_comparison_date,omitempty"`
+	PiezoComparisonDate    *string                            `json:"piezo_comparison_date,omitempty"`
 }
 
-func Get(log *slog.Logger, fg FiltrationMeasurementGetter, pg PiezometerMeasurementGetter) http.HandlerFunc {
+func Get(log *slog.Logger, fg FiltrationMeasurementGetter, pg PiezometerMeasurementGetter, cdg ComparisonDateGetter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.filtration.measurements.Get"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
@@ -80,6 +86,14 @@ func Get(log *slog.Logger, fg FiltrationMeasurementGetter, pg PiezometerMeasurem
 			return
 		}
 
+		filterCompDate, piezoCompDate, err := cdg.GetComparisonDates(r.Context(), orgID, date)
+		if err != nil {
+			log.Error("failed to get comparison dates", sl.Err(err))
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, resp.InternalServerError("Failed to retrieve comparison dates"))
+			return
+		}
+
 		log.Info("successfully retrieved measurements",
 			slog.Int64("organization_id", orgID),
 			slog.String("date", date),
@@ -88,6 +102,8 @@ func Get(log *slog.Logger, fg FiltrationMeasurementGetter, pg PiezometerMeasurem
 		render.JSON(w, r, GetResponse{
 			FiltrationMeasurements: filtrationMeasurements,
 			PiezometerMeasurements: piezometerMeasurements,
+			FilterComparisonDate:   filterCompDate,
+			PiezoComparisonDate:    piezoCompDate,
 		})
 	}
 }

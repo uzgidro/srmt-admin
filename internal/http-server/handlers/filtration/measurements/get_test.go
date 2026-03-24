@@ -48,6 +48,12 @@ func (m *mockPiezometerGetter) GetPiezometerMeasurements(ctx context.Context, or
 	return m.getFunc(ctx, orgID, date)
 }
 
+type mockComparisonDateGetter struct{}
+
+func (m *mockComparisonDateGetter) GetComparisonDates(_ context.Context, _ int64, _ string) (*string, *string, error) {
+	return nil, nil, nil
+}
+
 func TestGet(t *testing.T) {
 	flowRate := 1.5
 	level := 2.0
@@ -133,7 +139,7 @@ func TestGet(t *testing.T) {
 			rr := httptest.NewRecorder()
 			log := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-			handler := withAuth(Get(log, fg, pg), scClaims)
+			handler := withAuth(Get(log, fg, pg, &mockComparisonDateGetter{}), scClaims)
 			handler.ServeHTTP(rr, req)
 
 			if rr.Code != tt.wantStatusCode {

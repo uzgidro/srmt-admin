@@ -8,6 +8,8 @@ import (
 	"srmt-admin/internal/lib/model/filtration"
 	"srmt-admin/internal/storage"
 	"strings"
+
+	"github.com/lib/pq"
 )
 
 // --- Filtration Location CRUD ---
@@ -290,8 +292,12 @@ func (r *Repo) DeletePiezometer(ctx context.Context, id int64) error {
 
 // --- Measurements ---
 
-func (r *Repo) UpsertFiltrationMeasurements(ctx context.Context, date string, items []filtration.FiltrationMeasurementInput, userID int64) error {
-	const op = "storage.repo.Filtration.UpsertFiltrationMeasurements"
+// UpsertAllMeasurements performs all measurement upserts in a single transaction:
+// historical filtration, historical piezometer, current filtration (with comparison_date), current piezometer (with comparison_date).
+// For comparison_date: nil preserves existing value (COALESCE), explicit empty string clears it.
+// Use clearFilterCompDate/clearPiezoCompDate to explicitly set comparison_date to NULL.
+func (r *Repo) UpsertAllMeasurements(ctx context.Context, req filtration.UpsertAllMeasurementsRequest) error {
+	const op = "storage.repo.Filtration.UpsertAllMeasurements"
 
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -299,25 +305,101 @@ func (r *Repo) UpsertFiltrationMeasurements(ctx context.Context, date string, it
 	}
 	defer tx.Rollback()
 
-	const query = `
-		INSERT INTO filtration_measurements (location_id, date, flow_rate, created_by_user_id, updated_by_user_id, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $4, NOW(), NOW())
-		ON CONFLICT (location_id, date)
-		DO UPDATE SET flow_rate = EXCLUDED.flow_rate, updated_by_user_id = EXCLUDED.updated_by_user_id, updated_at = NOW()`
+	if err := r.upsertFiltrationInTx(ctx, tx, op, req.HistoricalFilterDate, nil, false, req.HistoricalFiltration, req.UserID); err != nil {
+		return err
+	}
+	if err := r.upsertPiezometerInTx(ctx, tx, op, req.HistoricalPiezoDate, nil, false, req.HistoricalPiezometer, req.UserID); err != nil {
+		return err
+	}
 
-	for _, item := range items {
-		if _, err := tx.ExecContext(ctx, query, item.LocationID, date, item.FlowRate, userID); err != nil {
-			if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
-				return translatedErr
-			}
-			return fmt.Errorf("%s: upsert location_id=%d: %w", op, item.LocationID, err)
-		}
+	if err := r.upsertFiltrationInTx(ctx, tx, op, req.Date, req.FilterComparisonDate, req.ClearFilterCompDate, req.Filtration, req.UserID); err != nil {
+		return err
+	}
+	if err := r.upsertPiezometerInTx(ctx, tx, op, req.Date, req.PiezoComparisonDate, req.ClearPiezoCompDate, req.Piezometer, req.UserID); err != nil {
+		return err
 	}
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("%s: commit: %w", op, err)
 	}
+	return nil
+}
 
+// forceCompDate=true: always write comparisonDate (even NULL — clears existing value).
+// forceCompDate=false: COALESCE — nil preserves existing, non-nil overwrites.
+func (r *Repo) upsertFiltrationInTx(ctx context.Context, tx *sql.Tx, op string, date string, comparisonDate *string, forceCompDate bool, items []filtration.FiltrationMeasurementInput, userID int64) error {
+	if len(items) == 0 || date == "" {
+		return nil
+	}
+
+	const queryCoalesce = `
+		INSERT INTO filtration_measurements (location_id, date, flow_rate, comparison_date, created_by_user_id, updated_by_user_id, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $5, NOW(), NOW())
+		ON CONFLICT (location_id, date)
+		DO UPDATE SET flow_rate = EXCLUDED.flow_rate,
+			comparison_date = COALESCE(EXCLUDED.comparison_date, filtration_measurements.comparison_date),
+			updated_by_user_id = EXCLUDED.updated_by_user_id, updated_at = NOW()`
+
+	const queryForce = `
+		INSERT INTO filtration_measurements (location_id, date, flow_rate, comparison_date, created_by_user_id, updated_by_user_id, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $5, NOW(), NOW())
+		ON CONFLICT (location_id, date)
+		DO UPDATE SET flow_rate = EXCLUDED.flow_rate,
+			comparison_date = EXCLUDED.comparison_date,
+			updated_by_user_id = EXCLUDED.updated_by_user_id, updated_at = NOW()`
+
+	query := queryCoalesce
+	if forceCompDate {
+		query = queryForce
+	}
+
+	for _, item := range items {
+		if _, err := tx.ExecContext(ctx, query, item.LocationID, date, item.FlowRate, comparisonDate, userID); err != nil {
+			if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
+				return translatedErr
+			}
+			return fmt.Errorf("%s: upsert filtration location_id=%d: %w", op, item.LocationID, err)
+		}
+	}
+	return nil
+}
+
+func (r *Repo) upsertPiezometerInTx(ctx context.Context, tx *sql.Tx, op string, date string, comparisonDate *string, forceCompDate bool, items []filtration.PiezometerMeasurementInput, userID int64) error {
+	if len(items) == 0 || date == "" {
+		return nil
+	}
+
+	const queryCoalesce = `
+		INSERT INTO piezometer_measurements (piezometer_id, date, level, anomaly, comparison_date, created_by_user_id, updated_by_user_id, created_at, updated_at)
+		VALUES ($1, $2, $3, COALESCE($4, false), $5, $6, $6, NOW(), NOW())
+		ON CONFLICT (piezometer_id, date)
+		DO UPDATE SET level = EXCLUDED.level,
+			anomaly = CASE WHEN $4::boolean IS NULL THEN piezometer_measurements.anomaly ELSE EXCLUDED.anomaly END,
+			comparison_date = COALESCE(EXCLUDED.comparison_date, piezometer_measurements.comparison_date),
+			updated_by_user_id = EXCLUDED.updated_by_user_id, updated_at = NOW()`
+
+	const queryForce = `
+		INSERT INTO piezometer_measurements (piezometer_id, date, level, anomaly, comparison_date, created_by_user_id, updated_by_user_id, created_at, updated_at)
+		VALUES ($1, $2, $3, COALESCE($4, false), $5, $6, $6, NOW(), NOW())
+		ON CONFLICT (piezometer_id, date)
+		DO UPDATE SET level = EXCLUDED.level,
+			anomaly = CASE WHEN $4::boolean IS NULL THEN piezometer_measurements.anomaly ELSE EXCLUDED.anomaly END,
+			comparison_date = EXCLUDED.comparison_date,
+			updated_by_user_id = EXCLUDED.updated_by_user_id, updated_at = NOW()`
+
+	query := queryCoalesce
+	if forceCompDate {
+		query = queryForce
+	}
+
+	for _, item := range items {
+		if _, err := tx.ExecContext(ctx, query, item.PiezometerID, date, item.Level, item.Anomaly, comparisonDate, userID); err != nil {
+			if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
+				return translatedErr
+			}
+			return fmt.Errorf("%s: upsert piezometer_id=%d: %w", op, item.PiezometerID, err)
+		}
+	}
 	return nil
 }
 
@@ -361,39 +443,6 @@ func (r *Repo) GetFiltrationMeasurements(ctx context.Context, orgID int64, date 
 	return measurements, nil
 }
 
-func (r *Repo) UpsertPiezometerMeasurements(ctx context.Context, date string, items []filtration.PiezometerMeasurementInput, userID int64) error {
-	const op = "storage.repo.Filtration.UpsertPiezometerMeasurements"
-
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("%s: begin tx: %w", op, err)
-	}
-	defer tx.Rollback()
-
-	const query = `
-		INSERT INTO piezometer_measurements (piezometer_id, date, level, anomaly, created_by_user_id, updated_by_user_id, created_at, updated_at)
-		VALUES ($1, $2, $3, COALESCE($4, false), $5, $5, NOW(), NOW())
-		ON CONFLICT (piezometer_id, date)
-		DO UPDATE SET level = EXCLUDED.level,
-			anomaly = CASE WHEN $4::boolean IS NULL THEN piezometer_measurements.anomaly ELSE EXCLUDED.anomaly END,
-			updated_by_user_id = EXCLUDED.updated_by_user_id, updated_at = NOW()`
-
-	for _, item := range items {
-		if _, err := tx.ExecContext(ctx, query, item.PiezometerID, date, item.Level, item.Anomaly, userID); err != nil {
-			if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
-				return translatedErr
-			}
-			return fmt.Errorf("%s: upsert piezometer_id=%d: %w", op, item.PiezometerID, err)
-		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("%s: commit: %w", op, err)
-	}
-
-	return nil
-}
-
 func (r *Repo) GetPiezometerMeasurements(ctx context.Context, orgID int64, date string) ([]filtration.PiezometerMeasurement, error) {
 	const op = "storage.repo.Filtration.GetPiezometerMeasurements"
 
@@ -432,6 +481,111 @@ func (r *Repo) GetPiezometerMeasurements(ctx context.Context, orgID int64, date 
 	}
 
 	return measurements, nil
+}
+
+// GetComparisonDates returns the stored comparison dates for an organization on a given date.
+// All measurement rows for one org+date share the same comparison_date (set at request level during upsert).
+func (r *Repo) GetComparisonDates(ctx context.Context, orgID int64, date string) (filterDate, piezoDate *string, err error) {
+	const op = "storage.repo.Filtration.GetComparisonDates"
+
+	const filterQuery = `
+		SELECT fm.comparison_date::text
+		FROM filtration_measurements fm
+		JOIN filtration_locations fl ON fl.id = fm.location_id
+		WHERE fl.organization_id = $1 AND fm.date = $2::date AND fm.comparison_date IS NOT NULL
+		LIMIT 1`
+
+	var fDate sql.NullString
+	if err := r.db.QueryRowContext(ctx, filterQuery, orgID, date).Scan(&fDate); err != nil && err != sql.ErrNoRows {
+		return nil, nil, fmt.Errorf("%s: filter comparison date: %w", op, err)
+	}
+	if fDate.Valid {
+		filterDate = &fDate.String
+	}
+
+	const piezoQuery = `
+		SELECT pm.comparison_date::text
+		FROM piezometer_measurements pm
+		JOIN piezometers p ON p.id = pm.piezometer_id
+		WHERE p.organization_id = $1 AND pm.date = $2::date AND pm.comparison_date IS NOT NULL
+		LIMIT 1`
+
+	var pDate sql.NullString
+	if err := r.db.QueryRowContext(ctx, piezoQuery, orgID, date).Scan(&pDate); err != nil && err != sql.ErrNoRows {
+		return nil, nil, fmt.Errorf("%s: piezo comparison date: %w", op, err)
+	}
+	if pDate.Valid {
+		piezoDate = &pDate.String
+	}
+
+	return filterDate, piezoDate, nil
+}
+
+// GetComparisonDatesBatch returns stored comparison dates for multiple organizations on a given date.
+// Returns two maps: orgID → filterComparisonDate and orgID → piezoComparisonDate.
+// This is the batch version of GetComparisonDates to avoid N+1 queries.
+func (r *Repo) GetComparisonDatesBatch(ctx context.Context, orgIDs []int64, date string) (filterDates, piezoDates map[int64]string, err error) {
+	const op = "storage.repo.Filtration.GetComparisonDatesBatch"
+
+	filterDates = make(map[int64]string, len(orgIDs))
+	piezoDates = make(map[int64]string, len(orgIDs))
+
+	if len(orgIDs) == 0 {
+		return filterDates, piezoDates, nil
+	}
+
+	const filterQuery = `
+		SELECT DISTINCT ON (fl.organization_id) fl.organization_id, fm.comparison_date::text
+		FROM filtration_measurements fm
+		JOIN filtration_locations fl ON fl.id = fm.location_id
+		WHERE fl.organization_id = ANY($1) AND fm.date = $2::date AND fm.comparison_date IS NOT NULL
+		ORDER BY fl.organization_id, fm.comparison_date DESC`
+
+	rows, err := r.db.QueryContext(ctx, filterQuery, pq.Array(orgIDs), date)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%s: filter batch: %w", op, err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var orgID int64
+		var d string
+		if err := rows.Scan(&orgID, &d); err != nil {
+			return nil, nil, fmt.Errorf("%s: scan filter: %w", op, err)
+		}
+		filterDates[orgID] = d
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("%s: filter rows: %w", op, err)
+	}
+	rows.Close()
+
+	const piezoQuery = `
+		SELECT DISTINCT ON (p.organization_id) p.organization_id, pm.comparison_date::text
+		FROM piezometer_measurements pm
+		JOIN piezometers p ON p.id = pm.piezometer_id
+		WHERE p.organization_id = ANY($1) AND pm.date = $2::date AND pm.comparison_date IS NOT NULL
+		ORDER BY p.organization_id, pm.comparison_date DESC`
+
+	rows2, err := r.db.QueryContext(ctx, piezoQuery, pq.Array(orgIDs), date)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%s: piezo batch: %w", op, err)
+	}
+	defer rows2.Close()
+
+	for rows2.Next() {
+		var orgID int64
+		var d string
+		if err := rows2.Scan(&orgID, &d); err != nil {
+			return nil, nil, fmt.Errorf("%s: scan piezo: %w", op, err)
+		}
+		piezoDates[orgID] = d
+	}
+	if err := rows2.Err(); err != nil {
+		return nil, nil, fmt.Errorf("%s: piezo rows: %w", op, err)
+	}
+
+	return filterDates, piezoDates, nil
 }
 
 // --- Summary ---

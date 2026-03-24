@@ -10,10 +10,11 @@ import (
 )
 
 type mockFiltrationGetter struct {
-	orgIDs      []int64
-	orgIDsErr   error
-	summaryFunc func(ctx context.Context, orgID int64, date string) (*filtration.OrgFiltrationSummary, error)
-	levelFunc   func(ctx context.Context, orgID int64, date string) (*float64, *float64, error)
+	orgIDs        []int64
+	orgIDsErr     error
+	summaryFunc   func(ctx context.Context, orgID int64, date string) (*filtration.OrgFiltrationSummary, error)
+	levelFunc     func(ctx context.Context, orgID int64, date string) (*float64, *float64, error)
+	compDatesBatchFunc func(ctx context.Context, orgIDs []int64, date string) (map[int64]string, map[int64]string, error)
 }
 
 func (m *mockFiltrationGetter) GetFiltrationOrgIDs(_ context.Context) ([]int64, error) {
@@ -26,6 +27,13 @@ func (m *mockFiltrationGetter) GetOrgFiltrationSummary(ctx context.Context, orgI
 
 func (m *mockFiltrationGetter) GetReservoirLevelVolume(ctx context.Context, orgID int64, date string) (*float64, *float64, error) {
 	return m.levelFunc(ctx, orgID, date)
+}
+
+func (m *mockFiltrationGetter) GetComparisonDatesBatch(ctx context.Context, orgIDs []int64, date string) (map[int64]string, map[int64]string, error) {
+	if m.compDatesBatchFunc != nil {
+		return m.compDatesBatchFunc(ctx, orgIDs, date)
+	}
+	return map[int64]string{}, map[int64]string{}, nil
 }
 
 func ptr(v float64) *float64 { return &v }

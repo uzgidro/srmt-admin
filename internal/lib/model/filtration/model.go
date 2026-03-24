@@ -158,3 +158,28 @@ type OrgComparisonV2 struct {
 	HistoricalFilter *ComparisonSnapshot `json:"historical_filter"`
 	HistoricalPiezo  *ComparisonSnapshot `json:"historical_piezo"`
 }
+
+// --- Upsert All ---
+
+type UpsertAllMeasurementsRequest struct {
+	Date   string
+	UserID int64
+
+	// Current measurements
+	Filtration []FiltrationMeasurementInput
+	Piezometer []PiezometerMeasurementInput
+
+	// Comparison dates for current measurements (nil = preserve existing via COALESCE)
+	FilterComparisonDate *string
+	PiezoComparisonDate  *string
+
+	// Explicit clear of comparison_date (overrides FilterComparisonDate/PiezoComparisonDate)
+	ClearFilterCompDate bool
+	ClearPiezoCompDate  bool
+
+	// Historical measurements
+	HistoricalFilterDate string
+	HistoricalFiltration []FiltrationMeasurementInput
+	HistoricalPiezoDate  string
+	HistoricalPiezometer []PiezometerMeasurementInput
+}

@@ -21,6 +21,7 @@ type ComparisonDataGetterV2 interface {
 	GetFiltrationOrgIDs(ctx context.Context) ([]int64, error)
 	GetOrgFiltrationSummary(ctx context.Context, orgID int64, date string) (*filtration.OrgFiltrationSummary, error)
 	GetReservoirLevelVolume(ctx context.Context, orgID int64, date string) (*float64, *float64, error)
+	GetComparisonDatesBatch(ctx context.Context, orgIDs []int64, date string) (map[int64]string, map[int64]string, error)
 }
 
 func GetData(log *slog.Logger, getter ComparisonDataGetterV2) http.HandlerFunc {
@@ -29,21 +30,29 @@ func GetData(log *slog.Logger, getter ComparisonDataGetterV2) http.HandlerFunc {
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
 
 		date := r.URL.Query().Get("date")
-		filterDate := r.URL.Query().Get("filter_date")
-		piezoDate := r.URL.Query().Get("piezo_date")
+		if date == "" {
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, resp.BadRequest("Missing required 'date' parameter (format: YYYY-MM-DD)"))
+			return
+		}
+		if _, err := time.Parse("2006-01-02", date); err != nil {
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, resp.BadRequest("Invalid 'date' parameter (format: YYYY-MM-DD)"))
+			return
+		}
 
+		// filter_date and piezo_date are now optional (per-org dates from DB take priority)
+		globalFilterDate := r.URL.Query().Get("filter_date")
+		globalPiezoDate := r.URL.Query().Get("piezo_date")
 		for _, p := range []struct{ name, val string }{
-			{"date", date}, {"filter_date", filterDate}, {"piezo_date", piezoDate},
+			{"filter_date", globalFilterDate}, {"piezo_date", globalPiezoDate},
 		} {
-			if p.val == "" {
-				render.Status(r, http.StatusBadRequest)
-				render.JSON(w, r, resp.BadRequest("Missing required '"+p.name+"' parameter (format: YYYY-MM-DD)"))
-				return
-			}
-			if _, err := time.Parse("2006-01-02", p.val); err != nil {
-				render.Status(r, http.StatusBadRequest)
-				render.JSON(w, r, resp.BadRequest("Invalid '"+p.name+"' parameter (format: YYYY-MM-DD)"))
-				return
+			if p.val != "" {
+				if _, err := time.Parse("2006-01-02", p.val); err != nil {
+					render.Status(r, http.StatusBadRequest)
+					render.JSON(w, r, resp.BadRequest("Invalid '"+p.name+"' parameter (format: YYYY-MM-DD)"))
+					return
+				}
 			}
 		}
 
@@ -83,8 +92,17 @@ func GetData(log *slog.Logger, getter ComparisonDataGetterV2) http.HandlerFunc {
 
 		result := make([]filtration.OrgComparisonV2, 0, len(orgIDs))
 
+		// Batch-fetch per-org comparison dates (2 queries instead of 2*N)
+		filterDates, piezoDates, err := getter.GetComparisonDatesBatch(r.Context(), orgIDs, date)
+		if err != nil {
+			log.Error("failed to get comparison dates batch", sl.Err(err))
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, resp.InternalServerError("Failed to retrieve comparison dates"))
+			return
+		}
+
 		for _, orgID := range orgIDs {
-			comp, err := buildOrgComparisonV2(r.Context(), getter, orgID, date, filterDate, piezoDate)
+			comp, err := buildOrgComparisonV2(r.Context(), getter, orgID, date, globalFilterDate, globalPiezoDate, filterDates, piezoDates)
 			if err != nil {
 				if errors.Is(err, storage.ErrNotFound) {
 					continue
@@ -101,7 +119,7 @@ func GetData(log *slog.Logger, getter ComparisonDataGetterV2) http.HandlerFunc {
 	}
 }
 
-func buildOrgComparisonV2(ctx context.Context, getter ComparisonDataGetterV2, orgID int64, date, filterDate, piezoDate string) (*filtration.OrgComparisonV2, error) {
+func buildOrgComparisonV2(ctx context.Context, getter ComparisonDataGetterV2, orgID int64, date, globalFilterDate, globalPiezoDate string, filterDates, piezoDates map[int64]string) (*filtration.OrgComparisonV2, error) {
 	// Current snapshot
 	summary, err := getter.GetOrgFiltrationSummary(ctx, orgID, date)
 	if err != nil {
@@ -126,22 +144,36 @@ func buildOrgComparisonV2(ctx context.Context, getter ComparisonDataGetterV2, or
 		},
 	}
 
-	// Historical filter snapshot
-	filterSnap, err := buildSnapshot(ctx, getter, orgID, filterDate)
-	if err != nil && !errors.Is(err, storage.ErrNotFound) {
-		return nil, err
+	// Resolve per-org comparison dates from pre-fetched batch, fall back to global query params
+	effectiveFilterDate := globalFilterDate
+	if d, ok := filterDates[orgID]; ok {
+		effectiveFilterDate = d
 	}
-	comp.HistoricalFilter = filterSnap
+	effectivePiezoDate := globalPiezoDate
+	if d, ok := piezoDates[orgID]; ok {
+		effectivePiezoDate = d
+	}
 
-	// Historical piezo snapshot — reuse if same date
-	if piezoDate == filterDate {
-		comp.HistoricalPiezo = filterSnap
-	} else {
-		piezoSnap, err := buildSnapshot(ctx, getter, orgID, piezoDate)
+	// Historical filter snapshot
+	if effectiveFilterDate != "" {
+		filterSnap, err := buildSnapshot(ctx, getter, orgID, effectiveFilterDate)
 		if err != nil && !errors.Is(err, storage.ErrNotFound) {
 			return nil, err
 		}
-		comp.HistoricalPiezo = piezoSnap
+		comp.HistoricalFilter = filterSnap
+	}
+
+	// Historical piezo snapshot — reuse if same date
+	if effectivePiezoDate != "" {
+		if effectivePiezoDate == effectiveFilterDate {
+			comp.HistoricalPiezo = comp.HistoricalFilter
+		} else {
+			piezoSnap, err := buildSnapshot(ctx, getter, orgID, effectivePiezoDate)
+			if err != nil && !errors.Is(err, storage.ErrNotFound) {
+				return nil, err
+			}
+			comp.HistoricalPiezo = piezoSnap
+		}
 	}
 
 	return comp, nil

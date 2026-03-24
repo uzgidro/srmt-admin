@@ -541,8 +541,8 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Post("/piezometer-counts", piezometerCounts.Upsert(deps.Log, deps.PgRepo))
 
 			// Measurements
-			r.Post("/measurements", filtrationMeasurements.Upsert(deps.Log, deps.PgRepo, deps.PgRepo))
-			r.Get("/measurements", filtrationMeasurements.Get(deps.Log, deps.PgRepo, deps.PgRepo))
+			r.Post("/measurements", filtrationMeasurements.Upsert(deps.Log, deps.PgRepo))
+			r.Get("/measurements", filtrationMeasurements.Get(deps.Log, deps.PgRepo, deps.PgRepo, deps.PgRepo))
 
 			// Summary
 			r.Get("/summary", filtrationSummary.Get(deps.Log, deps.PgRepo))

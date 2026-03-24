@@ -16,10 +16,11 @@ import (
 )
 
 type mockComparisonDataGetter struct {
-	orgIDs         []int64
-	orgIDsErr      error
-	summaryFunc    func(ctx context.Context, orgID int64, date string) (*filtration.OrgFiltrationSummary, error)
-	levelFunc      func(ctx context.Context, orgID int64, date string) (*float64, *float64, error)
+	orgIDs        []int64
+	orgIDsErr     error
+	summaryFunc   func(ctx context.Context, orgID int64, date string) (*filtration.OrgFiltrationSummary, error)
+	levelFunc     func(ctx context.Context, orgID int64, date string) (*float64, *float64, error)
+	compDatesBatchFunc func(ctx context.Context, orgIDs []int64, date string) (map[int64]string, map[int64]string, error)
 }
 
 func (m *mockComparisonDataGetter) GetFiltrationOrgIDs(_ context.Context) ([]int64, error) {
@@ -32,6 +33,13 @@ func (m *mockComparisonDataGetter) GetOrgFiltrationSummary(ctx context.Context, 
 
 func (m *mockComparisonDataGetter) GetReservoirLevelVolume(ctx context.Context, orgID int64, date string) (*float64, *float64, error) {
 	return m.levelFunc(ctx, orgID, date)
+}
+
+func (m *mockComparisonDataGetter) GetComparisonDatesBatch(ctx context.Context, orgIDs []int64, date string) (map[int64]string, map[int64]string, error) {
+	if m.compDatesBatchFunc != nil {
+		return m.compDatesBatchFunc(ctx, orgIDs, date)
+	}
+	return map[int64]string{}, map[int64]string{}, nil
 }
 
 func TestGetData(t *testing.T) {
@@ -61,13 +69,14 @@ func TestGetData(t *testing.T) {
 	}
 
 	tests := []struct {
-		name       string
-		url        string
-		claims     *token.Claims
-		mock       *mockComparisonDataGetter
-		wantStatus int
-		wantErr    bool
-		wantLen    int
+		name           string
+		url            string
+		claims         *token.Claims
+		mock           *mockComparisonDataGetter
+		wantStatus     int
+		wantErr        bool
+		wantLen        int
+		wantHistorical bool // whether to check HistoricalFilter/Piezo != nil
 	}{
 		{
 			name:       "missing date",
@@ -78,20 +87,20 @@ func TestGetData(t *testing.T) {
 			wantErr:    true,
 		},
 		{
-			name:       "missing filter_date",
+			name:       "missing filter_date — ok (optional, uses per-org dates)",
 			url:        "/comparison/data?date=2025-01-01&piezo_date=2025-01-01",
 			claims:     scClaims,
 			mock:       successMock,
-			wantStatus: http.StatusBadRequest,
-			wantErr:    true,
+			wantStatus: http.StatusOK,
+			wantLen:    1,
 		},
 		{
-			name:       "missing piezo_date",
+			name:       "missing piezo_date — ok (optional, uses per-org dates)",
 			url:        "/comparison/data?date=2025-01-01&filter_date=2025-01-01",
 			claims:     scClaims,
 			mock:       successMock,
-			wantStatus: http.StatusBadRequest,
-			wantErr:    true,
+			wantStatus: http.StatusOK,
+			wantLen:    1,
 		},
 		{
 			name:       "invalid date format",
@@ -142,12 +151,13 @@ func TestGetData(t *testing.T) {
 			wantErr:    true,
 		},
 		{
-			name:       "supervisor — success",
-			url:        "/comparison/data?date=2025-01-01&filter_date=2024-11-15&piezo_date=2024-09-03",
-			claims:     scClaims,
-			mock:       successMock,
-			wantStatus: http.StatusOK,
-			wantLen:    1,
+			name:           "supervisor — success",
+			url:            "/comparison/data?date=2025-01-01&filter_date=2024-11-15&piezo_date=2024-09-03",
+			claims:         scClaims,
+			mock:           successMock,
+			wantStatus:     http.StatusOK,
+			wantLen:        1,
+			wantHistorical: true,
 		},
 		{
 			name:   "regular user — success",
@@ -167,8 +177,9 @@ func TestGetData(t *testing.T) {
 					return &lvl, &vol, nil
 				},
 			},
-			wantStatus: http.StatusOK,
-			wantLen:    1,
+			wantStatus:     http.StatusOK,
+			wantLen:        1,
+			wantHistorical: true,
 		},
 		{
 			name:       "same filter_date and piezo_date — optimization",
@@ -216,11 +227,13 @@ func TestGetData(t *testing.T) {
 				if comp.Current.Date != "2025-01-01" {
 					t.Errorf("current date = %q, want %q", comp.Current.Date, "2025-01-01")
 				}
-				if comp.HistoricalFilter == nil {
-					t.Error("expected historical_filter to be non-nil")
-				}
-				if comp.HistoricalPiezo == nil {
-					t.Error("expected historical_piezo to be non-nil")
+				if tt.wantHistorical {
+					if comp.HistoricalFilter == nil {
+						t.Error("expected historical_filter to be non-nil")
+					}
+					if comp.HistoricalPiezo == nil {
+						t.Error("expected historical_piezo to be non-nil")
+					}
 				}
 			}
 		})

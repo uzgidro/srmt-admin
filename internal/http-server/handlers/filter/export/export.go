@@ -35,6 +35,7 @@ type FiltrationComparisonGetter interface {
 	GetFiltrationOrgIDs(ctx context.Context) ([]int64, error)
 	GetOrgFiltrationSummary(ctx context.Context, orgID int64, date string) (*filtration.OrgFiltrationSummary, error)
 	GetReservoirLevelVolume(ctx context.Context, orgID int64, date string) (*float64, *float64, error)
+	GetComparisonDatesBatch(ctx context.Context, orgIDs []int64, date string) (map[int64]string, map[int64]string, error)
 }
 
 func New(
@@ -149,15 +150,21 @@ func New(
 	}
 }
 
-func buildComparisons(ctx context.Context, getter FiltrationComparisonGetter, date, filterDate, piezoDate string) ([]filtration.OrgComparisonV2, error) {
+func buildComparisons(ctx context.Context, getter FiltrationComparisonGetter, date, globalFilterDate, globalPiezoDate string) ([]filtration.OrgComparisonV2, error) {
 	orgIDs, err := getter.GetFiltrationOrgIDs(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get filtration org IDs: %w", err)
 	}
 
+	// Batch-fetch per-org comparison dates (2 queries instead of 2*N)
+	filterDates, piezoDates, err := getter.GetComparisonDatesBatch(ctx, orgIDs, date)
+	if err != nil {
+		return nil, fmt.Errorf("get comparison dates batch: %w", err)
+	}
+
 	result := make([]filtration.OrgComparisonV2, 0, len(orgIDs))
 	for _, orgID := range orgIDs {
-		comp, err := buildOrgComparison(ctx, getter, orgID, date, filterDate, piezoDate)
+		comp, err := buildOrgComparison(ctx, getter, orgID, date, globalFilterDate, globalPiezoDate, filterDates, piezoDates)
 		if err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
 				continue
@@ -169,7 +176,7 @@ func buildComparisons(ctx context.Context, getter FiltrationComparisonGetter, da
 	return result, nil
 }
 
-func buildOrgComparison(ctx context.Context, getter FiltrationComparisonGetter, orgID int64, date, filterDate, piezoDate string) (*filtration.OrgComparisonV2, error) {
+func buildOrgComparison(ctx context.Context, getter FiltrationComparisonGetter, orgID int64, date, globalFilterDate, globalPiezoDate string, filterDates, piezoDates map[int64]string) (*filtration.OrgComparisonV2, error) {
 	summary, err := getter.GetOrgFiltrationSummary(ctx, orgID, date)
 	if err != nil {
 		return nil, err
@@ -193,9 +200,19 @@ func buildOrgComparison(ctx context.Context, getter FiltrationComparisonGetter, 
 		},
 	}
 
+	// Resolve per-org comparison dates from pre-fetched batch, fall back to global query params
+	effectiveFilterDate := globalFilterDate
+	if d, ok := filterDates[orgID]; ok {
+		effectiveFilterDate = d
+	}
+	effectivePiezoDate := globalPiezoDate
+	if d, ok := piezoDates[orgID]; ok {
+		effectivePiezoDate = d
+	}
+
 	// Historical filter snapshot
-	if filterDate != "" {
-		snap, err := buildExportSnapshot(ctx, getter, orgID, filterDate)
+	if effectiveFilterDate != "" {
+		snap, err := buildExportSnapshot(ctx, getter, orgID, effectiveFilterDate)
 		if err != nil && !errors.Is(err, storage.ErrNotFound) {
 			return nil, err
 		}
@@ -203,11 +220,11 @@ func buildOrgComparison(ctx context.Context, getter FiltrationComparisonGetter, 
 	}
 
 	// Historical piezo snapshot — reuse if same date
-	if piezoDate != "" {
-		if piezoDate == filterDate {
+	if effectivePiezoDate != "" {
+		if effectivePiezoDate == effectiveFilterDate {
 			comp.HistoricalPiezo = comp.HistoricalFilter
 		} else {
-			snap, err := buildExportSnapshot(ctx, getter, orgID, piezoDate)
+			snap, err := buildExportSnapshot(ctx, getter, orgID, effectivePiezoDate)
 			if err != nil && !errors.Is(err, storage.ErrNotFound) {
 				return nil, err
 			}
