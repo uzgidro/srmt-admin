@@ -52,7 +52,7 @@ var filtrationOrder = map[string]int{
 // The file should already have the reservoir summary filled (section 1).
 func (g *Generator) FillFiltrationBlocks(
 	f *excelize.File, sheet string,
-	comparisons []filtration.OrgComparison,
+	comparisons []filtration.OrgComparisonV2,
 	authorShort string,
 ) error {
 	styles := extractStyles(f, sheet)
@@ -142,18 +142,20 @@ func clearTemplateBlock(f *excelize.File, sheet string) {
 
 func writeBlock(
 	f *excelize.File, sheet string, startRow int,
-	comp filtration.OrgComparison, st blockStyles,
+	comp filtration.OrgComparisonV2, st blockStyles,
 ) int {
 	cursor := startRow
 
-	// Historical lookup maps
+	// Historical lookup maps (separate sources for filtration and piezometers)
 	histLocMap := make(map[int64]*float64)
 	histPiezoMap := make(map[int64]*float64)
-	if comp.Historical != nil {
-		for _, loc := range comp.Historical.Locations {
+	if comp.HistoricalFilter != nil {
+		for _, loc := range comp.HistoricalFilter.Locations {
 			histLocMap[loc.ID] = loc.FlowRate
 		}
-		for _, p := range comp.Historical.Piezometers {
+	}
+	if comp.HistoricalPiezo != nil {
+		for _, p := range comp.HistoricalPiezo.Piezometers {
 			histPiezoMap[p.ID] = p.Level
 		}
 	}
@@ -186,10 +188,11 @@ func writeBlock(
 	_ = f.SetCellValue(sheet, cell("A", colRow), "Жами, л/с")
 	_ = f.SetCellStyle(sheet, cell("A", colRow), cell("A", colRow+1), st.labelBold)
 
-	histDate := fmtDate(comp.Historical)
+	filterHistDate := fmtDate(comp.HistoricalFilter)
+	piezoHistDate := fmtDate(comp.HistoricalPiezo)
 	currDate := fmtDateStr(comp.Current.Date)
 
-	_ = f.SetCellValue(sheet, cell("B", colRow), histDate)
+	_ = f.SetCellValue(sheet, cell("B", colRow), filterHistDate)
 	_ = f.SetCellValue(sheet, cell("C", colRow), currDate)
 	_ = f.SetCellValue(sheet, cell("D", colRow), " +,-")
 	_ = f.SetCellValue(sheet, cell("E", colRow), "меъёр")
@@ -198,7 +201,7 @@ func writeBlock(
 	_ = f.MergeCell(sheet, cell("I", colRow), cell("J", colRow))
 	_ = f.SetCellValue(sheet, cell("I", colRow), "Асосий пьезометрлар №")
 	_ = f.SetCellStyle(sheet, cell("I", colRow), cell("J", colRow), st.labelBold)
-	_ = f.SetCellValue(sheet, cell("K", colRow), histDate)
+	_ = f.SetCellValue(sheet, cell("K", colRow), piezoHistDate)
 	_ = f.SetCellValue(sheet, cell("L", colRow), currDate)
 	_ = f.SetCellValue(sheet, cell("M", colRow), " +,-")
 	_ = f.SetCellValue(sheet, cell("N", colRow), "меёър")
@@ -355,7 +358,7 @@ func fmtDateStr(dateStr string) string {
 	return fmt.Sprintf("%02d.%02d.%02d й", t.Day(), t.Month(), t.Year()%100)
 }
 
-func sortComparisons(comparisons []filtration.OrgComparison) {
+func sortComparisons(comparisons []filtration.OrgComparisonV2) {
 	sort.Slice(comparisons, func(i, j int) bool {
 		return getOrder(comparisons[i].OrganizationName) < getOrder(comparisons[j].OrganizationName)
 	})

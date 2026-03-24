@@ -35,7 +35,6 @@ type FiltrationComparisonGetter interface {
 	GetFiltrationOrgIDs(ctx context.Context) ([]int64, error)
 	GetOrgFiltrationSummary(ctx context.Context, orgID int64, date string) (*filtration.OrgFiltrationSummary, error)
 	GetReservoirLevelVolume(ctx context.Context, orgID int64, date string) (*float64, *float64, error)
-	GetClosestLevelDate(ctx context.Context, orgID int64, level float64, excludeDate string) (string, error)
 }
 
 func New(
@@ -104,7 +103,24 @@ func New(
 		// Section 2: filtration/piezometer blocks
 		// Filtration data uses previous day
 		yesterday := parsedDate.AddDate(0, 0, -1).Format("2006-01-02")
-		comparisons, err := buildComparisons(r.Context(), filtrationGetter, yesterday)
+		filterDate := r.URL.Query().Get("filter_date")
+		piezoDate := r.URL.Query().Get("piezo_date")
+		if filterDate != "" {
+			if _, err := time.Parse("2006-01-02", filterDate); err != nil {
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest("Invalid 'filter_date' parameter (format: YYYY-MM-DD)"))
+				return
+			}
+		}
+		if piezoDate != "" {
+			if _, err := time.Parse("2006-01-02", piezoDate); err != nil {
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest("Invalid 'piezo_date' parameter (format: YYYY-MM-DD)"))
+				return
+			}
+		}
+
+		comparisons, err := buildComparisons(r.Context(), filtrationGetter, yesterday, filterDate, piezoDate)
 		if err != nil {
 			log.Error("failed to build filtration comparisons", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)
@@ -133,15 +149,15 @@ func New(
 	}
 }
 
-func buildComparisons(ctx context.Context, getter FiltrationComparisonGetter, date string) ([]filtration.OrgComparison, error) {
+func buildComparisons(ctx context.Context, getter FiltrationComparisonGetter, date, filterDate, piezoDate string) ([]filtration.OrgComparisonV2, error) {
 	orgIDs, err := getter.GetFiltrationOrgIDs(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get filtration org IDs: %w", err)
 	}
 
-	result := make([]filtration.OrgComparison, 0, len(orgIDs))
+	result := make([]filtration.OrgComparisonV2, 0, len(orgIDs))
 	for _, orgID := range orgIDs {
-		comp, err := buildOrgComparison(ctx, getter, orgID, date)
+		comp, err := buildOrgComparison(ctx, getter, orgID, date, filterDate, piezoDate)
 		if err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
 				continue
@@ -153,7 +169,7 @@ func buildComparisons(ctx context.Context, getter FiltrationComparisonGetter, da
 	return result, nil
 }
 
-func buildOrgComparison(ctx context.Context, getter FiltrationComparisonGetter, orgID int64, date string) (*filtration.OrgComparison, error) {
+func buildOrgComparison(ctx context.Context, getter FiltrationComparisonGetter, orgID int64, date, filterDate, piezoDate string) (*filtration.OrgComparisonV2, error) {
 	summary, err := getter.GetOrgFiltrationSummary(ctx, orgID, date)
 	if err != nil {
 		return nil, err
@@ -164,7 +180,7 @@ func buildOrgComparison(ctx context.Context, getter FiltrationComparisonGetter, 
 		return nil, err
 	}
 
-	comparison := &filtration.OrgComparison{
+	comp := &filtration.OrgComparisonV2{
 		OrganizationID:   summary.OrganizationID,
 		OrganizationName: summary.OrganizationName,
 		Current: filtration.ComparisonSnapshot{
@@ -177,39 +193,50 @@ func buildOrgComparison(ctx context.Context, getter FiltrationComparisonGetter, 
 		},
 	}
 
-	if level != nil {
-		histDate, err := getter.GetClosestLevelDate(ctx, orgID, *level, date)
-		if err != nil {
-			if !errors.Is(err, storage.ErrNotFound) {
-				return nil, err
-			}
-			return comparison, nil
-		}
-
-		histSummary, err := getter.GetOrgFiltrationSummary(ctx, orgID, histDate)
-		if err != nil {
-			if !errors.Is(err, storage.ErrNotFound) {
-				return nil, err
-			}
-			return comparison, nil
-		}
-
-		histLevel, histVolume, err := getter.GetReservoirLevelVolume(ctx, orgID, histDate)
-		if err != nil {
+	// Historical filter snapshot
+	if filterDate != "" {
+		snap, err := buildExportSnapshot(ctx, getter, orgID, filterDate)
+		if err != nil && !errors.Is(err, storage.ErrNotFound) {
 			return nil, err
 		}
+		comp.HistoricalFilter = snap
+	}
 
-		comparison.Historical = &filtration.ComparisonSnapshot{
-			Date:        histDate,
-			Level:       histLevel,
-			Volume:      histVolume,
-			Locations:   histSummary.Locations,
-			Piezometers: histSummary.Piezometers,
-			PiezoCounts: summary.PiezoCounts,
+	// Historical piezo snapshot — reuse if same date
+	if piezoDate != "" {
+		if piezoDate == filterDate {
+			comp.HistoricalPiezo = comp.HistoricalFilter
+		} else {
+			snap, err := buildExportSnapshot(ctx, getter, orgID, piezoDate)
+			if err != nil && !errors.Is(err, storage.ErrNotFound) {
+				return nil, err
+			}
+			comp.HistoricalPiezo = snap
 		}
 	}
 
-	return comparison, nil
+	return comp, nil
+}
+
+func buildExportSnapshot(ctx context.Context, getter FiltrationComparisonGetter, orgID int64, date string) (*filtration.ComparisonSnapshot, error) {
+	summary, err := getter.GetOrgFiltrationSummary(ctx, orgID, date)
+	if err != nil {
+		return nil, err
+	}
+
+	level, volume, err := getter.GetReservoirLevelVolume(ctx, orgID, date)
+	if err != nil {
+		return nil, err
+	}
+
+	return &filtration.ComparisonSnapshot{
+		Date:        date,
+		Level:       level,
+		Volume:      volume,
+		Locations:   summary.Locations,
+		Piezometers: summary.Piezometers,
+		PiezoCounts: summary.PiezoCounts,
+	}, nil
 }
 
 func exportExcel(w http.ResponseWriter, f *excelize.File, date time.Time, log *slog.Logger) {

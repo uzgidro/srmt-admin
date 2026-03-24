@@ -548,7 +548,8 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Get("/summary", filtrationSummary.Get(deps.Log, deps.PgRepo))
 
 			// Comparison
-			r.Get("/comparison", filtrationComparison.Get(deps.Log, deps.PgRepo))
+			r.Get("/comparison/similar-dates", filtrationComparison.GetSimilarDates(deps.Log, deps.PgRepo))
+			r.Get("/comparison/data", filtrationComparison.GetData(deps.Log, deps.PgRepo))
 		})
 
 		r.Group(func(r chi.Router) {

@@ -134,9 +134,28 @@ type ComparisonSnapshot struct {
 	PiezoCounts PiezometerCounts  `json:"piezometer_counts"`
 }
 
-type OrgComparison struct {
+// --- Similar Dates & Comparison ---
+
+type SimilarDate struct {
+	Date       string   `json:"date"`
+	Level      *float64 `json:"level"`
+	Volume     *float64 `json:"volume"`
+	LevelDelta float64  `json:"level_delta"`
+}
+
+type OrgSimilarDates struct {
+	OrganizationID   int64         `json:"organization_id"`
+	OrganizationName string        `json:"organization_name"`
+	ReferenceDate    string        `json:"reference_date"`
+	ReferenceLevel   *float64      `json:"reference_level"`
+	ReferenceVolume  *float64      `json:"reference_volume"`
+	SimilarDates     []SimilarDate `json:"similar_dates"`
+}
+
+type OrgComparisonV2 struct {
 	OrganizationID   int64               `json:"organization_id"`
 	OrganizationName string              `json:"organization_name"`
 	Current          ComparisonSnapshot  `json:"current"`
-	Historical       *ComparisonSnapshot `json:"historical"`
+	HistoricalFilter *ComparisonSnapshot `json:"historical_filter"`
+	HistoricalPiezo  *ComparisonSnapshot `json:"historical_piezo"`
 }

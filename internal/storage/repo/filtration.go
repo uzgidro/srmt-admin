@@ -657,24 +657,59 @@ func (r *Repo) GetReservoirLevelVolume(ctx context.Context, orgID int64, date st
 	return levelPtr, volumePtr, nil
 }
 
-func (r *Repo) GetClosestLevelDate(ctx context.Context, orgID int64, level float64, excludeDate string) (string, error) {
-	const op = "storage.repo.Filtration.GetClosestLevelDate"
 
-	var date string
-	err := r.db.QueryRowContext(ctx,
-		`SELECT date::text FROM reservoir_data
+func (r *Repo) GetSimilarLevelDates(ctx context.Context, orgID int64, level float64, excludeDate string, limit int) ([]filtration.SimilarDate, error) {
+	const op = "storage.repo.Filtration.GetSimilarLevelDates"
+
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT date::text, level_m, volume_mln_m3, ABS(level_m - $3) AS level_delta
+		 FROM reservoir_data
 		 WHERE organization_id = $1 AND date < $2::date AND level_m IS NOT NULL
-		 ORDER BY ABS(level_m - $3) ASC, date DESC
-		 LIMIT 1`,
-		orgID, excludeDate, level,
-	).Scan(&date)
+		 ORDER BY level_delta ASC, date DESC
+		 LIMIT $4`,
+		orgID, excludeDate, level, limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+	defer rows.Close()
+
+	var result []filtration.SimilarDate
+	for rows.Next() {
+		var d filtration.SimilarDate
+		var level, volume sql.NullFloat64
+		if err := rows.Scan(&d.Date, &level, &volume, &d.LevelDelta); err != nil {
+			return nil, fmt.Errorf("%s: %w", op, err)
+		}
+		if level.Valid {
+			d.Level = &level.Float64
+		}
+		if volume.Valid {
+			d.Volume = &volume.Float64
+		}
+		result = append(result, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+	if result == nil {
+		result = make([]filtration.SimilarDate, 0)
+	}
+	return result, nil
+}
+
+func (r *Repo) GetOrganizationName(ctx context.Context, orgID int64) (string, error) {
+	const op = "storage.repo.Filtration.GetOrganizationName"
+
+	var name string
+	err := r.db.QueryRowContext(ctx, "SELECT name FROM organizations WHERE id = $1", orgID).Scan(&name)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return "", storage.ErrNotFound
 		}
 		return "", fmt.Errorf("%s: %w", op, err)
 	}
-	return date, nil
+	return name, nil
 }
 
 func (r *Repo) GetFiltrationOrgIDs(ctx context.Context) ([]int64, error) {
