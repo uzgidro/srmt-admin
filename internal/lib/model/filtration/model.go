@@ -137,10 +137,9 @@ type ComparisonSnapshot struct {
 // --- Similar Dates & Comparison ---
 
 type SimilarDate struct {
-	Date       string   `json:"date"`
-	Level      *float64 `json:"level"`
-	Volume     *float64 `json:"volume"`
-	LevelDelta float64  `json:"level_delta"`
+	Date   string   `json:"date"`
+	Level  *float64 `json:"level"`
+	Volume *float64 `json:"volume"`
 }
 
 type OrgSimilarDates struct {

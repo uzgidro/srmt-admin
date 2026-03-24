@@ -662,10 +662,10 @@ func (r *Repo) GetSimilarLevelDates(ctx context.Context, orgID int64, level floa
 	const op = "storage.repo.Filtration.GetSimilarLevelDates"
 
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT date::text, level_m, volume_mln_m3, ABS(level_m - $3) AS level_delta
+		`SELECT date::text, level_m, volume_mln_m3
 		 FROM reservoir_data
-		 WHERE organization_id = $1 AND date < $2::date AND level_m IS NOT NULL
-		 ORDER BY level_delta ASC, date DESC
+		 WHERE organization_id = $1 AND date < $2::date AND level_m = $3
+		 ORDER BY date DESC
 		 LIMIT $4`,
 		orgID, excludeDate, level, limit,
 	)
@@ -678,7 +678,7 @@ func (r *Repo) GetSimilarLevelDates(ctx context.Context, orgID int64, level floa
 	for rows.Next() {
 		var d filtration.SimilarDate
 		var level, volume sql.NullFloat64
-		if err := rows.Scan(&d.Date, &level, &volume, &d.LevelDelta); err != nil {
+		if err := rows.Scan(&d.Date, &level, &volume); err != nil {
 			return nil, fmt.Errorf("%s: %w", op, err)
 		}
 		if level.Valid {

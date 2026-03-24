@@ -131,7 +131,7 @@ func TestGetSimilarDates(t *testing.T) {
 				level:   &lvl,
 				volume:  &vol,
 				similarDates: []filtration.SimilarDate{
-					{Date: "2024-11-15", Level: &lvl, Volume: &vol, LevelDelta: 0.02},
+					{Date: "2024-11-15", Level: &lvl, Volume: &vol},
 				},
 			},
 			wantStatus: http.StatusOK,
