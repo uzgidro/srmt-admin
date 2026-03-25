@@ -380,7 +380,6 @@ func (g *Generator) processDischarges(
 		// M: Reason
 		if row.Reason != nil {
 			set(fmt.Sprintf("M%d", rowNum), *row.Reason)
-			g.autoFitRowHeight(f, sheet, rowNum, *row.Reason, 45)
 		}
 	}
 
@@ -517,7 +516,6 @@ func (g *Generator) processShutdowns(
 			// E: Reason (merged cells E-I)
 			if s.Reason != nil {
 				set(fmt.Sprintf("E%d", currentRow), *s.Reason)
-				g.autoFitRowHeight(f, sheet, currentRow, *s.Reason, 60)
 			}
 
 			// N: GenerationLossMwh (convert from kWh to thousand kWh)
@@ -761,28 +759,6 @@ func (g *Generator) processReservoirDevices(
 	return nil
 }
 
-// autoFitRowHeight sets row height based on text length and column width in characters.
-func (g *Generator) autoFitRowHeight(f *excelize.File, sheet string, row int, text string, colWidthChars int) {
-	const lineHeight = 15.0
-	const defaultHeight = 15.0
-
-	lines := 1
-	for _, seg := range strings.Split(text, "\n") {
-		runeLen := len([]rune(seg))
-		segLines := (runeLen + colWidthChars - 1) / colWidthChars
-		if segLines < 1 {
-			segLines = 1
-		}
-		lines += segLines - 1
-	}
-	lines += strings.Count(text, "\n")
-
-	height := float64(lines) * lineHeight
-	if height < defaultHeight {
-		height = defaultHeight
-	}
-	_ = f.SetRowHeight(sheet, row, height)
-}
 
 // clearColumn clears all values in a column
 func (g *Generator) clearColumn(f *excelize.File, sheet, col string) error {
@@ -876,7 +852,6 @@ func (g *Generator) processVisits(
 
 		// F: Description - event name (F-L merged cells, write to first cell)
 		set(fmt.Sprintf("F%d", row), v.Description)
-		g.autoFitRowHeight(f, sheet, row, v.Description, 70)
 
 		// M: Responsible name (M-O merged cells, write to first cell)
 		set(fmt.Sprintf("M%d", row), v.ResponsibleName)
@@ -939,7 +914,6 @@ func (g *Generator) processIncidents(
 
 		// F: Description (F-O merged cells, write to first cell)
 		set(fmt.Sprintf("F%d", row), inc.Description)
-		g.autoFitRowHeight(f, sheet, row, inc.Description, 80)
 	}
 
 	// Restore bottom border for the last data row
