@@ -37,8 +37,8 @@ func TestRun_Success(t *testing.T) {
 	loc := mustLoadLocation(t)
 	mock := &mockRotator{
 		result: &repo.DayRotationResult{
-			ShutdownsRotated:  2,
-			DischargesRotated: 3,
+			LinkedDischargesRotated: 2,
+			DischargesRotated:       3,
 		},
 		err: nil,
 	}

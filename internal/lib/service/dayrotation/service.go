@@ -38,7 +38,7 @@ func (s *Service) Run(ctx context.Context, cutoff time.Time) {
 	}
 
 	s.log.Info("day rotation completed",
-		slog.Int("shutdowns_rotated", result.ShutdownsRotated),
+		slog.Int("linked_discharges_rotated", result.LinkedDischargesRotated),
 		slog.Int("discharges_rotated", result.DischargesRotated),
 	)
 }

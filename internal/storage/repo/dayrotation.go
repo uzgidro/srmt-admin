@@ -8,8 +8,8 @@ import (
 )
 
 type DayRotationResult struct {
-	ShutdownsRotated  int
-	DischargesRotated int
+	LinkedDischargesRotated int
+	DischargesRotated       int
 }
 
 // RotateDayBoundary closes all ongoing shutdowns and independent discharges at cutoff,
@@ -23,8 +23,8 @@ func (r *Repo) RotateDayBoundary(ctx context.Context, cutoff time.Time) (*DayRot
 	}
 	defer tx.Rollback()
 
-	// Step 1: Rotate shutdowns (with linked idle_discharges)
-	shutdownCount, err := rotateShutdowns(ctx, tx, cutoff, op)
+	// Step 1: Rotate discharges linked to ongoing shutdowns (shutdowns themselves stay open)
+	linkedCount, err := rotateLinkedDischarges(ctx, tx, cutoff, op)
 	if err != nil {
 		return nil, err
 	}
@@ -40,111 +40,64 @@ func (r *Repo) RotateDayBoundary(ctx context.Context, cutoff time.Time) (*DayRot
 	}
 
 	return &DayRotationResult{
-		ShutdownsRotated:  shutdownCount,
-		DischargesRotated: dischargeCount,
+		LinkedDischargesRotated: linkedCount,
+		DischargesRotated:       dischargeCount,
 	}, nil
 }
 
-func rotateShutdowns(ctx context.Context, tx *sql.Tx, cutoff time.Time, op string) (int, error) {
+// rotateLinkedDischarges rotates idle discharges that are linked to ongoing shutdowns.
+// Shutdowns themselves stay open (not closed/cloned).
+func rotateLinkedDischarges(ctx context.Context, tx *sql.Tx, cutoff time.Time, op string) (int, error) {
 	const selectQuery = `
-		SELECT id, organization_id, reason, generation_loss_mwh, created_by_user_id, idle_discharge_id
-		FROM shutdowns
-		WHERE end_time IS NULL`
+		SELECT s.id, s.idle_discharge_id
+		FROM shutdowns s
+		WHERE s.end_time IS NULL
+		  AND s.idle_discharge_id IS NOT NULL`
 
 	rows, err := tx.QueryContext(ctx, selectQuery)
 	if err != nil {
-		return 0, fmt.Errorf("%s: select ongoing shutdowns: %w", op, err)
+		return 0, fmt.Errorf("%s: select shutdowns with linked discharges: %w", op, err)
 	}
 	defer rows.Close()
 
-	type shutdownRow struct {
-		ID              int64
-		OrgID           int64
-		Reason          *string
-		GenerationLoss  *float64
-		CreatedByUserID int64
-		IdleDischargeID *int64
+	type linkedRow struct {
+		ShutdownID      int64
+		IdleDischargeID int64
 	}
 
-	var shutdowns []shutdownRow
+	var linked []linkedRow
 	for rows.Next() {
-		var s shutdownRow
-		var reason sql.NullString
-		var genLoss sql.NullFloat64
-		var idleID sql.NullInt64
-		if err := rows.Scan(&s.ID, &s.OrgID, &reason, &genLoss, &s.CreatedByUserID, &idleID); err != nil {
-			return 0, fmt.Errorf("%s: scan shutdown: %w", op, err)
+		var r linkedRow
+		if err := rows.Scan(&r.ShutdownID, &r.IdleDischargeID); err != nil {
+			return 0, fmt.Errorf("%s: scan linked row: %w", op, err)
 		}
-		if reason.Valid {
-			s.Reason = &reason.String
-		}
-		if genLoss.Valid {
-			s.GenerationLoss = &genLoss.Float64
-		}
-		if idleID.Valid {
-			s.IdleDischargeID = &idleID.Int64
-		}
-		shutdowns = append(shutdowns, s)
+		linked = append(linked, r)
 	}
 	if err := rows.Err(); err != nil {
 		return 0, fmt.Errorf("%s: rows error: %w", op, err)
 	}
 
-	for _, s := range shutdowns {
-		var newIdleDischargeID *int64
-
-		// If shutdown has linked idle_discharge — close it and clone
-		if s.IdleDischargeID != nil {
-			_, err := tx.ExecContext(ctx,
-				"UPDATE idle_water_discharges SET end_time = $1 WHERE id = $2",
-				cutoff, *s.IdleDischargeID)
-			if err != nil {
-				return 0, fmt.Errorf("%s: close idle_discharge %d: %w", op, *s.IdleDischargeID, err)
-			}
-
-			var newID int64
-			err = tx.QueryRowContext(ctx, `
-				INSERT INTO idle_water_discharges (organization_id, start_time, flow_rate_m3_s, reason, created_by)
-				SELECT organization_id, $1, flow_rate_m3_s, reason, created_by
-				FROM idle_water_discharges WHERE id = $2
-				RETURNING id`,
-				cutoff, *s.IdleDischargeID).Scan(&newID)
-			if err != nil {
-				return 0, fmt.Errorf("%s: clone idle_discharge %d: %w", op, *s.IdleDischargeID, err)
-			}
-			newIdleDischargeID = &newID
-		}
-
-		// Close old shutdown
+	for _, r := range linked {
+		// Close old discharge
 		_, err := tx.ExecContext(ctx,
-			"UPDATE shutdowns SET end_time = $1 WHERE id = $2",
-			cutoff, s.ID)
+			"UPDATE idle_water_discharges SET end_time = $1 WHERE id = $2",
+			cutoff, r.IdleDischargeID)
 		if err != nil {
-			return 0, fmt.Errorf("%s: close shutdown %d: %w", op, s.ID, err)
+			return 0, fmt.Errorf("%s: close idle_discharge %d: %w", op, r.IdleDischargeID, err)
 		}
 
-		// Clone shutdown
-		var newShutdownID int64
-		err = tx.QueryRowContext(ctx, `
-			INSERT INTO shutdowns (organization_id, start_time, reason, generation_loss_mwh, created_by_user_id, idle_discharge_id)
-			VALUES ($1, $2, $3, $4, $5, $6)
-			RETURNING id`,
-			s.OrgID, cutoff, s.Reason, s.GenerationLoss, s.CreatedByUserID, newIdleDischargeID).Scan(&newShutdownID)
+		// Clone discharge (shutdown keeps pointing to the old one)
+		_, err = tx.QueryContext(ctx, `
+			INSERT INTO idle_water_discharges (organization_id, start_time, flow_rate_m3_s, reason, created_by)
+			SELECT organization_id, $1, flow_rate_m3_s, reason, created_by
+			FROM idle_water_discharges WHERE id = $2`,
+			cutoff, r.IdleDischargeID)
 		if err != nil {
-			return 0, fmt.Errorf("%s: clone shutdown %d: %w", op, s.ID, err)
-		}
-
-		// Copy file links
-		_, err = tx.ExecContext(ctx, `
-			INSERT INTO shutdown_file_links (shutdown_id, file_id)
-			SELECT $1, file_id FROM shutdown_file_links WHERE shutdown_id = $2`,
-			newShutdownID, s.ID)
-		if err != nil {
-			return 0, fmt.Errorf("%s: copy shutdown file links %d: %w", op, s.ID, err)
+			return 0, fmt.Errorf("%s: clone idle_discharge %d: %w", op, r.IdleDischargeID, err)
 		}
 	}
 
-	return len(shutdowns), nil
+	return len(linked), nil
 }
 
 func rotateDischarges(ctx context.Context, tx *sql.Tx, cutoff time.Time, op string) (int, error) {
