@@ -468,34 +468,13 @@ func (g *Generator) processShutdowns(
 		return nil
 	}
 
-	// Group shutdowns by organization ID
-	shutdownsByOrg := make(map[int64][]*shutdown.ResponseModel)
-	for _, s := range shutdowns {
-		shutdownsByOrg[s.OrganizationID] = append(shutdownsByOrg[s.OrganizationID], s)
-	}
+	// Sort shutdowns by start time (earliest first)
+	slices.SortFunc(shutdowns, func(a, b *shutdown.ResponseModel) int {
+		return a.StartedAt.Compare(b.StartedAt)
+	})
 
-	// Sort each org's shutdowns by start time (earliest first)
-	for orgID := range shutdownsByOrg {
-		slices.SortFunc(shutdownsByOrg[orgID], func(a, b *shutdown.ResponseModel) int {
-			return a.StartedAt.Compare(b.StartedAt)
-		})
-	}
-
-	// Collect org IDs and sort by parent hierarchy
-	orgIDs := make([]int64, 0, len(shutdownsByOrg))
-	for orgID := range shutdownsByOrg {
-		orgIDs = append(orgIDs, orgID)
-	}
-	orgIDs = sortOrgIDs(orgIDs, orgParentMap)
-
-	// Calculate total rows needed
-	totalRows := 0
-	for _, list := range shutdownsByOrg {
-		totalRows += len(list)
-	}
-
-	// Duplicate template row totalRows-1 times
-	for i := 1; i < totalRows; i++ {
+	// Duplicate template row len(shutdowns)-1 times
+	for i := 1; i < len(shutdowns); i++ {
 		if err := f.DuplicateRow(sheet, section.TemplateRow); err != nil {
 			return fmt.Errorf("failed to duplicate row %d: %w", section.TemplateRow, err)
 		}
@@ -507,42 +486,40 @@ func (g *Generator) processShutdowns(
 	var totalIdleDischargeVolume float64
 	currentRow := section.TemplateRow
 
-	for _, orgID := range orgIDs {
-		for _, s := range shutdownsByOrg[orgID] {
-			allDataRows = append(allDataRows, currentRow)
+	for _, s := range shutdowns {
+		allDataRows = append(allDataRows, currentRow)
 
-			// B: Organization name
-			set(fmt.Sprintf("B%d", currentRow), s.OrganizationName)
+		// B: Organization name
+		set(fmt.Sprintf("B%d", currentRow), s.OrganizationName)
 
-			// C: StartedAt (dd.MM.yyyy HH:mm)
-			set(fmt.Sprintf("C%d", currentRow), s.StartedAt.In(loc).Format("02.01.2006 15:04"))
+		// C: StartedAt (dd.MM.yyyy HH:mm)
+		set(fmt.Sprintf("C%d", currentRow), s.StartedAt.In(loc).Format("02.01.2006 15:04"))
 
-			// D: EndedAt (dd.MM.yyyy HH:mm) or empty
-			if s.EndedAt != nil {
-				set(fmt.Sprintf("D%d", currentRow), s.EndedAt.In(loc).Format("02.01.2006 15:04"))
-			}
-
-			// E: Reason (merged cells E-I)
-			if s.Reason != nil {
-				set(fmt.Sprintf("E%d", currentRow), *s.Reason)
-				_ = f.SetRowHeight(sheet, currentRow, calcRowHeight(*s.Reason, 55))
-			}
-
-			// N: GenerationLossMwh (convert from kWh to thousand kWh)
-			if s.GenerationLossMwh != nil {
-				valueInThousands := *s.GenerationLossMwh / 1000
-				set(fmt.Sprintf("N%d", currentRow), valueInThousands)
-				totalGenerationLoss += valueInThousands
-			}
-
-			// O: IdleDischargeVolumeThousandM3
-			if s.IdleDischargeVolumeThousandM3 != nil {
-				set(fmt.Sprintf("O%d", currentRow), *s.IdleDischargeVolumeThousandM3)
-				totalIdleDischargeVolume += *s.IdleDischargeVolumeThousandM3
-			}
-
-			currentRow++
+		// D: EndedAt (dd.MM.yyyy HH:mm) or empty
+		if s.EndedAt != nil {
+			set(fmt.Sprintf("D%d", currentRow), s.EndedAt.In(loc).Format("02.01.2006 15:04"))
 		}
+
+		// E: Reason (merged cells E-I)
+		if s.Reason != nil {
+			set(fmt.Sprintf("E%d", currentRow), *s.Reason)
+			_ = f.SetRowHeight(sheet, currentRow, calcRowHeight(*s.Reason, 45))
+		}
+
+		// N: GenerationLossMwh (convert from kWh to thousand kWh)
+		if s.GenerationLossMwh != nil {
+			valueInThousands := *s.GenerationLossMwh / 1000
+			set(fmt.Sprintf("N%d", currentRow), valueInThousands)
+			totalGenerationLoss += valueInThousands
+		}
+
+		// O: IdleDischargeVolumeThousandM3
+		if s.IdleDischargeVolumeThousandM3 != nil {
+			set(fmt.Sprintf("O%d", currentRow), *s.IdleDischargeVolumeThousandM3)
+			totalIdleDischargeVolume += *s.IdleDischargeVolumeThousandM3
+		}
+
+		currentRow++
 	}
 
 	// Recalculate numbering in column A
