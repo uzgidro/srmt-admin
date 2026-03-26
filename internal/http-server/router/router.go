@@ -43,6 +43,7 @@ import (
 	filtrationPiezometers "srmt-admin/internal/http-server/handlers/filtration/piezometers"
 	filtrationComparison "srmt-admin/internal/http-server/handlers/filtration/comparison"
 	filtrationSummary "srmt-admin/internal/http-server/handlers/filtration/summary"
+	manualComparison "srmt-admin/internal/http-server/handlers/manual-comparison"
 	eventAdd "srmt-admin/internal/http-server/handlers/events/add"
 	eventDelete "srmt-admin/internal/http-server/handlers/events/delete"
 	eventEdit "srmt-admin/internal/http-server/handlers/events/edit"
@@ -550,6 +551,24 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			// Comparison
 			r.Get("/comparison/similar-dates", filtrationComparison.GetSimilarDates(deps.Log, deps.PgRepo))
 			r.Get("/comparison/data", filtrationComparison.GetData(deps.Log, deps.PgRepo))
+		})
+
+		// Manual Comparison (ручное сравнение фильтрации — без привязки к исторической дате)
+		r.Route("/manual-comparison", func(r chi.Router) {
+			r.Use(mwauth.RequireAnyRole("sc", "rais", "reservoir"))
+
+			r.Post("/measurements", manualComparison.Upsert(deps.Log, deps.PgRepo))
+			r.Get("/measurements", manualComparison.Get(deps.Log, deps.PgRepo))
+			r.Delete("/measurements", manualComparison.Delete(deps.Log, deps.PgRepo))
+			r.Get("/data", manualComparison.GetData(deps.Log, deps.PgRepo))
+			r.Get("/export", manualComparison.Export(
+				deps.Log,
+				deps.PgRepo,
+				deps.PgRepo,
+				excelgen.New(deps.FilterExcelTemplatePath),
+				filterExcelGen.New(),
+				loc,
+			))
 		})
 
 		r.Group(func(r chi.Router) {
