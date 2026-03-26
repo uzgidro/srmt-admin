@@ -2,6 +2,7 @@ package sc
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -380,6 +381,7 @@ func (g *Generator) processDischarges(
 		// M: Reason
 		if row.Reason != nil {
 			set(fmt.Sprintf("M%d", rowNum), *row.Reason)
+			_ = f.SetRowHeight(sheet, rowNum, calcRowHeight(*row.Reason, 65))
 		}
 	}
 
@@ -472,6 +474,13 @@ func (g *Generator) processShutdowns(
 		shutdownsByOrg[s.OrganizationID] = append(shutdownsByOrg[s.OrganizationID], s)
 	}
 
+	// Sort each org's shutdowns by start time (earliest first)
+	for orgID := range shutdownsByOrg {
+		slices.SortFunc(shutdownsByOrg[orgID], func(a, b *shutdown.ResponseModel) int {
+			return a.StartedAt.Compare(b.StartedAt)
+		})
+	}
+
 	// Collect org IDs and sort by parent hierarchy
 	orgIDs := make([]int64, 0, len(shutdownsByOrg))
 	for orgID := range shutdownsByOrg {
@@ -516,6 +525,7 @@ func (g *Generator) processShutdowns(
 			// E: Reason (merged cells E-I)
 			if s.Reason != nil {
 				set(fmt.Sprintf("E%d", currentRow), *s.Reason)
+				_ = f.SetRowHeight(sheet, currentRow, calcRowHeight(*s.Reason, 55))
 			}
 
 			// N: GenerationLossMwh (convert from kWh to thousand kWh)
@@ -812,6 +822,32 @@ func formatDuration(d time.Duration) string {
 	return result
 }
 
+// calcRowHeight returns the row height based on text length and characters per line.
+// Base height is 35 (covers 1–2 lines). Each additional line adds 15.
+func calcRowHeight(text string, charsPerLine int) float64 {
+	const baseHeight = 35.0
+	const extraPerLine = 15.0
+	const baseLines = 2
+
+	if charsPerLine <= 0 {
+		return baseHeight
+	}
+
+	lines := 0
+	for _, part := range strings.Split(text, "\n") {
+		runeCount := len([]rune(strings.TrimSpace(part)))
+		if runeCount == 0 {
+			lines++
+			continue
+		}
+		lines += (runeCount-1)/charsPerLine + 1
+	}
+	if lines <= baseLines {
+		return baseHeight
+	}
+	return baseHeight + float64(lines-baseLines)*extraPerLine
+}
+
 // processVisits fills the visits section with data
 func (g *Generator) processVisits(
 	f *excelize.File,
@@ -855,6 +891,8 @@ func (g *Generator) processVisits(
 
 		// M: Responsible name (M-O merged cells, write to first cell)
 		set(fmt.Sprintf("M%d", row), v.ResponsibleName)
+
+		_ = f.SetRowHeight(sheet, row, calcRowHeight(v.Description, 65))
 	}
 
 	// Restore bottom border for the last data row
@@ -914,6 +952,8 @@ func (g *Generator) processIncidents(
 
 		// F: Description (F-O merged cells, write to first cell)
 		set(fmt.Sprintf("F%d", row), inc.Description)
+
+		_ = f.SetRowHeight(sheet, row, calcRowHeight(inc.Description, 80))
 	}
 
 	// Restore bottom border for the last data row

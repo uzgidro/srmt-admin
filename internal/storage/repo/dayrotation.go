@@ -87,7 +87,7 @@ func rotateLinkedDischarges(ctx context.Context, tx *sql.Tx, cutoff time.Time, o
 		}
 
 		// Clone discharge (shutdown keeps pointing to the old one)
-		_, err = tx.QueryContext(ctx, `
+		_, err = tx.ExecContext(ctx, `
 			INSERT INTO idle_water_discharges (organization_id, start_time, flow_rate_m3_s, reason, created_by)
 			SELECT organization_id, $1, flow_rate_m3_s, reason, created_by
 			FROM idle_water_discharges WHERE id = $2`,
