@@ -381,7 +381,7 @@ func (g *Generator) processDischarges(
 		// M: Reason
 		if row.Reason != nil {
 			set(fmt.Sprintf("M%d", rowNum), *row.Reason)
-			_ = f.SetRowHeight(sheet, rowNum, calcRowHeight(*row.Reason, 65))
+			_ = f.SetRowHeight(sheet, rowNum, calcRowHeight(*row.Reason, 45))
 		}
 	}
 
