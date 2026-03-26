@@ -12,18 +12,20 @@ type Rotator interface {
 }
 
 type Service struct {
-	log  *slog.Logger
-	repo Rotator
-	loc  *time.Location
-	hour int
+	log        *slog.Logger
+	repo       Rotator
+	loc        *time.Location
+	runHour    int // when to actually run (schedule)
+	cutoffHour int // what time to record as the day boundary
 }
 
 func NewService(repo Rotator, loc *time.Location, log *slog.Logger) *Service {
 	return &Service{
-		log:  log.With(slog.String("service", "dayrotation")),
-		repo: repo,
-		loc:  loc,
-		hour: 5, // 05:00 Tashkent
+		log:        log.With(slog.String("service", "dayrotation")),
+		repo:       repo,
+		loc:        loc,
+		runHour:    4, // run at 04:00 Tashkent
+		cutoffHour: 5, // record cutoff as 05:00
 	}
 }
 
@@ -47,13 +49,18 @@ func (s *Service) Run(ctx context.Context, cutoff time.Time) {
 func (s *Service) StartScheduler(ctx context.Context) {
 	for {
 		now := time.Now().In(s.loc)
-		next := time.Date(now.Year(), now.Month(), now.Day(), s.hour, 0, 0, 0, s.loc)
+		next := time.Date(now.Year(), now.Month(), now.Day(), s.runHour, 0, 0, 0, s.loc)
 		if !next.After(now) {
 			next = next.Add(24 * time.Hour)
 		}
 		wait := next.Sub(now)
 
-		s.log.Info("next day rotation scheduled", slog.String("at", next.Format(time.RFC3339)), slog.Duration("in", wait))
+		cutoff := time.Date(next.Year(), next.Month(), next.Day(), s.cutoffHour, 0, 0, 0, s.loc)
+
+		s.log.Info("next day rotation scheduled",
+			slog.String("run_at", next.Format(time.RFC3339)),
+			slog.String("cutoff", cutoff.Format(time.RFC3339)),
+			slog.Duration("in", wait))
 
 		timer := time.NewTimer(wait)
 		select {
@@ -62,7 +69,7 @@ func (s *Service) StartScheduler(ctx context.Context) {
 			s.log.Info("day rotation scheduler stopped")
 			return
 		case <-timer.C:
-			s.Run(ctx, next)
+			s.Run(ctx, cutoff)
 		}
 	}
 }

@@ -28,7 +28,7 @@ func shortenName(fullName string) string {
 		return fullName
 	}
 	firstRune := []rune(parts[1])[0]
-	return fmt.Sprintf("%s %c.", parts[0], firstRune)
+	return fmt.Sprintf("%c. %s", firstRune, parts[0])
 }
 
 // GetExport returns an HTTP handler for Excel/PDF export
