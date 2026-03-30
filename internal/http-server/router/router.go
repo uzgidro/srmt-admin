@@ -165,6 +165,8 @@ import (
 	filterExcelGen "srmt-admin/internal/lib/service/excel/filter"
 	scExcelGen "srmt-admin/internal/lib/service/excel/sc"
 	hrmaccess "srmt-admin/internal/lib/service/hrm/access"
+	gesreporthandler "srmt-admin/internal/http-server/handlers/ges-report"
+	gesreportsvc "srmt-admin/internal/lib/service/ges-report"
 	hrmanalytics "srmt-admin/internal/lib/service/hrm/analytics"
 	hrmcompetency "srmt-admin/internal/lib/service/hrm/competency"
 	hrmdashboard "srmt-admin/internal/lib/service/hrm/dashboard"
@@ -223,6 +225,7 @@ type AppDependencies struct {
 	HRMPerformanceService      *hrmperformance.Service
 	HRMAnalyticsService        *hrmanalytics.Service
 	ReservoirHourlyService     *reservoirhourly.Service
+	GESReportService           *gesreportsvc.Service
 }
 
 func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
@@ -519,6 +522,22 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 				filterExcelGen.New(),
 				loc,
 			))
+		})
+
+		// GES Daily Report
+		r.Group(func(r chi.Router) {
+			r.Use(mwauth.RequireAnyRole("sc", "rais"))
+
+			r.Route("/ges-report", func(r chi.Router) {
+				r.Get("/", gesreporthandler.GetReport(deps.Log, deps.GESReportService))
+				r.Get("/daily-data", gesreporthandler.GetDailyData(deps.Log, deps.PgRepo))
+				r.Post("/daily-data", gesreporthandler.UpsertDailyData(deps.Log, deps.PgRepo))
+				r.Get("/config", gesreporthandler.GetConfigs(deps.Log, deps.PgRepo))
+				r.Post("/config", gesreporthandler.UpsertConfig(deps.Log, deps.PgRepo))
+				r.Delete("/config", gesreporthandler.DeleteConfig(deps.Log, deps.PgRepo))
+				r.Get("/plans", gesreporthandler.GetPlans(deps.Log, deps.PgRepo))
+				r.Post("/plans", gesreporthandler.BulkUpsertPlan(deps.Log, deps.PgRepo))
+			})
 		})
 
 		// Filtration (Фильтрация плотин)
