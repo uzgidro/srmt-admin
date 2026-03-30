@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
+	"github.com/lib/pq"
 	gesreport "srmt-admin/internal/lib/model/ges-report"
 	"srmt-admin/internal/storage"
 )
@@ -308,6 +310,196 @@ func (r *Repo) GetGESPlansByOrgAndYear(ctx context.Context, orgID int64, year in
 			return nil, fmt.Errorf("%s: scan: %w", op, err)
 		}
 		result = append(result, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: rows: %w", op, err)
+	}
+	return result, nil
+}
+
+// --- Batch Report Queries ---
+
+// GetGESDailyDataBatch fetches all configured GES data for a date, returning
+// all configured stations even if no daily data has been entered yet.
+func (r *Repo) GetGESDailyDataBatch(ctx context.Context, date string) ([]gesreport.RawDailyRow, error) {
+	const op = "storage.repo.GESReport.GetGESDailyDataBatch"
+
+	const query = `
+		SELECT
+			c.organization_id,
+			o.name,
+			o.parent_organization_id,
+			po.name,
+			COALESCE(d.date::text, $1),
+			COALESCE(d.daily_production_mln_kwh, 0),
+			COALESCE(d.working_aggregates, 0),
+			d.water_level_m, d.water_volume_mln_m3, d.water_head_m,
+			d.reservoir_income_m3s, d.total_outflow_m3s, d.ges_flow_m3s,
+			d.temperature, d.weather_condition,
+			c.installed_capacity_mwt, c.total_aggregates, c.has_reservoir, c.sort_order
+		FROM ges_config c
+		JOIN organizations o ON c.organization_id = o.id
+		LEFT JOIN organizations po ON o.parent_organization_id = po.id
+		LEFT JOIN ges_daily_data d ON d.organization_id = c.organization_id AND d.date = $1::date
+		ORDER BY c.sort_order, o.name`
+
+	rows, err := r.db.QueryContext(ctx, query, date)
+	if err != nil {
+		return nil, fmt.Errorf("%s: query: %w", op, err)
+	}
+	defer rows.Close()
+
+	result := make([]gesreport.RawDailyRow, 0)
+	for rows.Next() {
+		var row gesreport.RawDailyRow
+		var cascadeID sql.NullInt64
+		var cascadeName sql.NullString
+
+		if err := rows.Scan(
+			&row.OrganizationID,
+			&row.OrganizationName,
+			&cascadeID,
+			&cascadeName,
+			&row.Date,
+			&row.DailyProductionMlnKWh,
+			&row.WorkingAggregates,
+			&row.WaterLevelM,
+			&row.WaterVolumeMlnM3,
+			&row.WaterHeadM,
+			&row.ReservoirIncomeM3s,
+			&row.TotalOutflowM3s,
+			&row.GESFlowM3s,
+			&row.Temperature,
+			&row.WeatherCondition,
+			&row.InstalledCapacityMWt,
+			&row.TotalAggregates,
+			&row.HasReservoir,
+			&row.SortOrder,
+		); err != nil {
+			return nil, fmt.Errorf("%s: scan: %w", op, err)
+		}
+		if cascadeID.Valid {
+			row.CascadeID = &cascadeID.Int64
+		}
+		if cascadeName.Valid {
+			row.CascadeName = &cascadeName.String
+		}
+		result = append(result, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: rows: %w", op, err)
+	}
+	return result, nil
+}
+
+// GetGESProductionAggregations returns MTD, YTD, and prev-year equivalents
+// for all stations in a single query.
+func (r *Repo) GetGESProductionAggregations(ctx context.Context, date string) ([]gesreport.ProductionAggregation, error) {
+	const op = "storage.repo.GESReport.GetGESProductionAggregations"
+
+	const query = `
+		SELECT
+			organization_id,
+			SUM(CASE WHEN date >= DATE_TRUNC('month', $1::date) AND date <= $1::date
+			         THEN daily_production_mln_kwh ELSE 0 END) AS mtd,
+			SUM(CASE WHEN date >= DATE_TRUNC('year', $1::date) AND date <= $1::date
+			         THEN daily_production_mln_kwh ELSE 0 END) AS ytd,
+			SUM(CASE WHEN date >= DATE_TRUNC('month', ($1::date - INTERVAL '1 year'))
+			          AND date <= ($1::date - INTERVAL '1 year')
+			         THEN daily_production_mln_kwh ELSE 0 END) AS prev_year_mtd,
+			SUM(CASE WHEN date >= DATE_TRUNC('year', ($1::date - INTERVAL '1 year'))
+			          AND date <= ($1::date - INTERVAL '1 year')
+			         THEN daily_production_mln_kwh ELSE 0 END) AS prev_year_ytd
+		FROM ges_daily_data
+		WHERE date >= DATE_TRUNC('year', ($1::date - INTERVAL '1 year'))
+		  AND date <= $1::date
+		GROUP BY organization_id`
+
+	rows, err := r.db.QueryContext(ctx, query, date)
+	if err != nil {
+		return nil, fmt.Errorf("%s: query: %w", op, err)
+	}
+	defer rows.Close()
+
+	result := make([]gesreport.ProductionAggregation, 0)
+	for rows.Next() {
+		var agg gesreport.ProductionAggregation
+		if err := rows.Scan(
+			&agg.OrganizationID,
+			&agg.MTD,
+			&agg.YTD,
+			&agg.PrevYearMTD,
+			&agg.PrevYearYTD,
+		); err != nil {
+			return nil, fmt.Errorf("%s: scan: %w", op, err)
+		}
+		result = append(result, agg)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: rows: %w", op, err)
+	}
+	return result, nil
+}
+
+// GetGESPlansForReport retrieves production plans for the given year and months
+// (typically the 3 months of the current quarter).
+func (r *Repo) GetGESPlansForReport(ctx context.Context, year int, months []int) ([]gesreport.PlanRow, error) {
+	const op = "storage.repo.GESReport.GetGESPlansForReport"
+
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT organization_id, year, month, plan_mln_kwh
+		 FROM ges_production_plan
+		 WHERE year = $1 AND month = ANY($2)`,
+		year, pq.Array(months),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("%s: query: %w", op, err)
+	}
+	defer rows.Close()
+
+	result := make([]gesreport.PlanRow, 0)
+	for rows.Next() {
+		var p gesreport.PlanRow
+		if err := rows.Scan(&p.OrganizationID, &p.Year, &p.Month, &p.PlanMlnKWh); err != nil {
+			return nil, fmt.Errorf("%s: scan: %w", op, err)
+		}
+		result = append(result, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: rows: %w", op, err)
+	}
+	return result, nil
+}
+
+// GetIdleDischargesForDate returns all idle water discharges active during the
+// given operational day window [start, end).
+func (r *Repo) GetIdleDischargesForDate(ctx context.Context, start, end time.Time) ([]gesreport.IdleDischargeRow, error) {
+	const op = "storage.repo.GESReport.GetIdleDischargesForDate"
+
+	const query = `
+		SELECT organization_id, flow_rate_m3_s, total_volume_mln_m3, reason, is_ongoing
+		FROM v_idle_water_discharges_with_volume
+		WHERE start_time < $2 AND (end_time > $1 OR end_time IS NULL)`
+
+	rows, err := r.db.QueryContext(ctx, query, start, end)
+	if err != nil {
+		return nil, fmt.Errorf("%s: query: %w", op, err)
+	}
+	defer rows.Close()
+
+	result := make([]gesreport.IdleDischargeRow, 0)
+	for rows.Next() {
+		var row gesreport.IdleDischargeRow
+		if err := rows.Scan(
+			&row.OrganizationID,
+			&row.FlowRateM3s,
+			&row.VolumeMlnM3,
+			&row.Reason,
+			&row.IsOngoing,
+		); err != nil {
+			return nil, fmt.Errorf("%s: scan: %w", op, err)
+		}
+		result = append(result, row)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("%s: rows: %w", op, err)
