@@ -27,6 +27,7 @@ type DailyDataGetter interface {
 }
 
 func UpsertDailyData(log *slog.Logger, repo DailyDataUpserter) http.HandlerFunc {
+	validate := validator.New()
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.ges-report.UpsertDailyData"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
@@ -47,7 +48,6 @@ func UpsertDailyData(log *slog.Logger, repo DailyDataUpserter) http.HandlerFunc 
 			return
 		}
 
-		validate := validator.New()
 		if err := validate.Struct(req); err != nil {
 			var vErrs validator.ValidationErrors
 			errors.As(err, &vErrs)

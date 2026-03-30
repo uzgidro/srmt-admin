@@ -29,6 +29,7 @@ type ConfigDeleter interface {
 }
 
 func UpsertConfig(log *slog.Logger, repo ConfigUpserter) http.HandlerFunc {
+	validate := validator.New()
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.ges-report.UpsertConfig"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
@@ -41,7 +42,6 @@ func UpsertConfig(log *slog.Logger, repo ConfigUpserter) http.HandlerFunc {
 			return
 		}
 
-		validate := validator.New()
 		if err := validate.Struct(req); err != nil {
 			var vErrs validator.ValidationErrors
 			errors.As(err, &vErrs)

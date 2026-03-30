@@ -34,7 +34,6 @@ CREATE TABLE ges_daily_data (
 );
 
 CREATE INDEX idx_ges_daily_data_date ON ges_daily_data(date);
-CREATE INDEX idx_ges_daily_data_org_date ON ges_daily_data(organization_id, date);
 
 -- Production plans (one row per GES per month)
 CREATE TABLE ges_production_plan (

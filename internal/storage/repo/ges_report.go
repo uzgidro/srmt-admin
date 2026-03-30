@@ -25,7 +25,8 @@ func (r *Repo) UpsertGESConfig(ctx context.Context, req gesreport.UpsertConfigRe
 			installed_capacity_mwt = EXCLUDED.installed_capacity_mwt,
 			total_aggregates = EXCLUDED.total_aggregates,
 			has_reservoir = EXCLUDED.has_reservoir,
-			sort_order = EXCLUDED.sort_order`
+			sort_order = EXCLUDED.sort_order,
+			updated_at = NOW()`
 
 	_, err := r.db.ExecContext(ctx, query,
 		req.OrganizationID,
@@ -136,7 +137,7 @@ func (r *Repo) UpsertGESDailyData(ctx context.Context, req gesreport.UpsertDaily
 			water_level_m, water_volume_mln_m3, water_head_m,
 			reservoir_income_m3s, total_outflow_m3s, ges_flow_m3s,
 			temperature, weather_condition,
-			created_by, updated_by, created_at, updated_at
+			created_by_user_id, updated_by_user_id, created_at, updated_at
 		) VALUES (
 			$1, $2::date,
 			$3, $4,
@@ -156,7 +157,7 @@ func (r *Repo) UpsertGESDailyData(ctx context.Context, req gesreport.UpsertDaily
 			ges_flow_m3s = EXCLUDED.ges_flow_m3s,
 			temperature = EXCLUDED.temperature,
 			weather_condition = EXCLUDED.weather_condition,
-			updated_by = EXCLUDED.updated_by,
+			updated_by_user_id = EXCLUDED.updated_by_user_id,
 			updated_at = NOW()`
 
 	_, err := r.db.ExecContext(ctx, query,
@@ -235,11 +236,11 @@ func (r *Repo) BulkUpsertGESPlan(ctx context.Context, req gesreport.BulkUpsertPl
 	defer tx.Rollback()
 
 	const query = `
-		INSERT INTO ges_production_plan (organization_id, year, month, plan_mln_kwh, created_by, updated_by, created_at, updated_at)
+		INSERT INTO ges_production_plan (organization_id, year, month, plan_mln_kwh, created_by_user_id, updated_by_user_id, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $5, NOW(), NOW())
 		ON CONFLICT (organization_id, year, month) DO UPDATE SET
 			plan_mln_kwh = EXCLUDED.plan_mln_kwh,
-			updated_by = EXCLUDED.updated_by,
+			updated_by_user_id = EXCLUDED.updated_by_user_id,
 			updated_at = NOW()`
 
 	for _, p := range req.Plans {
@@ -277,36 +278,6 @@ func (r *Repo) GetGESPlans(ctx context.Context, year int) ([]gesreport.Productio
 	for rows.Next() {
 		var p gesreport.ProductionPlan
 		if err := rows.Scan(&p.ID, &p.OrganizationID, &p.Year, &p.Month, &p.PlanMlnKWh); err != nil {
-			return nil, fmt.Errorf("%s: scan: %w", op, err)
-		}
-		result = append(result, p)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("%s: rows: %w", op, err)
-	}
-	return result, nil
-}
-
-// GetGESPlansByOrgAndYear retrieves plans for a specific org and year.
-func (r *Repo) GetGESPlansByOrgAndYear(ctx context.Context, orgID int64, year int) ([]gesreport.PlanRow, error) {
-	const op = "storage.repo.GESReport.GetGESPlansByOrgAndYear"
-
-	rows, err := r.db.QueryContext(ctx,
-		`SELECT organization_id, year, month, plan_mln_kwh
-		 FROM ges_production_plan
-		 WHERE organization_id = $1 AND year = $2
-		 ORDER BY organization_id, month`,
-		orgID, year,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("%s: query: %w", op, err)
-	}
-	defer rows.Close()
-
-	result := make([]gesreport.PlanRow, 0)
-	for rows.Next() {
-		var p gesreport.PlanRow
-		if err := rows.Scan(&p.OrganizationID, &p.Year, &p.Month, &p.PlanMlnKWh); err != nil {
 			return nil, fmt.Errorf("%s: scan: %w", op, err)
 		}
 		result = append(result, p)
