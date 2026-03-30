@@ -225,7 +225,7 @@ func (r *Repo) GetGESDailyData(ctx context.Context, organizationID int64, date s
 // --- GES Production Plan CRUD ---
 
 // BulkUpsertGESPlan upserts multiple plan entries in a transaction.
-func (r *Repo) BulkUpsertGESPlan(ctx context.Context, plans []gesreport.UpsertPlanRequest, userID int64) error {
+func (r *Repo) BulkUpsertGESPlan(ctx context.Context, req gesreport.BulkUpsertPlanRequest, userID int64) error {
 	const op = "storage.repo.GESReport.BulkUpsertGESPlan"
 
 	tx, err := r.db.BeginTx(ctx, nil)
@@ -242,7 +242,7 @@ func (r *Repo) BulkUpsertGESPlan(ctx context.Context, plans []gesreport.UpsertPl
 			updated_by = EXCLUDED.updated_by,
 			updated_at = NOW()`
 
-	for _, p := range plans {
+	for _, p := range req.Plans {
 		if _, err := tx.ExecContext(ctx, query, p.OrganizationID, p.Year, p.Month, p.PlanMlnKWh, userID); err != nil {
 			if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
 				return translatedErr
@@ -258,11 +258,11 @@ func (r *Repo) BulkUpsertGESPlan(ctx context.Context, plans []gesreport.UpsertPl
 }
 
 // GetGESPlans retrieves all plans for a given year.
-func (r *Repo) GetGESPlans(ctx context.Context, year int) ([]gesreport.PlanRow, error) {
+func (r *Repo) GetGESPlans(ctx context.Context, year int) ([]gesreport.ProductionPlan, error) {
 	const op = "storage.repo.GESReport.GetGESPlans"
 
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT organization_id, year, month, plan_mln_kwh
+		`SELECT id, organization_id, year, month, plan_mln_kwh
 		 FROM ges_production_plan
 		 WHERE year = $1
 		 ORDER BY organization_id, month`,
@@ -273,10 +273,10 @@ func (r *Repo) GetGESPlans(ctx context.Context, year int) ([]gesreport.PlanRow, 
 	}
 	defer rows.Close()
 
-	result := make([]gesreport.PlanRow, 0)
+	result := make([]gesreport.ProductionPlan, 0)
 	for rows.Next() {
-		var p gesreport.PlanRow
-		if err := rows.Scan(&p.OrganizationID, &p.Year, &p.Month, &p.PlanMlnKWh); err != nil {
+		var p gesreport.ProductionPlan
+		if err := rows.Scan(&p.ID, &p.OrganizationID, &p.Year, &p.Month, &p.PlanMlnKWh); err != nil {
 			return nil, fmt.Errorf("%s: scan: %w", op, err)
 		}
 		result = append(result, p)
