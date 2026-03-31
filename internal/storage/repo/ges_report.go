@@ -301,7 +301,7 @@ func (r *Repo) GetGESDailyDataBatch(ctx context.Context, date string) ([]gesrepo
 			o.name,
 			o.parent_organization_id,
 			po.name,
-			COALESCE(d.date::text, $1),
+			COALESCE(d.date::text, $1::text),
 			COALESCE(d.daily_production_mln_kwh, 0),
 			COALESCE(d.working_aggregates, 0),
 			d.water_level_m, d.water_volume_mln_m3, d.water_head_m,
