@@ -358,8 +358,9 @@ func TestBuildReport_IdleDischarge(t *testing.T) {
 		t.Fatal("IdleDischarge is nil, expected discharge data")
 	}
 
-	if !approxEqual(st.IdleDischarge.FlowRateM3s, 120.5) {
-		t.Errorf("flow rate: got %.4f, want 120.5", st.IdleDischarge.FlowRateM3s)
+	// FlowRateM3s = VolumeMlnM3 / 0.0864 = 0.432 / 0.0864 = 5.0
+	if !approxEqual(st.IdleDischarge.FlowRateM3s, 5.0) {
+		t.Errorf("flow rate: got %.4f, want 5.0", st.IdleDischarge.FlowRateM3s)
 	}
 	if !approxEqual(st.IdleDischarge.VolumeMlnM3, 0.432) {
 		t.Errorf("volume: got %.4f, want 0.432", st.IdleDischarge.VolumeMlnM3)
@@ -376,8 +377,8 @@ func TestBuildReport_IdleDischarge(t *testing.T) {
 	if gt == nil {
 		t.Fatal("grand total is nil")
 	}
-	if !approxEqual(gt.IdleDischargeM3s, 120.5) {
-		t.Errorf("grand total idle discharge: got %.4f, want 120.5", gt.IdleDischargeM3s)
+	if !approxEqual(gt.IdleDischargeM3s, 5.0) {
+		t.Errorf("grand total idle discharge: got %.4f, want 5.0", gt.IdleDischargeM3s)
 	}
 }
 
@@ -430,9 +431,10 @@ func TestBuildReport_MultipleDischargesPerOrg(t *testing.T) {
 		t.Fatal("IdleDischarge is nil")
 	}
 
-	// Flow rates summed: 50 + 30 = 80
-	if !approxEqual(st.IdleDischarge.FlowRateM3s, 80.0) {
-		t.Errorf("summed flow rate: got %.4f, want 80.0", st.IdleDischarge.FlowRateM3s)
+	// Volumes summed: 0.1 + 0.2 = 0.3; FlowRate = 0.3 / 0.0864 ≈ 3.4722
+	wantFlow := 0.3 / 0.0864
+	if !approxEqual(st.IdleDischarge.FlowRateM3s, wantFlow) {
+		t.Errorf("derived flow rate: got %.4f, want %.4f", st.IdleDischarge.FlowRateM3s, wantFlow)
 	}
 	// Volumes summed: 0.1 + 0.2 = 0.3
 	if !approxEqual(st.IdleDischarge.VolumeMlnM3, 0.3) {

@@ -375,27 +375,33 @@ func buildPlanMap(rows []model.PlanRow, currentMonth int) map[int64]planEntry {
 }
 
 // buildDischargeMap aggregates multiple discharge rows per org:
-// sum flow rates and volumes, keep first reason, IsOngoing=true if any is ongoing.
+// sum volumes, derive average flow rate as totalVolume / 0.0864 (млн м³ → м³/с),
+// keep first reason, IsOngoing=true if any is ongoing.
 func buildDischargeMap(rows []model.IdleDischargeRow) map[int64]model.IdleDischargeData {
+	const volumeToFlowRate = 0.0864 // 86400 с / 1 000 000 м³
+
 	m := make(map[int64]model.IdleDischargeData)
 	for _, r := range rows {
 		existing, exists := m[r.OrganizationID]
 		if !exists {
 			m[r.OrganizationID] = model.IdleDischargeData{
-				FlowRateM3s: r.FlowRateM3s,
 				VolumeMlnM3: r.VolumeMlnM3,
 				Reason:      r.Reason,
 				IsOngoing:   r.IsOngoing,
 			}
 		} else {
-			existing.FlowRateM3s += r.FlowRateM3s
 			existing.VolumeMlnM3 += r.VolumeMlnM3
 			if r.IsOngoing {
 				existing.IsOngoing = true
 			}
-			// Keep first reason (already set).
 			m[r.OrganizationID] = existing
 		}
 	}
+
+	for orgID, d := range m {
+		d.FlowRateM3s = d.VolumeMlnM3 / volumeToFlowRate
+		m[orgID] = d
+	}
+
 	return m
 }
