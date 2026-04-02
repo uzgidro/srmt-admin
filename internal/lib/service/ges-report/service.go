@@ -399,7 +399,9 @@ func buildDischargeMap(rows []model.IdleDischargeRow) map[int64]model.IdleDischa
 	}
 
 	for orgID, d := range m {
-		d.FlowRateM3s = d.VolumeMlnM3 / volumeToFlowRate
+		if d.VolumeMlnM3 != 0 {
+			d.FlowRateM3s = d.VolumeMlnM3 / volumeToFlowRate
+		}
 		m[orgID] = d
 	}
 
