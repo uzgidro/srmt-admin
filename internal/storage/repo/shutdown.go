@@ -40,10 +40,10 @@ func (r *Repo) AddShutdown(ctx context.Context, req dto.AddShutdownRequest) (int
 			if !req.Force {
 				return 0, storage.ErrOngoingDischargeExists
 			}
-			// Force mode: close the existing discharge
+			// Force mode: close the existing discharge at the new shutdown's start time
 			_, err = tx.ExecContext(ctx,
-				"UPDATE idle_water_discharges SET end_time = NOW() WHERE id = $1",
-				existingID,
+				"UPDATE idle_water_discharges SET end_time = $1 WHERE id = $2",
+				req.StartTime, existingID,
 			)
 			if err != nil {
 				return 0, fmt.Errorf("%s: failed to close ongoing discharge: %w", op, err)

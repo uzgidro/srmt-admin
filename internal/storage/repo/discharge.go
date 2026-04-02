@@ -640,14 +640,14 @@ func (r *Repo) CheckOngoingDischarge(ctx context.Context, orgID int64) (int64, b
 	return id, true, nil
 }
 
-// CloseDischarge closes an ongoing idle discharge by setting end_time to NOW().
+// CloseDischarge closes an ongoing idle discharge by setting end_time.
 // If the discharge was already closed or deleted, this is a no-op.
-func (r *Repo) CloseDischarge(ctx context.Context, id int64) error {
+func (r *Repo) CloseDischarge(ctx context.Context, id int64, endTime time.Time) error {
 	const op = "storage.repo.discharge.CloseDischarge"
 
 	_, err := r.db.ExecContext(ctx,
-		"UPDATE idle_water_discharges SET end_time = NOW() WHERE id = $1 AND end_time IS NULL",
-		id,
+		"UPDATE idle_water_discharges SET end_time = $1 WHERE id = $2 AND end_time IS NULL",
+		endTime, id,
 	)
 	if err != nil {
 		return fmt.Errorf("%s: %w", op, err)

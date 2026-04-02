@@ -35,12 +35,12 @@ func (m *mockDischargeAdder) LinkDischargeFiles(ctx context.Context, dischargeID
 }
 
 type mockOngoingChecker struct {
-	ensureFunc func(ctx context.Context, orgID int64, force bool) error
+	ensureFunc func(ctx context.Context, orgID int64, force bool, newStartTime time.Time) error
 }
 
-func (m *mockOngoingChecker) EnsureNoOngoingDischarge(ctx context.Context, orgID int64, force bool) error {
+func (m *mockOngoingChecker) EnsureNoOngoingDischarge(ctx context.Context, orgID int64, force bool, newStartTime time.Time) error {
 	if m.ensureFunc != nil {
-		return m.ensureFunc(ctx, orgID, force)
+		return m.ensureFunc(ctx, orgID, force, newStartTime)
 	}
 	return nil
 }
@@ -58,7 +58,7 @@ func TestNew_OngoingDischargeConflict(t *testing.T) {
 	now := time.Now()
 
 	checker := &mockOngoingChecker{
-		ensureFunc: func(_ context.Context, _ int64, force bool) error {
+		ensureFunc: func(_ context.Context, _ int64, force bool, _ time.Time) error {
 			if !force {
 				return storage.ErrOngoingDischargeExists
 			}
@@ -113,7 +113,7 @@ func TestNew_OngoingDischargeConflict(t *testing.T) {
 
 	t.Run("no ongoing discharge proceeds normally", func(t *testing.T) {
 		noConflictChecker := &mockOngoingChecker{
-			ensureFunc: func(_ context.Context, _ int64, _ bool) error {
+			ensureFunc: func(_ context.Context, _ int64, _ bool, _ time.Time) error {
 				return nil
 			},
 		}

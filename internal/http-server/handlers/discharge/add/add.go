@@ -40,7 +40,7 @@ type DischargeAdder interface {
 }
 
 type OngoingChecker interface {
-	EnsureNoOngoingDischarge(ctx context.Context, orgID int64, force bool) error
+	EnsureNoOngoingDischarge(ctx context.Context, orgID int64, force bool, newStartTime time.Time) error
 }
 
 func New(log *slog.Logger, adder DischargeAdder, checker OngoingChecker, uploader fileupload.FileUploader, saver fileupload.FileMetaSaver, categoryGetter fileupload.CategoryGetter) http.HandlerFunc {
@@ -119,7 +119,7 @@ func New(log *slog.Logger, adder DischargeAdder, checker OngoingChecker, uploade
 		}
 
 		// Check for ongoing discharge conflict
-		if err := checker.EnsureNoOngoingDischarge(r.Context(), req.OrganizationID, req.Force); err != nil {
+		if err := checker.EnsureNoOngoingDischarge(r.Context(), req.OrganizationID, req.Force, req.StartedAt); err != nil {
 			if errors.Is(err, storage.ErrOngoingDischargeExists) {
 				if uploadResult != nil {
 					fileupload.CompensateEntityUpload(r.Context(), log, uploader, saver, uploadResult)
