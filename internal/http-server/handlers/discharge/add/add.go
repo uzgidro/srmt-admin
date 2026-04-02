@@ -25,6 +25,7 @@ type Request struct {
 	FlowRate       float64    `json:"flow_rate" validate:"required,gt=0"`
 	Reason         *string    `json:"reason,omitempty"`
 	FileIDs        []int64    `json:"file_ids,omitempty"`
+	Force          bool       `json:"force,omitempty"`
 }
 
 type Response struct {
@@ -38,7 +39,11 @@ type DischargeAdder interface {
 	LinkDischargeFiles(ctx context.Context, dischargeID int64, fileIDs []int64) error
 }
 
-func New(log *slog.Logger, adder DischargeAdder, uploader fileupload.FileUploader, saver fileupload.FileMetaSaver, categoryGetter fileupload.CategoryGetter) http.HandlerFunc {
+type OngoingChecker interface {
+	EnsureNoOngoingDischarge(ctx context.Context, orgID int64, force bool) error
+}
+
+func New(log *slog.Logger, adder DischargeAdder, checker OngoingChecker, uploader fileupload.FileUploader, saver fileupload.FileMetaSaver, categoryGetter fileupload.CategoryGetter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.discharge.add.New"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
@@ -110,6 +115,26 @@ func New(log *slog.Logger, adder DischargeAdder, uploader fileupload.FileUploade
 			log.Warn("org access denied for discharge add", sl.Err(err))
 			render.Status(r, http.StatusForbidden)
 			render.JSON(w, r, resp.Forbidden("Access denied"))
+			return
+		}
+
+		// Check for ongoing discharge conflict
+		if err := checker.EnsureNoOngoingDischarge(r.Context(), req.OrganizationID, req.Force); err != nil {
+			if errors.Is(err, storage.ErrOngoingDischargeExists) {
+				if uploadResult != nil {
+					fileupload.CompensateEntityUpload(r.Context(), log, uploader, saver, uploadResult)
+				}
+				log.Warn("ongoing discharge exists", "org_id", req.OrganizationID)
+				render.Status(r, http.StatusConflict)
+				render.JSON(w, r, resp.Conflict("Для данной организации уже существует незавершенный холостой сброс"))
+				return
+			}
+			if uploadResult != nil {
+				fileupload.CompensateEntityUpload(r.Context(), log, uploader, saver, uploadResult)
+			}
+			log.Error("failed to check ongoing discharge", sl.Err(err))
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, resp.InternalServerError("Failed to check ongoing discharges"))
 			return
 		}
 
@@ -202,6 +227,16 @@ func parseMultipartAddRequest(
 	// Parse reason (optional)
 	reason := formparser.GetFormString(r, "reason")
 
+	// Parse force (optional)
+	forcePtr, err := formparser.GetFormBool(r, "force")
+	if err != nil {
+		return Request{}, nil, fmt.Errorf("invalid force: %w", err)
+	}
+	forceVal := false
+	if forcePtr != nil {
+		forceVal = *forcePtr
+	}
+
 	// Create request object
 	req := Request{
 		OrganizationID: orgID,
@@ -209,6 +244,7 @@ func parseMultipartAddRequest(
 		EndedAt:        endedAt,
 		FlowRate:       flowRate,
 		Reason:         reason,
+		Force:          forceVal,
 	}
 
 	// Process file uploads

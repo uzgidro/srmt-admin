@@ -159,6 +159,7 @@ import (
 	mwauth "srmt-admin/internal/http-server/middleware/auth"
 	"srmt-admin/internal/http-server/middleware/devonly"
 	"srmt-admin/internal/lib/service/alarm"
+	dischargesvc "srmt-admin/internal/lib/service/discharge"
 	dischargeExcelGen "srmt-admin/internal/lib/service/excel/discharge"
 	excelgen "srmt-admin/internal/lib/service/excel/reservoir-summary"
 	reservoirHourlyExcelGen "srmt-admin/internal/lib/service/excel/reservoir-summary-hourly"
@@ -226,6 +227,7 @@ type AppDependencies struct {
 	HRMAnalyticsService        *hrmanalytics.Service
 	ReservoirHourlyService     *reservoirhourly.Service
 	GESReportService           *gesreportsvc.Service
+	DischargeService           *dischargesvc.Service
 }
 
 func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
@@ -449,7 +451,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Get("/discharges", dischargeGet.New(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
 			r.Get("/discharges/current", dischargeGetCurrent.New(deps.Log, deps.PgRepo, deps.MinioRepo))
 			r.Get("/discharges/flat", dischargeGetFlat.New(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
-			r.Post("/discharges", dischargeAdd.New(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
+			r.Post("/discharges", dischargeAdd.New(deps.Log, deps.PgRepo, deps.DischargeService, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
 			r.Patch("/discharges/{id}", dischargePatch.New(deps.Log, deps.PgRepo, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
 			r.Delete("/discharges/{id}", dischargeDelete.New(deps.Log, deps.PgRepo, deps.PgRepo))
 			r.Get("/discharges/export", dischargeExport.New(

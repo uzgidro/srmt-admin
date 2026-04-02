@@ -144,6 +144,34 @@ func TestAdd(t *testing.T) {
 			wantErrInBody:  true,
 		},
 		{
+			name: "conflict - ongoing discharge exists without force",
+			body: addRequest{
+				OrganizationID:      1,
+				StartTime:           now,
+				EndTime:             &later,
+				IdleDischargeVolume: float64Ptr(5.0),
+			},
+			userID:         1,
+			mockError:      storage.ErrOngoingDischargeExists,
+			wantStatusCode: http.StatusConflict,
+			wantErrInBody:  true,
+		},
+		{
+			name: "force close ongoing discharge and create new",
+			body: addRequest{
+				OrganizationID:      1,
+				StartTime:           now,
+				EndTime:             &later,
+				IdleDischargeVolume: float64Ptr(5.0),
+				Force:               true,
+			},
+			userID:         1,
+			mockResponse:   3,
+			mockError:      nil,
+			wantStatusCode: http.StatusCreated,
+			wantErrInBody:  false,
+		},
+		{
 			name: "internal server error",
 			body: addRequest{
 				OrganizationID: 1,

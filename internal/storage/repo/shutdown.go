@@ -28,6 +28,30 @@ func (r *Repo) AddShutdown(ctx context.Context, req dto.AddShutdownRequest) (int
 	var idleDischargeID *int64
 
 	if req.IdleDischargeVolumeThousandM3 != nil {
+		// Check for ongoing idle discharge for this organization
+		var existingID int64
+		err = tx.QueryRowContext(ctx,
+			"SELECT id FROM idle_water_discharges WHERE organization_id = $1 AND end_time IS NULL LIMIT 1",
+			req.OrganizationID,
+		).Scan(&existingID)
+
+		if err == nil {
+			// Found an ongoing discharge
+			if !req.Force {
+				return 0, storage.ErrOngoingDischargeExists
+			}
+			// Force mode: close the existing discharge
+			_, err = tx.ExecContext(ctx,
+				"UPDATE idle_water_discharges SET end_time = NOW() WHERE id = $1",
+				existingID,
+			)
+			if err != nil {
+				return 0, fmt.Errorf("%s: failed to close ongoing discharge: %w", op, err)
+			}
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return 0, fmt.Errorf("%s: failed to check ongoing discharge: %w", op, err)
+		}
+
 		flowRate, err := calculateFlowRate(req.StartTime, req.EndTime, *req.IdleDischargeVolumeThousandM3)
 		if err != nil {
 			return 0, fmt.Errorf("%s: failed to calculate flow rate: %w", op, err)

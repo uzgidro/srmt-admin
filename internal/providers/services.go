@@ -20,6 +20,7 @@ import (
 	hrmtraining "srmt-admin/internal/lib/service/hrm/training"
 	hrmvacation "srmt-admin/internal/lib/service/hrm/vacation"
 	"srmt-admin/internal/lib/service/dayrotation"
+	dischargesvc "srmt-admin/internal/lib/service/discharge"
 	gesreportsvc "srmt-admin/internal/lib/service/ges-report"
 	"srmt-admin/internal/lib/service/metrics"
 	"srmt-admin/internal/lib/service/reservoir"
@@ -56,6 +57,7 @@ var ServiceProviderSet = wire.NewSet(
 	ProvideReservoirHourlyService,
 	ProvideDayRotationService,
 	ProvideGESReportService,
+	ProvideDischargeService,
 )
 
 // ProvideTokenService creates JWT token service
@@ -179,6 +181,11 @@ func ProvideDayRotationService(pgRepo *repo.Repo, loc *time.Location, log *slog.
 // ProvideGESReportService creates the GES daily report service
 func ProvideGESReportService(pgRepo *repo.Repo, loc *time.Location) *gesreportsvc.Service {
 	return gesreportsvc.NewService(pgRepo, loc)
+}
+
+// ProvideDischargeService creates the discharge service for ongoing discharge validation
+func ProvideDischargeService(pgRepo *repo.Repo) *dischargesvc.Service {
+	return dischargesvc.NewService(pgRepo)
 }
 
 // ProvideReservoirHourlyService creates the reservoir-hourly report service

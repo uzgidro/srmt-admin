@@ -69,6 +69,9 @@ var (
 	ErrAccessZoneNotFound    = errors.New("access zone not found")
 	ErrAccessRequestNotFound = errors.New("access request not found")
 
+	// Discharge errors
+	ErrOngoingDischargeExists = errors.New("ongoing idle discharge already exists for this organization")
+
 	// Constraint errors
 	ErrNotNullViolation         = errors.New("required field is missing")
 	ErrCheckConstraintViolation = errors.New("value violates constraint")

@@ -28,6 +28,7 @@ type addRequest struct {
 	ReportedByContactID *int64     `json:"reported_by_contact_id,omitempty"`
 
 	IdleDischargeVolume *float64 `json:"idle_discharge_volume,omitempty"`
+	Force               bool     `json:"force,omitempty"`
 	FileIDs             []int64  `json:"file_ids,omitempty"`
 }
 
@@ -139,6 +140,7 @@ func Add(log *slog.Logger, adder ShutdownAdder, uploader fileupload.FileUploader
 			CreatedByUserID:     userID,
 
 			IdleDischargeVolumeThousandM3: req.IdleDischargeVolume,
+			Force:                         req.Force,
 			FileIDs:                       fileIDs,
 		}
 
@@ -150,6 +152,15 @@ func Add(log *slog.Logger, adder ShutdownAdder, uploader fileupload.FileUploader
 				fileupload.CompensateEntityUpload(r.Context(), log, uploader, saver, uploadResult)
 			}
 
+			if errors.Is(err, storage.ErrOngoingDischargeExists) {
+				if uploadResult != nil {
+					fileupload.CompensateEntityUpload(r.Context(), log, uploader, saver, uploadResult)
+				}
+				log.Warn("ongoing discharge exists", "org_id", req.OrganizationID)
+				render.Status(r, http.StatusConflict)
+				render.JSON(w, r, resp.Conflict("Для данной организации уже существует незавершенный холостой сброс"))
+				return
+			}
 			if errors.Is(err, storage.ErrForeignKeyViolation) {
 				log.Warn("FK violation (org or contact not found)")
 				render.Status(r, http.StatusBadRequest)
@@ -241,6 +252,16 @@ func parseMultipartAddRequest(
 		return addRequest{}, nil, fmt.Errorf("invalid idle_discharge_volume: %w", err)
 	}
 
+	// Parse force (optional)
+	forcePtr, err := formparser.GetFormBool(r, "force")
+	if err != nil {
+		return addRequest{}, nil, fmt.Errorf("invalid force: %w", err)
+	}
+	forceVal := false
+	if forcePtr != nil {
+		forceVal = *forcePtr
+	}
+
 	// Create request object
 	req := addRequest{
 		OrganizationID:      orgID,
@@ -250,6 +271,7 @@ func parseMultipartAddRequest(
 		GenerationLossMwh:   generationLoss,
 		ReportedByContactID: reportedByContactID,
 		IdleDischargeVolume: idleDischargeVolume,
+		Force:               forceVal,
 	}
 
 	// Process file uploads

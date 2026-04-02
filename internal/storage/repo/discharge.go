@@ -620,6 +620,49 @@ func (r *Repo) GetDischargeOrgID(ctx context.Context, id int64) (int64, error) {
 	return orgID, nil
 }
 
+// CheckOngoingDischarge checks if an ongoing idle discharge exists for the given organization.
+func (r *Repo) CheckOngoingDischarge(ctx context.Context, orgID int64) (int64, bool, error) {
+	const op = "storage.repo.discharge.CheckOngoingDischarge"
+
+	var id int64
+	err := r.db.QueryRowContext(ctx,
+		"SELECT id FROM idle_water_discharges WHERE organization_id = $1 AND end_time IS NULL LIMIT 1",
+		orgID,
+	).Scan(&id)
+
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, fmt.Errorf("%s: %w", op, err)
+	}
+
+	return id, true, nil
+}
+
+// CloseDischarge closes an ongoing idle discharge by setting end_time to NOW().
+func (r *Repo) CloseDischarge(ctx context.Context, id int64) error {
+	const op = "storage.repo.discharge.CloseDischarge"
+
+	res, err := r.db.ExecContext(ctx,
+		"UPDATE idle_water_discharges SET end_time = NOW() WHERE id = $1",
+		id,
+	)
+	if err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+	if rowsAffected == 0 {
+		return storage.ErrNotFound
+	}
+
+	return nil
+}
+
 // loadDischargeFiles loads files for a discharge
 func (r *Repo) loadDischargeFiles(ctx context.Context, dischargeID int64) ([]file.Model, error) {
 	const op = "storage.repo.discharge.loadDischargeFiles"

@@ -12,6 +12,7 @@ type AddShutdownRequest struct {
 	CreatedByUserID     int64
 
 	IdleDischargeVolumeThousandM3 *float64
+	Force                         bool
 	FileIDs                       []int64 `json:"file_ids,omitempty"`
 }
 
