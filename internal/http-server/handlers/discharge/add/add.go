@@ -147,6 +147,12 @@ func New(log *slog.Logger, adder DischargeAdder, checker OngoingChecker, uploade
 				fileupload.CompensateEntityUpload(r.Context(), log, uploader, saver, uploadResult)
 			}
 
+			if errors.Is(err, storage.ErrDuplicate) {
+				log.Warn("duplicate ongoing discharge (race condition)", "org_id", req.OrganizationID)
+				render.Status(r, http.StatusConflict)
+				render.JSON(w, r, resp.Conflict("Для данной организации уже существует незавершенный холостой сброс"))
+				return
+			}
 			if errors.Is(err, storage.ErrForeignKeyViolation) {
 				log.Warn("organization not found", "org_id", req.OrganizationID)
 				render.Status(r, http.StatusBadRequest)

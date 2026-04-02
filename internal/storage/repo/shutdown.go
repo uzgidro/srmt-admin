@@ -31,7 +31,7 @@ func (r *Repo) AddShutdown(ctx context.Context, req dto.AddShutdownRequest) (int
 		// Check for ongoing idle discharge for this organization
 		var existingID int64
 		err = tx.QueryRowContext(ctx,
-			"SELECT id FROM idle_water_discharges WHERE organization_id = $1 AND end_time IS NULL LIMIT 1",
+			"SELECT id FROM idle_water_discharges WHERE organization_id = $1 AND end_time IS NULL LIMIT 1 FOR UPDATE",
 			req.OrganizationID,
 		).Scan(&existingID)
 

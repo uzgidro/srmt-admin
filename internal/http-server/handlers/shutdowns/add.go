@@ -152,10 +152,7 @@ func Add(log *slog.Logger, adder ShutdownAdder, uploader fileupload.FileUploader
 				fileupload.CompensateEntityUpload(r.Context(), log, uploader, saver, uploadResult)
 			}
 
-			if errors.Is(err, storage.ErrOngoingDischargeExists) {
-				if uploadResult != nil {
-					fileupload.CompensateEntityUpload(r.Context(), log, uploader, saver, uploadResult)
-				}
+			if errors.Is(err, storage.ErrOngoingDischargeExists) || errors.Is(err, storage.ErrDuplicate) {
 				log.Warn("ongoing discharge exists", "org_id", req.OrganizationID)
 				render.Status(r, http.StatusConflict)
 				render.JSON(w, r, resp.Conflict("Для данной организации уже существует незавершенный холостой сброс"))
