@@ -2,7 +2,7 @@
 
 Модуль для ручного ввода текущих и исторических данных фильтрации/пьезометров **без привязки к автоматически найденной исторической дате**. Используется когда нет исторической даты с подобным уровнем водохранилища.
 
-**Базовый путь:** `/api/v4/manual-comparison`
+**Базовый путь:** `/manual-comparison`
 **Авторизация:** JWT, роли `sc`, `rais`, `reservoir`
 
 ---
@@ -14,7 +14,7 @@
 ### Request
 
 ```
-POST /api/v4/manual-comparison/measurements
+POST /manual-comparison/measurements
 Content-Type: application/json
 Authorization: Bearer <token>
 ```
@@ -103,7 +103,7 @@ Authorization: Bearer <token>
 ### Request
 
 ```
-GET /api/v4/manual-comparison/measurements?organization_id=1&date=2026-03-25
+GET /manual-comparison/measurements?organization_id=1&date=2026-03-25
 Authorization: Bearer <token>
 ```
 
@@ -201,7 +201,7 @@ Authorization: Bearer <token>
 ### Request
 
 ```
-DELETE /api/v4/manual-comparison/measurements?organization_id=1&date=2026-03-25
+DELETE /manual-comparison/measurements?organization_id=1&date=2026-03-25
 Authorization: Bearer <token>
 ```
 
@@ -237,7 +237,7 @@ Authorization: Bearer <token>
 ### Request
 
 ```
-GET /api/v4/manual-comparison/data?date=2026-03-25
+GET /manual-comparison/data?date=2026-03-25
 Authorization: Bearer <token>
 ```
 
@@ -363,7 +363,7 @@ Authorization: Bearer <token>
 ### Request
 
 ```
-GET /api/v4/manual-comparison/export?date=2026-03-26&format=excel
+GET /manual-comparison/export?date=2026-03-26&format=excel
 Authorization: Bearer <token>
 ```
 

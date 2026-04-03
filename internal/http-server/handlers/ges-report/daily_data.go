@@ -107,8 +107,8 @@ func GetDailyData(log *slog.Logger, repo DailyDataGetter) http.HandlerFunc {
 		data, err := repo.GetGESDailyData(r.Context(), orgID, date)
 		if err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
-				render.Status(r, http.StatusNotFound)
-				render.JSON(w, r, resp.NotFound("daily data not found"))
+				render.Status(r, http.StatusOK)
+				render.JSON(w, r, nil)
 				return
 			}
 			log.Error("failed to get ges daily data", sl.Err(err))
