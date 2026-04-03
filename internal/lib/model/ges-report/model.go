@@ -22,6 +22,24 @@ type UpsertConfigRequest struct {
 	SortOrder            int     `json:"sort_order" validate:"gte=0"`
 }
 
+// --- Cascade Config ---
+
+type CascadeConfig struct {
+	ID               int64    `json:"id"`
+	OrganizationID   int64    `json:"organization_id"`
+	OrganizationName string   `json:"organization_name,omitempty"`
+	Latitude         *float64 `json:"latitude,omitempty"`
+	Longitude        *float64 `json:"longitude,omitempty"`
+	SortOrder        int      `json:"sort_order"`
+}
+
+type UpsertCascadeConfigRequest struct {
+	OrganizationID int64    `json:"organization_id" validate:"required"`
+	Latitude       *float64 `json:"latitude,omitempty" validate:"omitempty,gte=-90,lte=90"`
+	Longitude      *float64 `json:"longitude,omitempty" validate:"omitempty,gte=-180,lte=180"`
+	SortOrder      int      `json:"sort_order" validate:"gte=0"`
+}
+
 // --- Daily Data ---
 
 type DailyData struct {

@@ -124,6 +124,108 @@ func (r *Repo) DeleteGESConfig(ctx context.Context, organizationID int64) error 
 	return nil
 }
 
+// --- Cascade Config CRUD ---
+
+// UpsertCascadeConfig inserts or updates a cascade config record.
+func (r *Repo) UpsertCascadeConfig(ctx context.Context, req gesreport.UpsertCascadeConfigRequest) error {
+	const op = "storage.repo.GESReport.UpsertCascadeConfig"
+
+	const query = `
+		INSERT INTO cascade_config (organization_id, latitude, longitude, sort_order)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (organization_id) DO UPDATE SET
+			latitude = EXCLUDED.latitude,
+			longitude = EXCLUDED.longitude,
+			sort_order = EXCLUDED.sort_order,
+			updated_at = NOW()`
+
+	_, err := r.db.ExecContext(ctx, query,
+		req.OrganizationID,
+		req.Latitude,
+		req.Longitude,
+		req.SortOrder,
+	)
+	if err != nil {
+		if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
+			return translatedErr
+		}
+		return fmt.Errorf("%s: %w", op, err)
+	}
+	return nil
+}
+
+// GetAllCascadeConfigs returns all cascade configs with organization names.
+func (r *Repo) GetAllCascadeConfigs(ctx context.Context) ([]gesreport.CascadeConfig, error) {
+	const op = "storage.repo.GESReport.GetAllCascadeConfigs"
+
+	const query = `
+		SELECT
+			cc.id,
+			cc.organization_id,
+			o.name AS organization_name,
+			cc.latitude,
+			cc.longitude,
+			cc.sort_order
+		FROM cascade_config cc
+		JOIN organizations o ON o.id = cc.organization_id
+		ORDER BY cc.sort_order, o.name`
+
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("%s: query: %w", op, err)
+	}
+	defer rows.Close()
+
+	result := make([]gesreport.CascadeConfig, 0)
+	for rows.Next() {
+		var cfg gesreport.CascadeConfig
+		var latitude, longitude sql.NullFloat64
+
+		if err := rows.Scan(
+			&cfg.ID,
+			&cfg.OrganizationID,
+			&cfg.OrganizationName,
+			&latitude,
+			&longitude,
+			&cfg.SortOrder,
+		); err != nil {
+			return nil, fmt.Errorf("%s: scan: %w", op, err)
+		}
+		if latitude.Valid {
+			cfg.Latitude = &latitude.Float64
+		}
+		if longitude.Valid {
+			cfg.Longitude = &longitude.Float64
+		}
+		result = append(result, cfg)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: rows: %w", op, err)
+	}
+	return result, nil
+}
+
+// DeleteCascadeConfig removes a cascade config by organization_id.
+func (r *Repo) DeleteCascadeConfig(ctx context.Context, organizationID int64) error {
+	const op = "storage.repo.GESReport.DeleteCascadeConfig"
+
+	res, err := r.db.ExecContext(ctx, "DELETE FROM cascade_config WHERE organization_id = $1", organizationID)
+	if err != nil {
+		if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
+			return translatedErr
+		}
+		return fmt.Errorf("%s: %w", op, err)
+	}
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("%s: rows affected: %w", op, err)
+	}
+	if rowsAffected == 0 {
+		return storage.ErrNotFound
+	}
+	return nil
+}
+
 // --- GES Daily Data CRUD ---
 
 // UpsertGESDailyData inserts or updates daily operational data.

@@ -539,6 +539,9 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 				r.Delete("/config", gesreporthandler.DeleteConfig(deps.Log, deps.PgRepo))
 				r.Get("/plans", gesreporthandler.GetPlans(deps.Log, deps.PgRepo))
 				r.Post("/plans", gesreporthandler.BulkUpsertPlan(deps.Log, deps.PgRepo))
+				r.Get("/cascade-config", gesreporthandler.GetCascadeConfigs(deps.Log, deps.PgRepo))
+				r.Post("/cascade-config", gesreporthandler.UpsertCascadeConfig(deps.Log, deps.PgRepo))
+				r.Delete("/cascade-config", gesreporthandler.DeleteCascadeConfig(deps.Log, deps.PgRepo))
 			})
 		})
 
