@@ -856,13 +856,10 @@ func (g *Generator) processVisits(
 	loc *time.Location,
 	set func(cell string, value interface{}),
 ) error {
-	// If no visits, remove entire section (title row + header row + template row)
+	// If no visits, delete template row
 	if len(visits) == 0 {
-		titleRow := section.HeaderRow - 1
-		for i := 0; i < 3; i++ {
-			if err := f.RemoveRow(sheet, titleRow); err != nil {
-				return fmt.Errorf("failed to remove visits section row: %w", err)
-			}
+		if err := f.RemoveRow(sheet, section.TemplateRow); err != nil {
+			return fmt.Errorf("failed to remove template row %d: %w", section.TemplateRow, err)
 		}
 		return nil
 	}
