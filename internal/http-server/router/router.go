@@ -152,6 +152,8 @@ import (
 	usersGet "srmt-admin/internal/http-server/handlers/users/get"
 	usersGetById "srmt-admin/internal/http-server/handlers/users/get-by-id"
 	revokeRole "srmt-admin/internal/http-server/handlers/users/revoke-role"
+	infraEventHandler "srmt-admin/internal/http-server/handlers/infra-event"
+	infraEventCategoryHandler "srmt-admin/internal/http-server/handlers/infra-event-category"
 	"srmt-admin/internal/http-server/handlers/visit"
 	weatherProxy "srmt-admin/internal/http-server/handlers/weather/proxy"
 	mwapikey "srmt-admin/internal/http-server/middleware/api-key"
@@ -500,6 +502,18 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Post("/visits", visit.Add(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
 			r.Patch("/visits/{id}", visit.Edit(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
 			r.Delete("/visits/{id}", visit.Delete(deps.Log, deps.PgRepo))
+
+			// Infra Event Categories (CRUD)
+			r.Get("/infra-event-categories", infraEventCategoryHandler.Get(deps.Log, deps.PgRepo))
+			r.Post("/infra-event-categories", infraEventCategoryHandler.Create(deps.Log, deps.PgRepo))
+			r.Patch("/infra-event-categories/{id}", infraEventCategoryHandler.Update(deps.Log, deps.PgRepo))
+			r.Delete("/infra-event-categories/{id}", infraEventCategoryHandler.Delete(deps.Log, deps.PgRepo))
+
+			// Infra Events (CRUD)
+			r.Get("/infra-events", infraEventHandler.Get(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
+			r.Post("/infra-events", infraEventHandler.Create(deps.Log, deps.PgRepo))
+			r.Patch("/infra-events/{id}", infraEventHandler.Update(deps.Log, deps.PgRepo))
+			r.Delete("/infra-events/{id}", infraEventHandler.Delete(deps.Log, deps.PgRepo))
 
 			// SC Export (комплексный суточный отчёт)
 			r.Get("/sc/export", scExport.New(
