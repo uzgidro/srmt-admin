@@ -15,6 +15,8 @@ import (
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/lib/model/discharge"
 	"srmt-admin/internal/lib/model/incident"
+	infraevent "srmt-admin/internal/lib/model/infra-event"
+	infraeventcategory "srmt-admin/internal/lib/model/infra-event-category"
 	reservoirdevicesummary "srmt-admin/internal/lib/model/reservoir-device-summary"
 	"srmt-admin/internal/lib/model/shutdown"
 	"srmt-admin/internal/lib/model/visit"
@@ -62,6 +64,16 @@ type ResDeviceGetter interface {
 	GetReservoirDeviceSummary(ctx context.Context, date *time.Time) ([]*reservoirdevicesummary.ResponseModel, error)
 }
 
+// InfraEventGetter defines the interface for fetching infra event data
+type InfraEventGetter interface {
+	GetInfraEventsByDate(ctx context.Context, day time.Time) ([]*infraevent.ResponseModel, error)
+}
+
+// InfraEventCategoryGetter defines the interface for fetching infra event categories
+type InfraEventCategoryGetter interface {
+	GetInfraEventCategories(ctx context.Context) ([]*infraeventcategory.Model, error)
+}
+
 func shortenName(fullName string) string {
 	parts := strings.Fields(fullName)
 	if len(parts) < 2 {
@@ -81,6 +93,8 @@ func New(
 	visitGetter VisitGetter,
 	incidentGetter IncidentGetter,
 	resDeviceGetter ResDeviceGetter,
+	infraEventGetter InfraEventGetter,
+	infraCategoryGetter InfraEventCategoryGetter,
 	generator *scgen.Generator,
 	loc *time.Location,
 ) http.HandlerFunc {
@@ -188,6 +202,24 @@ func New(
 			return
 		}
 
+		// Fetch infra events for the operational day
+		infraEvents, err := infraEventGetter.GetInfraEventsByDate(r.Context(), startDate)
+		if err != nil {
+			log.Error("failed to fetch infra events", sl.Err(err))
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, resp.InternalServerError("Failed to fetch infra events"))
+			return
+		}
+
+		// Fetch infra event categories
+		infraCategories, err := infraCategoryGetter.GetInfraEventCategories(r.Context())
+		if err != nil {
+			log.Error("failed to fetch infra event categories", sl.Err(err))
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, resp.InternalServerError("Failed to fetch infra event categories"))
+			return
+		}
+
 		// Get author short name from JWT claims
 		var authorShort string
 		if claims, ok := mwauth.ClaimsFromContext(r.Context()); ok {
@@ -195,7 +227,7 @@ func New(
 		}
 
 		// Generate Excel file
-		excelFile, err := generator.GenerateExcel(startDate, endDate, discharges, shutdowns, orgTypesMap, orgParentMap, visits, incidents, resDevices, loc, authorShort)
+		excelFile, err := generator.GenerateExcel(startDate, endDate, discharges, shutdowns, orgTypesMap, orgParentMap, visits, incidents, resDevices, infraEvents, infraCategories, loc, authorShort)
 		if err != nil {
 			log.Error("failed to generate Excel file", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)

@@ -8,6 +8,8 @@ import (
 
 	"srmt-admin/internal/lib/model/discharge"
 	"srmt-admin/internal/lib/model/incident"
+	infraevent "srmt-admin/internal/lib/model/infra-event"
+	infraeventcategory "srmt-admin/internal/lib/model/infra-event-category"
 	reservoirdevicesummary "srmt-admin/internal/lib/model/reservoir-device-summary"
 	"srmt-admin/internal/lib/model/shutdown"
 	"srmt-admin/internal/lib/model/visit"
@@ -44,6 +46,8 @@ func (g *Generator) GenerateExcel(
 	visits []*visit.ResponseModel,
 	incidents []*incident.ResponseModel,
 	resDevices []*reservoirdevicesummary.ResponseModel,
+	infraEvents []*infraevent.ResponseModel,
+	infraCategories []*infraeventcategory.Model,
 	loc *time.Location,
 	authorShortName string,
 ) (*excelize.File, error) {
@@ -177,6 +181,23 @@ func (g *Generator) GenerateExcel(
 		return nil, writeErr
 	}
 
+	// Process infra events section
+	sections, err = g.scanSections(f, sheet)
+	if err != nil {
+		f.Close()
+		return nil, fmt.Errorf("failed to re-scan sections for infra: %w", err)
+	}
+	if sec, ok := sections["infra"]; ok {
+		if err := g.processInfraEvents(f, sheet, sec, infraEvents, infraCategories, loc, set); err != nil {
+			f.Close()
+			return nil, fmt.Errorf("failed to process infra events: %w", err)
+		}
+	}
+	if writeErr != nil {
+		f.Close()
+		return nil, writeErr
+	}
+
 	// Clear column P (tags column)
 	if err := g.clearColumn(f, sheet, "P"); err != nil {
 		f.Close()
@@ -288,7 +309,7 @@ func (g *Generator) scanSections(f *excelize.File, sheet string) (map[string]*Se
 			continue
 		}
 		switch cellValue {
-		case "ges", "mini", "micro", "discharges", "visits", "incidents", "res":
+		case "ges", "mini", "micro", "discharges", "visits", "incidents", "res", "infra":
 			sections[cellValue] = &SectionInfo{
 				Tag:         cellValue,
 				HeaderRow:   rowNum,
@@ -835,10 +856,13 @@ func (g *Generator) processVisits(
 	loc *time.Location,
 	set func(cell string, value interface{}),
 ) error {
-	// If no visits, delete template row
+	// If no visits, remove entire section (title row + header row + template row)
 	if len(visits) == 0 {
-		if err := f.RemoveRow(sheet, section.TemplateRow); err != nil {
-			return fmt.Errorf("failed to remove template row %d: %w", section.TemplateRow, err)
+		titleRow := section.HeaderRow - 1
+		for i := 0; i < 3; i++ {
+			if err := f.RemoveRow(sheet, titleRow); err != nil {
+				return fmt.Errorf("failed to remove visits section row: %w", err)
+			}
 		}
 		return nil
 	}
@@ -937,6 +961,148 @@ func (g *Generator) processIncidents(
 	lastRow := section.TemplateRow + len(incidents) - 1
 	if err := g.applyBottomBorder(f, sheet, lastRow, "A", "O"); err != nil {
 		return fmt.Errorf("failed to apply bottom border: %w", err)
+	}
+
+	return nil
+}
+
+// processInfraEvents fills the infra events section with data grouped by category.
+// The template has a 3-row block: label row (merged A:O) + header row + data template row.
+// This block is duplicated for each category.
+func (g *Generator) processInfraEvents(
+	f *excelize.File,
+	sheet string,
+	section *SectionInfo,
+	events []*infraevent.ResponseModel,
+	categories []*infraeventcategory.Model,
+	loc *time.Location,
+	set func(cell string, value interface{}),
+) error {
+	// section.HeaderRow = label row (with P tag "infra")
+	// section.TemplateRow = column headers row
+	// section.TemplateRow + 1 = data template row
+	labelRow := section.HeaderRow
+	dataTemplateRow := section.TemplateRow + 1
+
+	// Group events by category ID
+	eventsByCategory := make(map[int64][]*infraevent.ResponseModel)
+	for _, e := range events {
+		eventsByCategory[e.CategoryID] = append(eventsByCategory[e.CategoryID], e)
+	}
+
+	// Filter categories to only those with events
+	var activeCategories []*infraeventcategory.Model
+	for _, cat := range categories {
+		if len(eventsByCategory[cat.ID]) > 0 {
+			activeCategories = append(activeCategories, cat)
+		}
+	}
+
+	// If no active categories (no events at all), remove the entire 3-row block
+	if len(activeCategories) == 0 {
+		for i := 0; i < 3; i++ {
+			if err := f.RemoveRow(sheet, labelRow); err != nil {
+				return fmt.Errorf("failed to remove infra block row: %w", err)
+			}
+		}
+		return nil
+	}
+
+	// Duplicate the 3-row block for additional active categories (all except the first).
+	for i := len(activeCategories) - 1; i >= 1; i-- {
+		for row := dataTemplateRow; row >= labelRow; row-- {
+			if err := f.DuplicateRow(sheet, row); err != nil {
+				return fmt.Errorf("failed to duplicate infra block row %d: %w", row, err)
+			}
+		}
+	}
+
+	// Now we have N blocks of 3 rows each, starting from labelRow.
+	// Fill each block (only active categories — all have events).
+	currentRow := labelRow
+	for catIdx, cat := range activeCategories {
+		catLabelRow := currentRow
+		catHeaderRow := currentRow + 1
+		catDataRow := currentRow + 2
+
+		// Set category label in the merged label row
+		set(fmt.Sprintf("A%d", catLabelRow), cat.Label)
+
+		catEvents := eventsByCategory[cat.ID]
+
+		// Sort events by occurred_at
+		slices.SortFunc(catEvents, func(a, b *infraevent.ResponseModel) int {
+			return a.OccurredAt.Compare(b.OccurredAt)
+		})
+
+		// Duplicate data template row for additional events
+		for i := 1; i < len(catEvents); i++ {
+			if err := f.DuplicateRow(sheet, catDataRow); err != nil {
+				return fmt.Errorf("failed to duplicate data row for category %s: %w", cat.Slug, err)
+			}
+		}
+
+		// Fill data rows
+		now := time.Now().In(loc)
+		for i, ev := range catEvents {
+			row := catDataRow + i
+
+			// A: sequential number
+			set(fmt.Sprintf("A%d", row), i+1)
+
+			// B: organization name
+			set(fmt.Sprintf("B%d", row), ev.OrganizationName)
+
+			// C: occurred_at (dd.MM.yyyy HH:mm)
+			set(fmt.Sprintf("C%d", row), ev.OccurredAt.In(loc).Format("02.01.2006 15:04"))
+
+			// D: duration
+			var duration time.Duration
+			if ev.RestoredAt != nil {
+				duration = ev.RestoredAt.Sub(ev.OccurredAt)
+			} else {
+				duration = now.Sub(ev.OccurredAt)
+			}
+			set(fmt.Sprintf("D%d", row), formatDuration(duration))
+
+			// E: restored_at (dd.MM.yyyy HH:mm) or empty
+			if ev.RestoredAt != nil {
+				set(fmt.Sprintf("E%d", row), ev.RestoredAt.In(loc).Format("02.01.2006 15:04"))
+			}
+
+			// F: description (merged F-I)
+			set(fmt.Sprintf("F%d", row), ev.Description)
+
+			// J: remediation (merged J-M)
+			if ev.Remediation != nil {
+				set(fmt.Sprintf("J%d", row), *ev.Remediation)
+			}
+
+			// N: notes (merged N-O)
+			if ev.Notes != nil {
+				set(fmt.Sprintf("N%d", row), *ev.Notes)
+			}
+
+			// Adjust row height for long text
+			maxLen := len([]rune(ev.Description))
+			if ev.Remediation != nil && len([]rune(*ev.Remediation)) > maxLen {
+				maxLen = len([]rune(*ev.Remediation))
+			}
+			if maxLen > 40 {
+				_ = f.SetRowHeight(sheet, row, calcRowHeight(ev.Description, 40))
+			}
+		}
+
+		// Apply bottom border on last data row
+		lastDataRow := catDataRow + len(catEvents) - 1
+		if err := g.applyBottomBorder(f, sheet, lastDataRow, "A", "O"); err != nil {
+			return fmt.Errorf("failed to apply bottom border for category %s: %w", cat.Slug, err)
+		}
+
+		// Next block: label + header + data rows
+		_ = catIdx
+		_ = catHeaderRow
+		currentRow = lastDataRow + 1
 	}
 
 	return nil
