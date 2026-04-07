@@ -513,8 +513,8 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 
 			// Infra Events (CRUD)
 			r.Get("/infra-events", infraEventHandler.Get(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
-			r.Post("/infra-events", infraEventHandler.Create(deps.Log, deps.PgRepo))
-			r.Patch("/infra-events/{id}", infraEventHandler.Update(deps.Log, deps.PgRepo))
+			r.Post("/infra-events", infraEventHandler.Create(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
+			r.Patch("/infra-events/{id}", infraEventHandler.Update(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
 			r.Delete("/infra-events/{id}", infraEventHandler.Delete(deps.Log, deps.PgRepo))
 
 			// SC Export (комплексный суточный отчёт)

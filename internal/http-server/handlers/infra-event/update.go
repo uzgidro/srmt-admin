@@ -3,14 +3,17 @@ package infraevent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
 
+	"srmt-admin/internal/lib/api/formparser"
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/dto"
 	"srmt-admin/internal/lib/logger/sl"
+	"srmt-admin/internal/lib/service/fileupload"
 	"srmt-admin/internal/storage"
 
 	"github.com/go-chi/chi/v5"
@@ -30,13 +33,18 @@ type editRequest struct {
 	FileIDs         []int64 `json:"file_ids,omitempty"`
 }
 
+type editResponse struct {
+	resp.Response
+	UploadedFiles []fileupload.UploadedFileInfo `json:"uploaded_files,omitempty"`
+}
+
 type eventEditor interface {
 	UpdateInfraEvent(ctx context.Context, id int64, req dto.EditInfraEventRequest) error
 	UnlinkInfraEventFiles(ctx context.Context, eventID int64) error
 	LinkInfraEventFiles(ctx context.Context, eventID int64, fileIDs []int64) error
 }
 
-func Update(log *slog.Logger, editor eventEditor) http.HandlerFunc {
+func Update(log *slog.Logger, editor eventEditor, uploader fileupload.FileUploader, saver fileupload.FileMetaSaver, categoryGetter fileupload.CategoryGetter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.infra-event.update"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
@@ -50,10 +58,39 @@ func Update(log *slog.Logger, editor eventEditor) http.HandlerFunc {
 		}
 
 		var req editRequest
-		if err := render.DecodeJSON(r.Body, &req); err != nil {
-			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, resp.BadRequest("Invalid request format"))
-			return
+		var fileIDs []int64
+		var shouldUpdateFiles bool
+		var uploadResult *fileupload.UploadResult
+
+		if formparser.IsMultipartForm(r) {
+			log.Info("processing multipart/form-data request")
+
+			req, uploadResult, err = parseMultipartEditRequest(r, log, uploader, saver, categoryGetter)
+			if err != nil {
+				log.Error("failed to parse multipart request", sl.Err(err))
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest(err.Error()))
+				return
+			}
+
+			if formparser.HasFormField(r, "file_ids") || len(uploadResult.FileIDs) > 0 {
+				shouldUpdateFiles = true
+				existingFileIDs, _ := formparser.GetFormFileIDs(r, "file_ids")
+				fileIDs = append(existingFileIDs, uploadResult.FileIDs...)
+			}
+		} else {
+			log.Info("processing application/json request")
+
+			if err := render.DecodeJSON(r.Body, &req); err != nil {
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest("Invalid request format"))
+				return
+			}
+
+			if req.FileIDs != nil {
+				shouldUpdateFiles = true
+				fileIDs = req.FileIDs
+			}
 		}
 
 		storageReq := dto.EditInfraEventRequest{
@@ -71,6 +108,9 @@ func Update(log *slog.Logger, editor eventEditor) http.HandlerFunc {
 		if req.OccurredAt != nil {
 			t, err := time.Parse(time.RFC3339, *req.OccurredAt)
 			if err != nil {
+				if uploadResult != nil {
+					fileupload.CompensateEntityUpload(r.Context(), log, uploader, saver, uploadResult)
+				}
 				render.Status(r, http.StatusBadRequest)
 				render.JSON(w, r, resp.BadRequest("Invalid 'occurred_at' format, use ISO 8601"))
 				return
@@ -81,6 +121,9 @@ func Update(log *slog.Logger, editor eventEditor) http.HandlerFunc {
 		if req.RestoredAt != nil {
 			t, err := time.Parse(time.RFC3339, *req.RestoredAt)
 			if err != nil {
+				if uploadResult != nil {
+					fileupload.CompensateEntityUpload(r.Context(), log, uploader, saver, uploadResult)
+				}
 				render.Status(r, http.StatusBadRequest)
 				render.JSON(w, r, resp.BadRequest("Invalid 'restored_at' format, use ISO 8601"))
 				return
@@ -90,6 +133,11 @@ func Update(log *slog.Logger, editor eventEditor) http.HandlerFunc {
 
 		err = editor.UpdateInfraEvent(r.Context(), id, storageReq)
 		if err != nil {
+			if uploadResult != nil {
+				log.Warn("event update failed, compensating uploaded files")
+				fileupload.CompensateEntityUpload(r.Context(), log, uploader, saver, uploadResult)
+			}
+
 			if errors.Is(err, storage.ErrNotFound) {
 				render.Status(r, http.StatusNotFound)
 				render.JSON(w, r, resp.NotFound("Event not found"))
@@ -111,19 +159,85 @@ func Update(log *slog.Logger, editor eventEditor) http.HandlerFunc {
 			return
 		}
 
-		// Update files if explicitly provided
-		if req.FileIDs != nil {
+		if shouldUpdateFiles {
 			if err := editor.UnlinkInfraEventFiles(r.Context(), id); err != nil {
 				log.Error("failed to unlink files", sl.Err(err))
 			}
-			if len(req.FileIDs) > 0 {
-				if err := editor.LinkInfraEventFiles(r.Context(), id, req.FileIDs); err != nil {
+			if len(fileIDs) > 0 {
+				if err := editor.LinkInfraEventFiles(r.Context(), id, fileIDs); err != nil {
 					log.Error("failed to link files", sl.Err(err))
 				}
 			}
 		}
 
-		log.Info("infra event updated", slog.Int64("id", id))
-		render.JSON(w, r, resp.OK())
+		log.Info("infra event updated",
+			slog.Int64("id", id),
+			slog.Bool("files_updated", shouldUpdateFiles),
+			slog.Int("total_files", len(fileIDs)),
+		)
+
+		response := editResponse{
+			Response: resp.OK(),
+		}
+		if uploadResult != nil && len(uploadResult.UploadedFiles) > 0 {
+			response.UploadedFiles = uploadResult.UploadedFiles
+		}
+		render.JSON(w, r, response)
 	}
+}
+
+func parseMultipartEditRequest(
+	r *http.Request,
+	log *slog.Logger,
+	uploader fileupload.FileUploader,
+	saver fileupload.FileMetaSaver,
+	categoryGetter fileupload.CategoryGetter,
+) (editRequest, *fileupload.UploadResult, error) {
+	const op = "infraevent.parseMultipartEditRequest"
+
+	categoryID, err := formparser.GetFormInt64(r, "category_id")
+	if err != nil {
+		return editRequest{}, nil, fmt.Errorf("invalid category_id: %w", err)
+	}
+
+	orgID, err := formparser.GetFormInt64(r, "organization_id")
+	if err != nil {
+		return editRequest{}, nil, fmt.Errorf("invalid organization_id: %w", err)
+	}
+
+	occurredAt, err := formparser.GetFormTime(r, "occurred_at", time.RFC3339)
+	if err != nil {
+		return editRequest{}, nil, fmt.Errorf("invalid occurred_at format (use RFC3339): %w", err)
+	}
+
+	restoredAt := formparser.GetFormString(r, "restored_at")
+	description := formparser.GetFormString(r, "description")
+	remediation := formparser.GetFormString(r, "remediation")
+	notes := formparser.GetFormString(r, "notes")
+
+	req := editRequest{
+		CategoryID:     categoryID,
+		OrganizationID: orgID,
+		Description:    description,
+		Remediation:    remediation,
+		Notes:          notes,
+		RestoredAt:     restoredAt,
+	}
+
+	if occurredAt != nil {
+		s := occurredAt.Format(time.RFC3339)
+		req.OccurredAt = &s
+	}
+
+	uploadResult, err := fileupload.ProcessFormFiles(
+		r.Context(), r, log, uploader, saver, categoryGetter,
+		"infra-events", "Инфра события", time.Now(),
+	)
+	if err != nil {
+		return editRequest{}, nil, fmt.Errorf("%s: failed to process file uploads: %w", op, err)
+	}
+
+	log.Info("multipart edit form parsed successfully", slog.Int("uploaded_files", len(uploadResult.FileIDs)))
+
+	return req, uploadResult, nil
 }

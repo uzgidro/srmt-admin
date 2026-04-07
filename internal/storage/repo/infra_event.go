@@ -154,6 +154,9 @@ func (r *Repo) GetInfraEventByID(ctx context.Context, id int64) (*infraevent.Res
 	if err != nil {
 		return nil, fmt.Errorf("%s: load files: %w", op, err)
 	}
+	if files == nil {
+		files = make([]file.Model, 0)
+	}
 	m.Files = files
 
 	return m, nil
@@ -290,7 +293,11 @@ func (r *Repo) queryInfraEvents(ctx context.Context, op, query string, args ...i
 			return nil, fmt.Errorf("%s: load files batch: %w", op, err)
 		}
 		for _, e := range events {
-			e.Files = filesMap[e.ID]
+			if files, ok := filesMap[e.ID]; ok {
+				e.Files = files
+			} else {
+				e.Files = make([]file.Model, 0)
+			}
 		}
 	}
 

@@ -21,7 +21,7 @@ type ResponseModel struct {
 	Notes            *string         `json:"notes,omitempty"`
 	CreatedAt        time.Time       `json:"created_at"`
 	CreatedByUser    *user.ShortInfo `json:"created_by"`
-	Files            []file.Model    `json:"files,omitempty"`
+	Files            []file.Model    `json:"files"`
 }
 
 type ResponseWithURLs struct {
@@ -38,5 +38,5 @@ type ResponseWithURLs struct {
 	Notes            *string            `json:"notes,omitempty"`
 	CreatedAt        time.Time          `json:"created_at"`
 	CreatedByUser    *user.ShortInfo    `json:"created_by"`
-	Files            []dto.FileResponse `json:"files,omitempty"`
+	Files            []dto.FileResponse `json:"files"`
 }
