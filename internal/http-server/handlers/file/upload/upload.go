@@ -32,8 +32,13 @@ type FileMetaSaver interface {
 	GetCategoryByID(ctx context.Context, id int64) (category.Model, error)
 }
 
+type uploadedFile struct {
+	ID       int64  `json:"id"`
+	FileName string `json:"file_name"`
+}
+
 // New создает новый HTTP-хендлер для загрузки файлов.
-// bucketName - это название бакета в MinIO, куда будут загружаться файлы.
+// Поддерживает один файл (поле "file") или несколько (поле "files").
 func New(log *slog.Logger, uploader FileUploader, saver FileMetaSaver, parserURL, apiKey string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.file.upload.New"
@@ -42,7 +47,7 @@ func New(log *slog.Logger, uploader FileUploader, saver FileMetaSaver, parserURL
 			slog.String("request_id", middleware.GetReqID(r.Context())),
 		)
 
-		// 1. Устанавливаем лимит на размер тела запроса (например, 50 MB) и парсим форму.
+		// 1. Устанавливаем лимит на размер тела запроса (50 MB) и парсим форму.
 		const maxUploadSize = 50 * 1024 * 1024
 		r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
 		if err := r.ParseMultipartForm(maxUploadSize); err != nil {
@@ -52,17 +57,7 @@ func New(log *slog.Logger, uploader FileUploader, saver FileMetaSaver, parserURL
 			return
 		}
 
-		// 2. Получаем файл из формы по ключу "file".
-		formFile, handler, err := r.FormFile("file")
-		if err != nil {
-			log.Error("failed to get file from form", sl.Err(err))
-			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, resp.BadRequest("Form field 'file' is required"))
-			return
-		}
-		defer formFile.Close()
-
-		// 3. Получаем ID категории из формы.
+		// 2. Получаем ID категории из формы.
 		categoryIDStr := r.FormValue("category_id")
 		categoryID, err := strconv.ParseInt(categoryIDStr, 10, 64)
 		if err != nil {
@@ -77,17 +72,15 @@ func New(log *slog.Logger, uploader FileUploader, saver FileMetaSaver, parserURL
 			log.Warn("failed to get category", sl.Err(err))
 			render.Status(r, http.StatusBadRequest)
 			render.JSON(w, r, resp.BadRequest("Incorrect category"))
+			return
 		}
 
+		// 3. Парсим дату.
 		var fileDate time.Time
-		dateStr := r.FormValue("date") // Ожидаем формат "YYYY-MM-DD"
-
+		dateStr := r.FormValue("date")
 		if dateStr == "" {
-			// Если дата не предоставлена, используем текущую.
 			fileDate = time.Now()
-			log.Info("date not provided, using current date")
 		} else {
-			// Если дата предоставлена, парсим ее.
 			parsedDate, err := time.Parse("2006-01-02", dateStr)
 			if err != nil {
 				log.Error("invalid date format", sl.Err(err), slog.String("date_value", dateStr))
@@ -96,111 +89,179 @@ func New(log *slog.Logger, uploader FileUploader, saver FileMetaSaver, parserURL
 				return
 			}
 			fileDate = parsedDate
-			log.Info("using provided date", slog.String("date", dateStr))
 		}
 
-		// 4. Генерируем уникальное имя для объекта в MinIO, чтобы избежать конфликтов.
-		// Формат: <category>/<date>/<uuid>.<ext>
+		// 4. Собираем файлы — поддерживаем "file" (один) и "files" (несколько).
+		var fileHeaders []*multipart.FileHeader
+		if r.MultipartForm != nil {
+			if fh, ok := r.MultipartForm.File["files"]; ok {
+				fileHeaders = append(fileHeaders, fh...)
+			}
+			if fh, ok := r.MultipartForm.File["file"]; ok {
+				fileHeaders = append(fileHeaders, fh...)
+			}
+		}
+
+		if len(fileHeaders) == 0 {
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, resp.BadRequest("Form field 'file' or 'files' is required"))
+			return
+		}
+
+		// 5. Загружаем каждый файл.
 		datePrefix := fileDate.Format("2006/01/02")
-		objectKey := fmt.Sprintf("%s/%s/%s%s",
-			cat.DisplayName,
-			datePrefix,
-			uuid.New().String(),
-			filepath.Ext(handler.Filename),
-		)
+		var uploaded []uploadedFile
+		var uploadedObjectKeys []string
 
-		// 5. Загружаем файл в MinIO.
-		// Это первая часть нашей "транзакции".
-		err = uploader.UploadFile(r.Context(), objectKey, formFile, handler.Size, handler.Header.Get("Content-Type"))
-		if err != nil {
-			log.Error("failed to upload file to storage", sl.Err(err))
-			render.Status(r, http.StatusInternalServerError)
-			render.JSON(w, r, resp.InternalServerError("Could not upload file to storage"))
-			return
-		}
-
-		// 6. Если загрузка в MinIO прошла успешно, сохраняем метаданные в PostgreSQL.
-		fileModel := file.Model{
-			FileName:   handler.Filename,
-			ObjectKey:  objectKey,
-			CategoryID: categoryID,
-			MimeType:   handler.Header.Get("Content-Type"),
-			SizeBytes:  handler.Size,
-			CreatedAt:  time.Now(),
-			TargetDate: fileDate,
-		}
-
-		fileID, err := saver.AddFile(r.Context(), fileModel)
-		if err != nil {
-			log.Error("failed to save file metadata to database", sl.Err(err))
-			if delErr := uploader.DeleteFile(r.Context(), objectKey); delErr != nil {
-				log.Error("COMPENSATION FAILED: could not delete orphaned file from storage",
-					sl.Err(delErr),
-					slog.String("object_key", objectKey),
-				)
-			} else {
-				log.Info("compensation successful: orphaned file deleted from storage", slog.String("object_key", objectKey))
+		for _, fh := range fileHeaders {
+			f, err := fh.Open()
+			if err != nil {
+				log.Error("failed to open file", sl.Err(err), slog.String("filename", fh.Filename))
+				compensateUploads(r.Context(), log, uploader, saver, uploaded, uploadedObjectKeys)
+				render.Status(r, http.StatusInternalServerError)
+				render.JSON(w, r, resp.InternalServerError("Failed to open uploaded file"))
+				return
 			}
 
-			render.Status(r, http.StatusInternalServerError)
-			render.JSON(w, r, resp.InternalServerError("Could not save file metadata"))
-			return
+			objectKey := fmt.Sprintf("%s/%s/%s%s",
+				cat.DisplayName,
+				datePrefix,
+				uuid.New().String(),
+				filepath.Ext(fh.Filename),
+			)
+
+			err = uploader.UploadFile(r.Context(), objectKey, f, fh.Size, fh.Header.Get("Content-Type"))
+			f.Close()
+			if err != nil {
+				log.Error("failed to upload file to storage", sl.Err(err), slog.String("filename", fh.Filename))
+				compensateUploads(r.Context(), log, uploader, saver, uploaded, uploadedObjectKeys)
+				render.Status(r, http.StatusInternalServerError)
+				render.JSON(w, r, resp.InternalServerError("Could not upload file to storage"))
+				return
+			}
+			uploadedObjectKeys = append(uploadedObjectKeys, objectKey)
+
+			fileModel := file.Model{
+				FileName:   fh.Filename,
+				ObjectKey:  objectKey,
+				CategoryID: categoryID,
+				MimeType:   fh.Header.Get("Content-Type"),
+				SizeBytes:  fh.Size,
+				CreatedAt:  time.Now(),
+				TargetDate: fileDate,
+			}
+
+			fileID, err := saver.AddFile(r.Context(), fileModel)
+			if err != nil {
+				log.Error("failed to save file metadata", sl.Err(err), slog.String("filename", fh.Filename))
+				compensateUploads(r.Context(), log, uploader, saver, uploaded, uploadedObjectKeys)
+				render.Status(r, http.StatusInternalServerError)
+				render.JSON(w, r, resp.InternalServerError("Could not save file metadata"))
+				return
+			}
+
+			uploaded = append(uploaded, uploadedFile{ID: fileID, FileName: fh.Filename})
+			log.Info("file uploaded", slog.Int64("id", fileID), slog.String("object_key", objectKey))
 		}
 
-		log.Info("file uploaded successfully", slog.Int64("id", fileID), slog.String("object_key", objectKey))
+		// 6. Production parser — только для одного файла через "file".
+		if cat.Name == "production" && len(fileHeaders) == 1 {
+			sendToParser(r, log, fileHeaders[0], parserURL, apiKey)
+		}
 
-		// 7. Если категория "production", отправляем файл в prime-parser
-		if cat.Name == "production" {
-			// Сбрасываем указатель чтения в начало, так как файл уже был прочитан при загрузке в MinIO
-			if _, err := formFile.Seek(0, 0); err != nil {
-				log.Error("failed to seek file for parser upload", sl.Err(err))
-			} else {
-				body := &bytes.Buffer{}
-				writer := multipart.NewWriter(body)
-				part, err := writer.CreateFormFile("file", handler.Filename)
-				if err != nil {
-					log.Error("failed to create multipart writer", sl.Err(err))
-				} else {
-					if _, err := io.Copy(part, formFile); err != nil {
-						log.Error("failed to copy file to multipart writer", sl.Err(err))
-					} else {
-						writer.Close()
+		// 7. Ответ.
+		log.Info("upload complete", slog.Int("count", len(uploaded)))
 
-						req, err := http.NewRequestWithContext(r.Context(), "POST", parserURL, body)
-						if err != nil {
-							log.Error("failed to create request for parser", sl.Err(err))
-						} else {
-							req.Header.Set("Content-Type", writer.FormDataContentType())
-							req.Header.Set("X-API-Key", apiKey)
-
-							client := &http.Client{Timeout: 30 * time.Second}
-							respParser, err := client.Do(req)
-							if err != nil {
-								log.Error("failed to send file to parser", sl.Err(err))
-							} else {
-								defer respParser.Body.Close()
-								if respParser.StatusCode != http.StatusAccepted {
-									log.Warn("parser returned unexpected status",
-										slog.Int("status", respParser.StatusCode),
-										slog.String("parser_url", parserURL),
-									)
-								} else {
-									log.Info("file successfully sent to parser", slog.String("parser_url", parserURL))
-								}
-							}
-						}
-					}
-				}
-			}
+		// Обратная совместимость: если один файл — вернуть id на верхнем уровне
+		if len(uploaded) == 1 {
+			render.Status(r, http.StatusCreated)
+			render.JSON(w, r, struct {
+				resp.Response
+				ID       int64          `json:"id"`
+				Uploaded []uploadedFile `json:"uploaded_files,omitempty"`
+			}{
+				Response: resp.Created(),
+				ID:       uploaded[0].ID,
+				Uploaded: uploaded,
+			})
+			return
 		}
 
 		render.Status(r, http.StatusCreated)
 		render.JSON(w, r, struct {
 			resp.Response
-			ID int64 `json:"id"`
+			IDs      []int64        `json:"ids"`
+			Uploaded []uploadedFile `json:"uploaded_files"`
 		}{
 			Response: resp.Created(),
-			ID:       fileID,
+			IDs:      extractIDs(uploaded),
+			Uploaded: uploaded,
 		})
+	}
+}
+
+func extractIDs(files []uploadedFile) []int64 {
+	ids := make([]int64, len(files))
+	for i, f := range files {
+		ids[i] = f.ID
+	}
+	return ids
+}
+
+// compensateUploads удаляет уже загруженные файлы при ошибке.
+func compensateUploads(ctx context.Context, log *slog.Logger, uploader FileUploader, saver FileMetaSaver, uploaded []uploadedFile, objectKeys []string) {
+	for _, key := range objectKeys {
+		if err := uploader.DeleteFile(ctx, key); err != nil {
+			log.Error("compensation: failed to delete file from storage", sl.Err(err), slog.String("object_key", key))
+		}
+	}
+	// Метаданные в БД удалятся каскадно или останутся осиротевшими — логируем
+	if len(uploaded) > 0 {
+		log.Warn("compensation: orphaned file metadata may remain in DB", slog.Int("count", len(uploaded)))
+	}
+}
+
+// sendToParser отправляет файл в prime-parser (для категории production).
+func sendToParser(r *http.Request, log *slog.Logger, fh *multipart.FileHeader, parserURL, apiKey string) {
+	f, err := fh.Open()
+	if err != nil {
+		log.Error("failed to open file for parser", sl.Err(err))
+		return
+	}
+	defer f.Close()
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, err := writer.CreateFormFile("file", fh.Filename)
+	if err != nil {
+		log.Error("failed to create multipart writer for parser", sl.Err(err))
+		return
+	}
+	if _, err := io.Copy(part, f); err != nil {
+		log.Error("failed to copy file for parser", sl.Err(err))
+		return
+	}
+	writer.Close()
+
+	req, err := http.NewRequestWithContext(r.Context(), "POST", parserURL, body)
+	if err != nil {
+		log.Error("failed to create parser request", sl.Err(err))
+		return
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("X-API-Key", apiKey)
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	respParser, err := client.Do(req)
+	if err != nil {
+		log.Error("failed to send file to parser", sl.Err(err))
+		return
+	}
+	defer respParser.Body.Close()
+
+	if respParser.StatusCode != http.StatusAccepted {
+		log.Warn("parser returned unexpected status", slog.Int("status", respParser.StatusCode))
+	} else {
+		log.Info("file sent to parser successfully")
 	}
 }
