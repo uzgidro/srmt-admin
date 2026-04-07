@@ -194,6 +194,13 @@ func New(log *slog.Logger, uploader FileUploader, saver FileMetaSaver, parserURL
 			}
 		}
 
-		render.JSON(w, r, resp.Created())
+		render.Status(r, http.StatusCreated)
+		render.JSON(w, r, struct {
+			resp.Response
+			ID int64 `json:"id"`
+		}{
+			Response: resp.Created(),
+			ID:       fileID,
+		})
 	}
 }

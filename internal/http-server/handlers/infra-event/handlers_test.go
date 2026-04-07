@@ -188,7 +188,7 @@ func TestCreateEvent_Success(t *testing.T) {
 			return 42, nil
 		},
 	}
-	handler := Create(testLogger(), adder, nil, nil, nil)
+	handler := Create(testLogger(), adder)
 
 	body, _ := json.Marshal(addRequest{
 		CategoryID:     1,
@@ -223,7 +223,7 @@ func TestCreateEvent_InvalidCategory(t *testing.T) {
 			return 0, storage.ErrForeignKeyViolation
 		},
 	}
-	handler := Create(testLogger(), adder, nil, nil, nil)
+	handler := Create(testLogger(), adder)
 
 	body, _ := json.Marshal(addRequest{
 		CategoryID:     9999,
@@ -246,7 +246,7 @@ func TestCreateEvent_InvalidCategory(t *testing.T) {
 
 func TestCreateEvent_Unauthorized(t *testing.T) {
 	adder := &mockEventAdder{}
-	handler := Create(testLogger(), adder, nil, nil, nil)
+	handler := Create(testLogger(), adder)
 
 	body, _ := json.Marshal(addRequest{
 		CategoryID:     1,
@@ -271,7 +271,7 @@ func TestCreateEvent_Unauthorized(t *testing.T) {
 
 func TestUpdateEvent_Success(t *testing.T) {
 	editor := &mockEventEditor{}
-	handler := Update(testLogger(), editor, nil, nil, nil)
+	handler := Update(testLogger(), editor)
 
 	desc := "Updated description"
 	body, _ := json.Marshal(editRequest{Description: &desc})
@@ -296,7 +296,7 @@ func TestUpdateEvent_NotFound(t *testing.T) {
 			return storage.ErrNotFound
 		},
 	}
-	handler := Update(testLogger(), editor, nil, nil, nil)
+	handler := Update(testLogger(), editor)
 
 	desc := "Updated"
 	body, _ := json.Marshal(editRequest{Description: &desc})
