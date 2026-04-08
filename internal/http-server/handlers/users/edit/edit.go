@@ -32,6 +32,7 @@ type Request struct {
 	Password *string `json:"password,omitempty" validate:"omitempty,min=8"`
 	IsActive *bool   `json:"is_active,omitempty"`
 	RoleIDs  []int64 `json:"role_ids,omitempty"`
+	IconID   *int64  `json:"icon_id,omitempty"`
 }
 
 type FileUploader interface {
@@ -255,7 +256,10 @@ func New(log *slog.Logger, updater UserUpdater, uploader FileUploader, fileSaver
 			log.Info("user roles replaced", slog.Int64("user_id", id), slog.Int("role_count", len(req.RoleIDs)))
 		}
 
-		// 8. Update contact icon if uploaded
+		// 8. Update contact icon if uploaded (multipart) or provided via JSON
+		if iconID == nil && req.IconID != nil {
+			iconID = req.IconID
+		}
 		if iconID != nil {
 			// Get user to find contact_id
 			userModel, err := updater.GetUserByID(r.Context(), id)

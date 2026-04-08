@@ -35,6 +35,7 @@ type newContactRequest struct {
 	OrganizationID  *int64     `json:"organization_id,omitempty"`
 	DepartmentID    *int64     `json:"department_id,omitempty"`
 	PositionID      *int64     `json:"position_id,omitempty"`
+	IconID          *int64     `json:"icon_id,omitempty"`
 }
 
 // Request - DTO хендлера (гибридный)
@@ -329,6 +330,12 @@ func New(log *slog.Logger, userRepo UserLinker, uploader FileUploader, fileSaver
 			//  Для транзакционности нужен был бы *третий* метод репозитория: `AddUserWithNewContact`)
 		} else if req.Contact != nil {
 			// 1. Создаем контакт
+			// For multipart, iconID comes from file upload; for JSON, from the nested contact field
+			contactIconID := iconID
+			if contactIconID == nil {
+				contactIconID = req.Contact.IconID
+			}
+
 			storageReq := dto.AddContactRequest{
 				Name:            req.Contact.Name,
 				Email:           req.Contact.Email,
@@ -336,7 +343,7 @@ func New(log *slog.Logger, userRepo UserLinker, uploader FileUploader, fileSaver
 				IPPhone:         req.Contact.IPPhone,
 				DOB:             req.Contact.DOB,
 				ExternalOrgName: req.Contact.ExternalOrgName,
-				IconID:          iconID,
+				IconID:          contactIconID,
 				OrganizationID:  req.Contact.OrganizationID,
 				DepartmentID:    req.Contact.DepartmentID,
 				PositionID:      req.Contact.PositionID,

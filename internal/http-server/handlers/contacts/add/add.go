@@ -32,6 +32,7 @@ type Request struct {
 	IPPhone         *string    `json:"ip_phone,omitempty"`
 	DOB             *time.Time `json:"dob,omitempty"`
 	ExternalOrgName *string    `json:"external_organization_name,omitempty"`
+	IconID          *int64     `json:"icon_id,omitempty"`
 	OrganizationID  *int64     `json:"organization_id,omitempty"`
 	DepartmentID    *int64     `json:"department_id,omitempty"`
 	PositionID      *int64     `json:"position_id,omitempty"`
@@ -201,6 +202,7 @@ func New(log *slog.Logger, adder ContactAdder, uploader FileUploader, fileSaver 
 				render.JSON(w, r, resp.BadRequest("Invalid request format"))
 				return
 			}
+			iconID = req.IconID
 		}
 
 		if err := validator.New().Struct(req); err != nil {
