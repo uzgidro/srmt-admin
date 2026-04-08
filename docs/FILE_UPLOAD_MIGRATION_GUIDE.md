@@ -11,7 +11,7 @@ Multipart пока работает (обратная совместимость
 
 ## Шаг 1: Загрузка файлов
 
-### `POST /api/v3/upload/files`
+### `POST /upload/files`
 
 Загружает один или несколько файлов. Возвращает их ID.
 
@@ -66,7 +66,7 @@ Multipart пока работает (обратная совместимость
 
 #### Сбросы (Discharges)
 
-**POST /api/v3/discharges**
+**POST /discharges**
 ```json
 {
   "organization_id": 1,
@@ -77,7 +77,7 @@ Multipart пока работает (обратная совместимость
 }
 ```
 
-**PATCH /api/v3/discharges/{id}**
+**PATCH /discharges/{id}**
 ```json
 {
   "reason": "Обновлённая причина",
@@ -88,7 +88,7 @@ Multipart пока работает (обратная совместимость
 
 #### Аварийные отключения (Shutdowns)
 
-**POST /api/v3/shutdowns**
+**POST /shutdowns**
 ```json
 {
   "organization_id": 1,
@@ -99,7 +99,7 @@ Multipart пока работает (обратная совместимость
 }
 ```
 
-**PATCH /api/v3/shutdowns/{id}**
+**PATCH /shutdowns/{id}**
 ```json
 {
   "end_time": "2026-04-08T13:00:00+05:00",
@@ -109,7 +109,7 @@ Multipart пока работает (обратная совместимость
 
 #### Инциденты (Incidents)
 
-**POST /api/v3/incidents**
+**POST /incidents**
 ```json
 {
   "organization_id": 1,
@@ -119,7 +119,7 @@ Multipart пока работает (обратная совместимость
 }
 ```
 
-**PATCH /api/v3/incidents/{id}**
+**PATCH /incidents/{id}**
 ```json
 {
   "description": "Обновлённое описание",
@@ -129,7 +129,7 @@ Multipart пока работает (обратная совместимость
 
 #### Визиты (Visits)
 
-**POST /api/v3/visits**
+**POST /visits**
 ```json
 {
   "organization_id": 1,
@@ -140,7 +140,7 @@ Multipart пока работает (обратная совместимость
 }
 ```
 
-**PATCH /api/v3/visits/{id}**
+**PATCH /visits/{id}**
 ```json
 {
   "description": "Обновлено",
@@ -154,7 +154,7 @@ Multipart пока работает (обратная совместимость
 
 **Только JSON** (multipart не поддерживается).
 
-**POST /api/v3/infra-events**
+**POST /infra-events**
 ```json
 {
   "category_id": 1,
@@ -166,7 +166,7 @@ Multipart пока работает (обратная совместимость
 }
 ```
 
-**PATCH /api/v3/infra-events/{id}**
+**PATCH /infra-events/{id}**
 ```json
 {
   "restored_at": "2026-04-08T13:00:00+05:00",
@@ -187,7 +187,7 @@ Multipart пока работает (обратная совместимость
 
 Все эндпоинты уже поддерживают `file_ids` в JSON. Паттерн одинаковый.
 
-**POST /api/v3/reports** (аналогично для `/letters`, `/instructions`, `/legal-documents`, `/decrees`, `/investments`)
+**POST /reports** (аналогично для `/letters`, `/instructions`, `/legal-documents`, `/decrees`, `/investments`)
 ```json
 {
   "name": "Рапорт №123",
@@ -199,7 +199,7 @@ Multipart пока работает (обратная совместимость
 }
 ```
 
-**PATCH /api/v3/reports/{id}**
+**PATCH /reports/{id}**
 ```json
 {
   "description": "Обновлено",
@@ -211,7 +211,7 @@ Multipart пока работает (обратная совместимость
 
 ### Мероприятия (Events)
 
-**POST /api/v3/events**
+**POST /events**
 ```json
 {
   "name": "Совещание",
@@ -222,7 +222,7 @@ Multipart пока работает (обратная совместимость
 }
 ```
 
-**PATCH /api/v3/events/{id}**
+**PATCH /events/{id}**
 ```json
 {
   "description": "Обновлено",
@@ -238,7 +238,7 @@ Multipart пока работает (обратная совместимость
 
 #### Контакты
 
-**POST /api/v3/contacts**
+**POST /contacts**
 ```json
 {
   "name": "Иванов Иван",
@@ -248,7 +248,7 @@ Multipart пока работает (обратная совместимость
 }
 ```
 
-**PATCH /api/v3/contacts/{id}**
+**PATCH /contacts/{id}**
 ```json
 {
   "phone": "+998907654321",
@@ -258,7 +258,7 @@ Multipart пока работает (обратная совместимость
 
 #### Пользователи
 
-**POST /api/v3/users** (с новым контактом)
+**POST /users** (с новым контактом)
 ```json
 {
   "login": "ivanov",
@@ -272,7 +272,7 @@ Multipart пока работает (обратная совместимость
 }
 ```
 
-**POST /api/v3/users** (с существующим контактом)
+**POST /users** (с существующим контактом)
 ```json
 {
   "login": "ivanov",
@@ -282,7 +282,7 @@ Multipart пока работает (обратная совместимость
 }
 ```
 
-**PATCH /api/v3/users/{id}**
+**PATCH /users/{id}**
 ```json
 {
   "password": "newpass456",
@@ -312,7 +312,7 @@ Multipart пока работает (обратная совместимость
 При загрузке через `POST /upload/files` нужно указать `category_id`. Список категорий:
 
 ```
-GET /api/v3/files/categories
+GET /files/categories
 ```
 
 ---

@@ -32,6 +32,9 @@ type FileMetaSaver interface {
 	GetCategoryByID(ctx context.Context, id int64) (category.Model, error)
 }
 
+
+const defaultCategoryID = 1 // "other" category fallback
+
 type uploadedFile struct {
 	ID       int64  `json:"id"`
 	FileName string `json:"file_name"`
@@ -57,22 +60,35 @@ func New(log *slog.Logger, uploader FileUploader, saver FileMetaSaver, parserURL
 			return
 		}
 
-		// 2. Получаем ID категории из формы.
+		// 2. Получаем категорию из формы. Если не указана — используем "other" (ID=1 по умолчанию).
+		var cat category.Model
 		categoryIDStr := r.FormValue("category_id")
-		categoryID, err := strconv.ParseInt(categoryIDStr, 10, 64)
-		if err != nil {
-			log.Error("invalid category_id", sl.Err(err), slog.String("value", categoryIDStr))
-			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, resp.BadRequest("Invalid or missing form field 'category_id'"))
-			return
-		}
 
-		cat, err := saver.GetCategoryByID(r.Context(), categoryID)
-		if err != nil {
-			log.Warn("failed to get category", sl.Err(err))
-			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, resp.BadRequest("Incorrect category"))
-			return
+		if categoryIDStr != "" {
+			categoryID, err := strconv.ParseInt(categoryIDStr, 10, 64)
+			if err != nil {
+				log.Error("invalid category_id", sl.Err(err), slog.String("value", categoryIDStr))
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest("Invalid form field 'category_id'"))
+				return
+			}
+			cat, err = saver.GetCategoryByID(r.Context(), categoryID)
+			if err != nil {
+				log.Warn("failed to get category by id", sl.Err(err))
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest("Category not found"))
+				return
+			}
+		} else {
+			// Категория по умолчанию
+			var err error
+			cat, err = saver.GetCategoryByID(r.Context(), defaultCategoryID)
+			if err != nil {
+				log.Error("failed to get default category", sl.Err(err))
+				render.Status(r, http.StatusInternalServerError)
+				render.JSON(w, r, resp.InternalServerError("Failed to resolve default file category"))
+				return
+			}
 		}
 
 		// 3. Парсим дату.
@@ -144,7 +160,7 @@ func New(log *slog.Logger, uploader FileUploader, saver FileMetaSaver, parserURL
 			fileModel := file.Model{
 				FileName:   fh.Filename,
 				ObjectKey:  objectKey,
-				CategoryID: categoryID,
+				CategoryID: cat.ID,
 				MimeType:   fh.Header.Get("Content-Type"),
 				SizeBytes:  fh.Size,
 				CreatedAt:  time.Now(),
