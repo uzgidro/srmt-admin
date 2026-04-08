@@ -3,15 +3,12 @@ package visit
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
-	"srmt-admin/internal/lib/api/formparser"
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/dto"
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/lib/service/auth"
-	"srmt-admin/internal/lib/service/fileupload"
 	"srmt-admin/internal/storage"
 	"time"
 
@@ -30,8 +27,7 @@ type addRequest struct {
 
 type addResponse struct {
 	resp.Response
-	ID            int64                         `json:"id"`
-	UploadedFiles []fileupload.UploadedFileInfo `json:"uploaded_files,omitempty"`
+	ID int64 `json:"id"`
 }
 
 type visitAdder interface {
@@ -39,7 +35,7 @@ type visitAdder interface {
 	LinkVisitFiles(ctx context.Context, visitID int64, fileIDs []int64) error
 }
 
-func Add(log *slog.Logger, adder visitAdder, uploader fileupload.FileUploader, saver fileupload.FileMetaSaver, categoryGetter fileupload.CategoryGetter) http.HandlerFunc {
+func Add(log *slog.Logger, adder visitAdder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.visit.add.New"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
@@ -53,48 +49,11 @@ func Add(log *slog.Logger, adder visitAdder, uploader fileupload.FileUploader, s
 		}
 
 		var req addRequest
-		var fileIDs []int64
-		var uploadResult *fileupload.UploadResult
-		var visitDate time.Time
-
-		// Check content type and parse accordingly
-		if formparser.IsMultipartForm(r) {
-			log.Info("processing multipart/form-data request")
-
-			// Parse request from multipart form
-			req, visitDate, uploadResult, err = parseMultipartAddRequest(r, log, uploader, saver, categoryGetter)
-			if err != nil {
-				log.Error("failed to parse multipart request", sl.Err(err))
-				render.Status(r, http.StatusBadRequest)
-				render.JSON(w, r, resp.BadRequest(err.Error()))
-				return
-			}
-
-			// Combine uploaded files + existing file IDs
-			existingFileIDs, _ := formparser.GetFormFileIDs(r, "file_ids")
-			fileIDs = append(existingFileIDs, uploadResult.FileIDs...)
-
-		} else {
-			log.Info("processing application/json request")
-
-			// Parse JSON (current behavior)
-			if err := render.DecodeJSON(r.Body, &req); err != nil {
-				log.Error("failed to decode request", sl.Err(err))
-				render.Status(r, http.StatusBadRequest)
-				render.JSON(w, r, resp.BadRequest("Invalid request format"))
-				return
-			}
-
-			// Parse visit_date for JSON request
-			visitDate, err = time.Parse(time.RFC3339, req.VisitDate)
-			if err != nil {
-				log.Warn("invalid visit_date format", sl.Err(err))
-				render.Status(r, http.StatusBadRequest)
-				render.JSON(w, r, resp.BadRequest("Invalid 'visit_date' format, use ISO 8601 (e.g., 2024-01-15T10:30:00Z)"))
-				return
-			}
-
-			fileIDs = req.FileIDs
+		if err := render.DecodeJSON(r.Body, &req); err != nil {
+			log.Error("failed to decode request", sl.Err(err))
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, resp.BadRequest("Invalid request format"))
+			return
 		}
 
 		// Validate request
@@ -102,14 +61,17 @@ func Add(log *slog.Logger, adder visitAdder, uploader fileupload.FileUploader, s
 			var vErrs validator.ValidationErrors
 			errors.As(err, &vErrs)
 			log.Error("validation failed", sl.Err(err))
-
-			// Cleanup uploaded files if validation fails
-			if uploadResult != nil {
-				fileupload.CompensateEntityUpload(r.Context(), log, uploader, saver, uploadResult)
-			}
-
 			render.Status(r, http.StatusBadRequest)
 			render.JSON(w, r, resp.ValidationErrors(vErrs))
+			return
+		}
+
+		// Parse visit_date
+		visitDate, err := time.Parse(time.RFC3339, req.VisitDate)
+		if err != nil {
+			log.Warn("invalid visit_date format", sl.Err(err))
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, resp.BadRequest("Invalid 'visit_date' format, use ISO 8601 (e.g., 2024-01-15T10:30:00Z)"))
 			return
 		}
 
@@ -121,12 +83,6 @@ func Add(log *slog.Logger, adder visitAdder, uploader fileupload.FileUploader, s
 			CreatedByUserID: userID,
 		})
 		if err != nil {
-			// Cleanup uploaded files if visit creation fails
-			if uploadResult != nil {
-				log.Warn("visit creation failed, compensating uploaded files")
-				fileupload.CompensateEntityUpload(r.Context(), log, uploader, saver, uploadResult)
-			}
-
 			if errors.Is(err, storage.ErrForeignKeyViolation) {
 				log.Warn("organization not found", "org_id", req.OrganizationID)
 				render.Status(r, http.StatusBadRequest)
@@ -140,96 +96,22 @@ func Add(log *slog.Logger, adder visitAdder, uploader fileupload.FileUploader, s
 		}
 
 		// Link files if provided
-		if len(fileIDs) > 0 {
-			if err := adder.LinkVisitFiles(r.Context(), id, fileIDs); err != nil {
+		if len(req.FileIDs) > 0 {
+			if err := adder.LinkVisitFiles(r.Context(), id, req.FileIDs); err != nil {
 				log.Error("failed to link files", sl.Err(err))
 				// Don't fail the request, just log the error
 			}
 		}
 
-		uploadedFilesCount := 0
-		if uploadResult != nil {
-			uploadedFilesCount = len(uploadResult.FileIDs)
-		}
 		log.Info("visit added successfully",
 			slog.Int64("id", id),
-			slog.Int("total_files", len(fileIDs)),
-			slog.Int("uploaded_files", uploadedFilesCount),
+			slog.Int("files", len(req.FileIDs)),
 		)
 
 		render.Status(r, http.StatusCreated)
-		response := addResponse{
+		render.JSON(w, r, addResponse{
 			Response: resp.OK(),
 			ID:       id,
-		}
-		if uploadResult != nil && len(uploadResult.UploadedFiles) > 0 {
-			response.UploadedFiles = uploadResult.UploadedFiles
-		}
-		render.JSON(w, r, response)
+		})
 	}
-}
-
-// parseMultipartAddRequest parses visit data from multipart form and handles file uploads
-func parseMultipartAddRequest(
-	r *http.Request,
-	log *slog.Logger,
-	uploader fileupload.FileUploader,
-	saver fileupload.FileMetaSaver,
-	categoryGetter fileupload.CategoryGetter,
-) (addRequest, time.Time, *fileupload.UploadResult, error) {
-	const op = "visit.parseMultipartAddRequest"
-
-	// Parse organization_id (required)
-	orgID, err := formparser.GetFormInt64Required(r, "organization_id")
-	if err != nil {
-		return addRequest{}, time.Time{}, nil, err
-	}
-
-	// Parse visit_date (required)
-	visitDate, err := formparser.GetFormTimeRequired(r, "visit_date", time.RFC3339)
-	if err != nil {
-		return addRequest{}, time.Time{}, nil, fmt.Errorf("invalid or missing visit_date (use RFC3339 format): %w", err)
-	}
-
-	// Parse description (required)
-	description, err := formparser.GetFormStringRequired(r, "description")
-	if err != nil {
-		return addRequest{}, time.Time{}, nil, err
-	}
-
-	// Parse responsible_name (required)
-	responsibleName, err := formparser.GetFormStringRequired(r, "responsible_name")
-	if err != nil {
-		return addRequest{}, time.Time{}, nil, err
-	}
-
-	// Create request object
-	req := addRequest{
-		OrganizationID:  orgID,
-		VisitDate:       visitDate.Format(time.RFC3339),
-		Description:     description,
-		ResponsibleName: responsibleName,
-	}
-
-	// Process file uploads
-	uploadResult, err := fileupload.ProcessFormFiles(
-		r.Context(),
-		r,
-		log,
-		uploader,
-		saver,
-		categoryGetter,
-		"visits", // category name for MinIO path
-		"Визиты", // category display name
-		visitDate,
-	)
-	if err != nil {
-		return addRequest{}, time.Time{}, nil, fmt.Errorf("%s: failed to process file uploads: %w", op, err)
-	}
-
-	log.Info("multipart form parsed successfully",
-		slog.Int("uploaded_files", len(uploadResult.FileIDs)),
-	)
-
-	return req, visitDate, uploadResult, nil
 }

@@ -81,7 +81,7 @@ func TestNew_OngoingDischargeConflict(t *testing.T) {
 		req = req.WithContext(contextWithClaims(req.Context(), 1))
 
 		rr := httptest.NewRecorder()
-		handler := New(logger, adder, checker, nil, nil, nil)
+		handler := New(logger, adder, checker)
 		handler.ServeHTTP(rr, req)
 
 		if rr.Code != http.StatusConflict {
@@ -103,7 +103,7 @@ func TestNew_OngoingDischargeConflict(t *testing.T) {
 		req = req.WithContext(contextWithClaims(req.Context(), 1))
 
 		rr := httptest.NewRecorder()
-		handler := New(logger, adder, checker, nil, nil, nil)
+		handler := New(logger, adder, checker)
 		handler.ServeHTTP(rr, req)
 
 		if rr.Code != http.StatusCreated {
@@ -130,7 +130,7 @@ func TestNew_OngoingDischargeConflict(t *testing.T) {
 		req = req.WithContext(contextWithClaims(req.Context(), 1))
 
 		rr := httptest.NewRecorder()
-		handler := New(logger, adder, noConflictChecker, nil, nil, nil)
+		handler := New(logger, adder, noConflictChecker)
 		handler.ServeHTTP(rr, req)
 
 		if rr.Code != http.StatusCreated {

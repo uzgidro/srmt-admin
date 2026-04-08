@@ -356,8 +356,8 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 		// Contacts
 		r.Get("/contacts", contactGetAll.New(deps.Log, deps.PgRepo, deps.MinioRepo))
 		r.Get("/contacts/{id}", contactGetById.New(deps.Log, deps.PgRepo, deps.MinioRepo))
-		r.Post("/contacts", contactAdd.New(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo))
-		r.Patch("/contacts/{id}", contactEdit.New(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo))
+		r.Post("/contacts", contactAdd.New(deps.Log, deps.PgRepo))
+		r.Patch("/contacts/{id}", contactEdit.New(deps.Log, deps.PgRepo))
 		r.Delete("/contacts/{id}", contactDelete.New(deps.Log, deps.PgRepo))
 
 		// Dashboard
@@ -412,8 +412,8 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 
 			// Users
 			r.Get("/users", usersGet.New(deps.Log, deps.PgRepo))
-			r.Post("/users", usersAdd.New(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo))
-			r.Patch("/users/{userID}", usersEdit.New(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo))
+			r.Post("/users", usersAdd.New(deps.Log, deps.PgRepo))
+			r.Patch("/users/{userID}", usersEdit.New(deps.Log, deps.PgRepo))
 			r.Get("/users/{userID}", usersGetById.New(deps.Log, deps.PgRepo))
 			r.Delete("/users/{userID}", usersDelete.New(deps.Log, deps.PgRepo))
 			r.Post("/users/{userID}/roles", assignRole.New(deps.Log, deps.PgRepo))
@@ -455,8 +455,8 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Get("/discharges", dischargeGet.New(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
 			r.Get("/discharges/current", dischargeGetCurrent.New(deps.Log, deps.PgRepo, deps.MinioRepo))
 			r.Get("/discharges/flat", dischargeGetFlat.New(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
-			r.Post("/discharges", dischargeAdd.New(deps.Log, deps.PgRepo, deps.DischargeService, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
-			r.Patch("/discharges/{id}", dischargePatch.New(deps.Log, deps.PgRepo, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
+			r.Post("/discharges", dischargeAdd.New(deps.Log, deps.PgRepo, deps.DischargeService))
+			r.Patch("/discharges/{id}", dischargePatch.New(deps.Log, deps.PgRepo, deps.PgRepo))
 			r.Delete("/discharges/{id}", dischargeDelete.New(deps.Log, deps.PgRepo, deps.PgRepo))
 			r.Get("/discharges/export", dischargeExport.New(
 				deps.Log,
@@ -466,12 +466,12 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			))
 
 			r.Get("/incidents", incidentsHandler.Get(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
-			r.Post("/incidents", incidentsHandler.Add(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
-			r.Patch("/incidents/{id}", incidentsHandler.Edit(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
+			r.Post("/incidents", incidentsHandler.Add(deps.Log, deps.PgRepo))
+			r.Patch("/incidents/{id}", incidentsHandler.Edit(deps.Log, deps.PgRepo))
 			r.Delete("/incidents/{id}", incidentsHandler.Delete(deps.Log, deps.PgRepo))
 
-			r.Post("/shutdowns", shutdowns.Add(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
-			r.Patch("/shutdowns/{id}", shutdowns.Edit(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
+			r.Post("/shutdowns", shutdowns.Add(deps.Log, deps.PgRepo))
+			r.Patch("/shutdowns/{id}", shutdowns.Edit(deps.Log, deps.PgRepo))
 			r.Delete("/shutdowns/{id}", shutdowns.Delete(deps.Log, deps.PgRepo))
 			r.Patch("/shutdowns/{id}/viewed", shutdowns.MarkViewed(deps.Log, deps.PgRepo))
 
@@ -501,8 +501,8 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			))
 
 			r.Get("/visits", visit.Get(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
-			r.Post("/visits", visit.Add(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
-			r.Patch("/visits/{id}", visit.Edit(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
+			r.Post("/visits", visit.Add(deps.Log, deps.PgRepo))
+			r.Patch("/visits/{id}", visit.Edit(deps.Log, deps.PgRepo))
 			r.Delete("/visits/{id}", visit.Delete(deps.Log, deps.PgRepo))
 
 			// Infra Event Categories (CRUD)
@@ -619,8 +619,8 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			// Investment routes
 			r.Get("/investments", investments.GetAll(deps.Log, deps.PgRepo, deps.MinioRepo))
 			r.Get("/investments/{id}", investments.GetByID(deps.Log, deps.PgRepo, deps.MinioRepo))
-			r.Post("/investments", investments.Add(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
-			r.Patch("/investments/{id}", investments.Edit(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
+			r.Post("/investments", investments.Add(deps.Log, deps.PgRepo))
+			r.Patch("/investments/{id}", investments.Edit(deps.Log, deps.PgRepo))
 			r.Delete("/investments/{id}", investments.Delete(deps.Log, deps.PgRepo))
 
 			// Investment types routes
@@ -647,8 +647,8 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 		r.Group(func(r chi.Router) {
 			r.Use(mwauth.RequireAnyRole("chancellery", "rais"))
 
-			r.Post("/legal-documents", legaldocuments.Add(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
-			r.Patch("/legal-documents/{id}", legaldocuments.Edit(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
+			r.Post("/legal-documents", legaldocuments.Add(deps.Log, deps.PgRepo))
+			r.Patch("/legal-documents/{id}", legaldocuments.Edit(deps.Log, deps.PgRepo))
 			r.Delete("/legal-documents/{id}", legaldocuments.Delete(deps.Log, deps.PgRepo))
 		})
 
@@ -664,8 +664,8 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Get("/decrees/types", decrees.GetTypes(deps.Log, deps.PgRepo))
 			r.Get("/decrees/{id}", decrees.GetByID(deps.Log, deps.PgRepo, deps.MinioRepo))
 			r.Get("/decrees/{id}/history", decrees.GetStatusHistory(deps.Log, deps.PgRepo))
-			r.Post("/decrees", decrees.Add(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
-			r.Patch("/decrees/{id}", decrees.Edit(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
+			r.Post("/decrees", decrees.Add(deps.Log, deps.PgRepo))
+			r.Patch("/decrees/{id}", decrees.Edit(deps.Log, deps.PgRepo))
 			r.Patch("/decrees/{id}/status", decrees.ChangeStatus(deps.Log, deps.PgRepo))
 			r.Delete("/decrees/{id}", decrees.Delete(deps.Log, deps.PgRepo))
 
@@ -674,8 +674,8 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Get("/reports/types", reports.GetTypes(deps.Log, deps.PgRepo))
 			r.Get("/reports/{id}", reports.GetByID(deps.Log, deps.PgRepo, deps.MinioRepo))
 			r.Get("/reports/{id}/history", reports.GetStatusHistory(deps.Log, deps.PgRepo))
-			r.Post("/reports", reports.Add(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
-			r.Patch("/reports/{id}", reports.Edit(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
+			r.Post("/reports", reports.Add(deps.Log, deps.PgRepo))
+			r.Patch("/reports/{id}", reports.Edit(deps.Log, deps.PgRepo))
 			r.Patch("/reports/{id}/status", reports.ChangeStatus(deps.Log, deps.PgRepo))
 			r.Delete("/reports/{id}", reports.Delete(deps.Log, deps.PgRepo))
 
@@ -684,8 +684,8 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Get("/letters/types", letters.GetTypes(deps.Log, deps.PgRepo))
 			r.Get("/letters/{id}", letters.GetByID(deps.Log, deps.PgRepo, deps.MinioRepo))
 			r.Get("/letters/{id}/history", letters.GetStatusHistory(deps.Log, deps.PgRepo))
-			r.Post("/letters", letters.Add(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
-			r.Patch("/letters/{id}", letters.Edit(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
+			r.Post("/letters", letters.Add(deps.Log, deps.PgRepo))
+			r.Patch("/letters/{id}", letters.Edit(deps.Log, deps.PgRepo))
 			r.Patch("/letters/{id}/status", letters.ChangeStatus(deps.Log, deps.PgRepo))
 			r.Delete("/letters/{id}", letters.Delete(deps.Log, deps.PgRepo))
 
@@ -694,8 +694,8 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Get("/instructions/types", instructions.GetTypes(deps.Log, deps.PgRepo))
 			r.Get("/instructions/{id}", instructions.GetByID(deps.Log, deps.PgRepo, deps.MinioRepo))
 			r.Get("/instructions/{id}/history", instructions.GetStatusHistory(deps.Log, deps.PgRepo))
-			r.Post("/instructions", instructions.Add(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
-			r.Patch("/instructions/{id}", instructions.Edit(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
+			r.Post("/instructions", instructions.Add(deps.Log, deps.PgRepo))
+			r.Patch("/instructions/{id}", instructions.Edit(deps.Log, deps.PgRepo))
 			r.Patch("/instructions/{id}/status", instructions.ChangeStatus(deps.Log, deps.PgRepo))
 			r.Delete("/instructions/{id}", instructions.Delete(deps.Log, deps.PgRepo))
 
@@ -735,8 +735,8 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Get("/events/statuses", eventGetStatuses.New(deps.Log, deps.PgRepo))
 			r.Get("/events/types", eventGetTypes.New(deps.Log, deps.PgRepo))
 			r.Get("/events/{id}", eventGetById.New(deps.Log, deps.PgRepo, deps.MinioRepo))
-			r.Post("/events", eventAdd.New(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
-			r.Patch("/events/{id}", eventEdit.New(deps.Log, deps.PgRepo, deps.MinioRepo, deps.PgRepo, deps.PgRepo))
+			r.Post("/events", eventAdd.New(deps.Log, deps.PgRepo))
+			r.Patch("/events/{id}", eventEdit.New(deps.Log, deps.PgRepo))
 			r.Delete("/events/{id}", eventDelete.New(deps.Log, deps.PgRepo))
 
 			// Fast Calls

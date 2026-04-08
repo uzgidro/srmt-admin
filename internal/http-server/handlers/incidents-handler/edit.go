@@ -3,14 +3,11 @@ package incidents_handler
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
-	"srmt-admin/internal/lib/api/formparser"
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/dto"
 	"srmt-admin/internal/lib/logger/sl"
-	"srmt-admin/internal/lib/service/fileupload"
 	"srmt-admin/internal/storage"
 	"strconv"
 	"time"
@@ -27,18 +24,13 @@ type editRequest struct {
 	FileIDs        []int64    `json:"file_ids,omitempty"`
 }
 
-type editResponse struct {
-	resp.Response
-	UploadedFiles []fileupload.UploadedFileInfo `json:"uploaded_files,omitempty"`
-}
-
 type incidentEditor interface {
 	EditIncident(ctx context.Context, id int64, req dto.EditIncidentRequest) error
 	UnlinkIncidentFiles(ctx context.Context, incidentID int64) error
 	LinkIncidentFiles(ctx context.Context, incidentID int64, fileIDs []int64) error
 }
 
-func Edit(log *slog.Logger, editor incidentEditor, uploader fileupload.FileUploader, saver fileupload.FileMetaSaver, categoryGetter fileupload.CategoryGetter) http.HandlerFunc {
+func Edit(log *slog.Logger, editor incidentEditor) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.incident.update.New"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
@@ -53,49 +45,11 @@ func Edit(log *slog.Logger, editor incidentEditor, uploader fileupload.FileUploa
 		}
 
 		var req editRequest
-		var fileIDs []int64
-		var shouldUpdateFiles bool
-		var uploadResult *fileupload.UploadResult
-
-		// Check content type and parse accordingly
-		if formparser.IsMultipartForm(r) {
-			log.Info("processing multipart/form-data request")
-
-			// Parse request from multipart form
-			req, uploadResult, err = parseMultipartEditRequest(r, log, uploader, saver, categoryGetter)
-			if err != nil {
-				log.Error("failed to parse multipart request", sl.Err(err))
-				render.Status(r, http.StatusBadRequest)
-				render.JSON(w, r, resp.BadRequest(err.Error()))
-				return
-			}
-
-			// Check if files field is present in form
-			if formparser.HasFormField(r, "file_ids") || len(uploadResult.FileIDs) > 0 {
-				shouldUpdateFiles = true
-				// Get existing file IDs from form
-				existingFileIDs, _ := formparser.GetFormFileIDs(r, "file_ids")
-				// Combine uploaded + existing
-				fileIDs = append(existingFileIDs, uploadResult.FileIDs...)
-			}
-
-		} else {
-			log.Info("processing application/json request")
-
-			// Parse JSON (current behavior)
-			if err := render.DecodeJSON(r.Body, &req); err != nil {
-				log.Error("failed to decode request", sl.Err(err))
-				render.Status(r, http.StatusBadRequest)
-				render.JSON(w, r, resp.BadRequest("Invalid request format"))
-				return
-			}
-
-			// In JSON, if file_ids is present (even empty array), update files
-			// This fixes the issue where you couldn't remove all files
-			if req.FileIDs != nil {
-				shouldUpdateFiles = true
-				fileIDs = req.FileIDs
-			}
+		if err := render.DecodeJSON(r.Body, &req); err != nil {
+			log.Error("failed to decode request", sl.Err(err))
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, resp.BadRequest("Invalid request format"))
+			return
 		}
 
 		// Build storage request
@@ -103,18 +57,12 @@ func Edit(log *slog.Logger, editor incidentEditor, uploader fileupload.FileUploa
 			OrganizationID: req.OrganizationID,
 			IncidentTime:   req.IncidentTime,
 			Description:    req.Description,
-			FileIDs:        fileIDs,
+			FileIDs:        req.FileIDs,
 		}
 
 		// Update incident
 		err = editor.EditIncident(r.Context(), id, storageReq)
 		if err != nil {
-			// Cleanup uploaded files if update fails
-			if uploadResult != nil {
-				log.Warn("incident update failed, compensating uploaded files")
-				fileupload.CompensateEntityUpload(r.Context(), log, uploader, saver, uploadResult)
-			}
-
 			if errors.Is(err, storage.ErrNotFound) {
 				log.Warn("incident not found", slog.Int64("id", id))
 				render.Status(r, http.StatusNotFound)
@@ -134,85 +82,18 @@ func Edit(log *slog.Logger, editor incidentEditor, uploader fileupload.FileUploa
 		}
 
 		// Update file links if explicitly requested
-		if shouldUpdateFiles {
-			// Remove old links
+		if req.FileIDs != nil {
 			if err := editor.UnlinkIncidentFiles(r.Context(), id); err != nil {
 				log.Error("failed to unlink old files", sl.Err(err))
 			}
-
-			// Add new links (if any)
-			if len(fileIDs) > 0 {
-				if err := editor.LinkIncidentFiles(r.Context(), id, fileIDs); err != nil {
+			if len(req.FileIDs) > 0 {
+				if err := editor.LinkIncidentFiles(r.Context(), id, req.FileIDs); err != nil {
 					log.Error("failed to link new files", sl.Err(err))
 				}
 			}
 		}
 
-		log.Info("incident updated successfully",
-			slog.Int64("id", id),
-			slog.Bool("files_updated", shouldUpdateFiles),
-			slog.Int("total_files", len(fileIDs)),
-		)
-
-		response := editResponse{
-			Response: resp.OK(),
-		}
-		if uploadResult != nil && len(uploadResult.UploadedFiles) > 0 {
-			response.UploadedFiles = uploadResult.UploadedFiles
-		}
-		render.JSON(w, r, response)
+		log.Info("incident updated successfully", slog.Int64("id", id))
+		render.JSON(w, r, resp.OK())
 	}
-}
-
-// parseMultipartEditRequest parses incident data from multipart form and handles file uploads
-func parseMultipartEditRequest(
-	r *http.Request,
-	log *slog.Logger,
-	uploader fileupload.FileUploader,
-	saver fileupload.FileMetaSaver,
-	categoryGetter fileupload.CategoryGetter,
-) (editRequest, *fileupload.UploadResult, error) {
-	const op = "incidents_handler.parseMultipartEditRequest"
-
-	// Parse optional fields
-	orgID, err := formparser.GetFormInt64(r, "organization_id")
-	if err != nil {
-		return editRequest{}, nil, fmt.Errorf("invalid organization_id: %w", err)
-	}
-
-	incidentTime, err := formparser.GetFormTime(r, "incident_time", time.RFC3339)
-	if err != nil {
-		return editRequest{}, nil, fmt.Errorf("invalid incident_time format (use RFC3339): %w", err)
-	}
-
-	description := formparser.GetFormString(r, "description")
-
-	// Create request object
-	req := editRequest{
-		OrganizationID: orgID,
-		IncidentTime:   incidentTime,
-		Description:    description,
-	}
-
-	// Process file uploads (use current time as upload date for edits)
-	uploadResult, err := fileupload.ProcessFormFiles(
-		r.Context(),
-		r,
-		log,
-		uploader,
-		saver,
-		categoryGetter,
-		"incidents", // category name for MinIO path
-		"Инциденты", // category display name
-		time.Now(),  // For edits, use current time
-	)
-	if err != nil {
-		return editRequest{}, nil, fmt.Errorf("%s: failed to process file uploads: %w", op, err)
-	}
-
-	log.Info("multipart edit form parsed successfully",
-		slog.Int("uploaded_files", len(uploadResult.FileIDs)),
-	)
-
-	return req, uploadResult, nil
 }

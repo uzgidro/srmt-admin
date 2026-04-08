@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"srmt-admin/internal/lib/model/category"
-	"srmt-admin/internal/lib/service/fileupload"
 	"srmt-admin/internal/storage"
 )
 
@@ -101,7 +100,7 @@ func (r *Repo) GetAllCategories(ctx context.Context) ([]category.Model, error) {
 }
 
 // GetCategoryByName finds a category by name, creating it if it doesn't exist
-func (r *Repo) GetCategoryByName(ctx context.Context, categoryName string) (fileupload.CategoryModel, error) {
+func (r *Repo) GetCategoryByName(ctx context.Context, categoryName string) (category.Model, error) {
 	const op = "repo.file-category.GetCategoryByName"
 
 	// Attempt to find the category first
@@ -164,7 +163,7 @@ func (r *Repo) GetEventsCategory(ctx context.Context) (category.Model, error) {
 	if err != nil {
 		return category.Model{}, err
 	}
-	return catModel.(category.Model), nil
+	return catModel, nil
 }
 
 func (r *Repo) GetIncidentsCategory(ctx context.Context) (category.Model, error) {
@@ -172,7 +171,7 @@ func (r *Repo) GetIncidentsCategory(ctx context.Context) (category.Model, error)
 	if err != nil {
 		return category.Model{}, err
 	}
-	return catModel.(category.Model), nil
+	return catModel, nil
 }
 
 func (r *Repo) GetShutdownsCategory(ctx context.Context) (category.Model, error) {
@@ -180,7 +179,7 @@ func (r *Repo) GetShutdownsCategory(ctx context.Context) (category.Model, error)
 	if err != nil {
 		return category.Model{}, err
 	}
-	return catModel.(category.Model), nil
+	return catModel, nil
 }
 
 func (r *Repo) GetDischargesCategory(ctx context.Context) (category.Model, error) {
@@ -188,7 +187,7 @@ func (r *Repo) GetDischargesCategory(ctx context.Context) (category.Model, error
 	if err != nil {
 		return category.Model{}, err
 	}
-	return catModel.(category.Model), nil
+	return catModel, nil
 }
 
 func (r *Repo) GetVisitsCategory(ctx context.Context) (category.Model, error) {
@@ -196,5 +195,5 @@ func (r *Repo) GetVisitsCategory(ctx context.Context) (category.Model, error) {
 	if err != nil {
 		return category.Model{}, err
 	}
-	return catModel.(category.Model), nil
+	return catModel, nil
 }

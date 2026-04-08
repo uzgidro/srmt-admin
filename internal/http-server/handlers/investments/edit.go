@@ -3,17 +3,13 @@ package investments
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
-	"srmt-admin/internal/lib/api/formparser"
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/dto"
 	"srmt-admin/internal/lib/logger/sl"
-	"srmt-admin/internal/lib/service/fileupload"
 	"srmt-admin/internal/storage"
 	"strconv"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -29,18 +25,13 @@ type editRequest struct {
 	FileIDs  []int64  `json:"file_ids,omitempty"`
 }
 
-type editResponse struct {
-	resp.Response
-	UploadedFiles []fileupload.UploadedFileInfo `json:"uploaded_files,omitempty"`
-}
-
 type investmentEditor interface {
 	EditInvestment(ctx context.Context, id int64, req dto.EditInvestmentRequest) error
 	UnlinkInvestmentFiles(ctx context.Context, investmentID int64) error
 	LinkInvestmentFiles(ctx context.Context, investmentID int64, fileIDs []int64) error
 }
 
-func Edit(log *slog.Logger, editor investmentEditor, uploader fileupload.FileUploader, saver fileupload.FileMetaSaver, categoryGetter fileupload.CategoryGetter) http.HandlerFunc {
+func Edit(log *slog.Logger, editor investmentEditor) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.investment.edit"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
@@ -55,48 +46,11 @@ func Edit(log *slog.Logger, editor investmentEditor, uploader fileupload.FileUpl
 		}
 
 		var req editRequest
-		var fileIDs []int64
-		var shouldUpdateFiles bool
-		var uploadResult *fileupload.UploadResult
-
-		// Check content type and parse accordingly
-		if formparser.IsMultipartForm(r) {
-			log.Info("processing multipart/form-data request")
-
-			// Parse request from multipart form
-			req, uploadResult, err = parseMultipartEditRequest(r, log, uploader, saver, categoryGetter)
-			if err != nil {
-				log.Error("failed to parse multipart request", sl.Err(err))
-				render.Status(r, http.StatusBadRequest)
-				render.JSON(w, r, resp.BadRequest(err.Error()))
-				return
-			}
-
-			// Check if files field is present in form
-			if formparser.HasFormField(r, "file_ids") || len(uploadResult.FileIDs) > 0 {
-				shouldUpdateFiles = true
-				// Get existing file IDs from form
-				existingFileIDs, _ := formparser.GetFormFileIDs(r, "file_ids")
-				// Combine uploaded + existing
-				fileIDs = append(existingFileIDs, uploadResult.FileIDs...)
-			}
-
-		} else {
-			log.Info("processing application/json request")
-
-			// Parse JSON
-			if err := render.DecodeJSON(r.Body, &req); err != nil {
-				log.Error("failed to decode request", sl.Err(err))
-				render.Status(r, http.StatusBadRequest)
-				render.JSON(w, r, resp.BadRequest("Invalid request format"))
-				return
-			}
-
-			// In JSON, if file_ids is present (even empty array), update files
-			if req.FileIDs != nil {
-				shouldUpdateFiles = true
-				fileIDs = req.FileIDs
-			}
+		if err := render.DecodeJSON(r.Body, &req); err != nil {
+			log.Error("failed to decode request", sl.Err(err))
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, resp.BadRequest("Invalid request format"))
+			return
 		}
 
 		// Build storage request
@@ -106,18 +60,12 @@ func Edit(log *slog.Logger, editor investmentEditor, uploader fileupload.FileUpl
 			StatusID: req.StatusID,
 			Cost:     req.Cost,
 			Comments: req.Comments,
-			FileIDs:  fileIDs,
+			FileIDs:  req.FileIDs,
 		}
 
 		// Update investment
 		err = editor.EditInvestment(r.Context(), id, storageReq)
 		if err != nil {
-			// Cleanup uploaded files if update fails
-			if uploadResult != nil {
-				log.Warn("investment update failed, compensating uploaded files")
-				fileupload.CompensateEntityUpload(r.Context(), log, uploader, saver, uploadResult)
-			}
-
 			if errors.Is(err, storage.ErrNotFound) {
 				log.Warn("investment not found", slog.Int64("id", id))
 				render.Status(r, http.StatusNotFound)
@@ -137,15 +85,15 @@ func Edit(log *slog.Logger, editor investmentEditor, uploader fileupload.FileUpl
 		}
 
 		// Update file links if explicitly requested
-		if shouldUpdateFiles {
+		if req.FileIDs != nil {
 			// Remove old links
 			if err := editor.UnlinkInvestmentFiles(r.Context(), id); err != nil {
 				log.Error("failed to unlink old files", sl.Err(err))
 			}
 
 			// Add new links (if any)
-			if len(fileIDs) > 0 {
-				if err := editor.LinkInvestmentFiles(r.Context(), id, fileIDs); err != nil {
+			if len(req.FileIDs) > 0 {
+				if err := editor.LinkInvestmentFiles(r.Context(), id, req.FileIDs); err != nil {
 					log.Error("failed to link new files", sl.Err(err))
 				}
 			}
@@ -153,88 +101,10 @@ func Edit(log *slog.Logger, editor investmentEditor, uploader fileupload.FileUpl
 
 		log.Info("investment updated successfully",
 			slog.Int64("id", id),
-			slog.Bool("files_updated", shouldUpdateFiles),
-			slog.Int("total_files", len(fileIDs)),
+			slog.Bool("files_updated", req.FileIDs != nil),
+			slog.Int("total_files", len(req.FileIDs)),
 		)
 
-		response := editResponse{
-			Response: resp.OK(),
-		}
-		if uploadResult != nil && len(uploadResult.UploadedFiles) > 0 {
-			response.UploadedFiles = uploadResult.UploadedFiles
-		}
-		render.JSON(w, r, response)
+		render.JSON(w, r, resp.OK())
 	}
-}
-
-// parseMultipartEditRequest parses investment data from multipart form and handles file uploads
-func parseMultipartEditRequest(
-	r *http.Request,
-	log *slog.Logger,
-	uploader fileupload.FileUploader,
-	saver fileupload.FileMetaSaver,
-	categoryGetter fileupload.CategoryGetter,
-) (editRequest, *fileupload.UploadResult, error) {
-	const op = "investments.parseMultipartEditRequest"
-
-	// Parse optional fields
-	name := formparser.GetFormString(r, "name")
-
-	var typeID *int
-	typeIDInt64, err := formparser.GetFormInt64(r, "type_id")
-	if err != nil {
-		return editRequest{}, nil, fmt.Errorf("invalid type_id: %w", err)
-	}
-	if typeIDInt64 != nil {
-		typeIDInt := int(*typeIDInt64)
-		typeID = &typeIDInt
-	}
-
-	var statusID *int
-	statusIDInt64, err := formparser.GetFormInt64(r, "status_id")
-	if err != nil {
-		return editRequest{}, nil, fmt.Errorf("invalid status_id: %w", err)
-	}
-	if statusIDInt64 != nil {
-		statusIDInt := int(*statusIDInt64)
-		statusID = &statusIDInt
-	}
-
-	cost, err := formparser.GetFormFloat64(r, "cost")
-	if err != nil {
-		return editRequest{}, nil, fmt.Errorf("invalid cost format: %w", err)
-	}
-
-	comments := formparser.GetFormString(r, "comments")
-
-	// Create request object
-	req := editRequest{
-		Name:     name,
-		TypeID:   typeID,
-		StatusID: statusID,
-		Cost:     cost,
-		Comments: comments,
-	}
-
-	// Process file uploads
-	uploadResult, err := fileupload.ProcessFormFiles(
-		r.Context(),
-		r,
-		log,
-		uploader,
-		saver,
-		categoryGetter,
-		"investments", // category name for MinIO path
-		"Инвестиции",  // category display name
-		time.Now(),    // For edits, use current time
-	)
-	if err != nil {
-		return editRequest{}, nil, fmt.Errorf("%s: failed to process file uploads: %w", op, err)
-	}
-
-	log.Info("multipart edit form parsed successfully",
-		slog.Int("uploaded_files", len(uploadResult.FileIDs)),
-	)
-
-	return req, uploadResult, nil
 }
