@@ -24,6 +24,7 @@ import (
 	gesreportsvc "srmt-admin/internal/lib/service/ges-report"
 	"srmt-admin/internal/lib/service/metrics"
 	"srmt-admin/internal/lib/service/reservoir"
+	"srmt-admin/internal/lib/service/weather"
 	reservoirhourly "srmt-admin/internal/lib/service/reservoir-hourly"
 	"srmt-admin/internal/storage/redis"
 	"srmt-admin/internal/storage/repo"
@@ -55,6 +56,7 @@ var ServiceProviderSet = wire.NewSet(
 	ProvideHRMPerformanceService,
 	ProvideHRMAnalyticsService,
 	ProvideReservoirHourlyService,
+	ProvideWeatherFetcher,
 	ProvideDayRotationService,
 	ProvideGESReportService,
 	ProvideDischargeService,
@@ -173,9 +175,17 @@ func ProvideHRMAnalyticsService(pgRepo *repo.Repo, log *slog.Logger) *hrmanalyti
 	return hrmanalytics.NewService(pgRepo, log)
 }
 
+// ProvideWeatherFetcher creates the weather API client (nil if no API key configured)
+func ProvideWeatherFetcher(cfg *config.Config, client *http.Client) *weather.Fetcher {
+	if cfg.Weather.APIKey == "" {
+		return nil
+	}
+	return weather.NewFetcher(client, cfg.Weather.BaseURL, cfg.Weather.APIKey)
+}
+
 // ProvideDayRotationService creates the day rotation service for auto-closing ongoing shutdowns and discharges
-func ProvideDayRotationService(pgRepo *repo.Repo, loc *time.Location, log *slog.Logger) *dayrotation.Service {
-	return dayrotation.NewService(pgRepo, loc, log)
+func ProvideDayRotationService(pgRepo *repo.Repo, weatherFetcher *weather.Fetcher, loc *time.Location, log *slog.Logger) *dayrotation.Service {
+	return dayrotation.NewService(pgRepo, pgRepo, pgRepo, weatherFetcher, loc, log)
 }
 
 // ProvideGESReportService creates the GES daily report service

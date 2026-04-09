@@ -579,3 +579,26 @@ func (r *Repo) GetIdleDischargesForDate(ctx context.Context, start, end time.Tim
 	}
 	return result, nil
 }
+
+// UpsertWeatherData inserts or updates only weather fields in ges_daily_data.
+// Creates a minimal row if none exists (other fields default to 0/NULL).
+func (r *Repo) UpsertWeatherData(ctx context.Context, orgID int64, date string, temp *float64, condition *string) error {
+	const op = "storage.repo.GESReport.UpsertWeatherData"
+
+	const query = `
+		INSERT INTO ges_daily_data (organization_id, date, temperature, weather_condition)
+		VALUES ($1, $2::date, $3, $4)
+		ON CONFLICT (organization_id, date) DO UPDATE SET
+			temperature = EXCLUDED.temperature,
+			weather_condition = EXCLUDED.weather_condition,
+			updated_at = NOW()`
+
+	_, err := r.db.ExecContext(ctx, query, orgID, date, temp, condition)
+	if err != nil {
+		if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
+			return translatedErr
+		}
+		return fmt.Errorf("%s: %w", op, err)
+	}
+	return nil
+}

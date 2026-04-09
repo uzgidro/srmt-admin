@@ -282,8 +282,8 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 		r.Route("/weather", func(r chi.Router) {
 			weatherCfg := deps.Config.Weather
 
-			r.Get("/", weatherProxy.New(deps.Log, deps.HTTPClient, weatherCfg.BaseURL, weatherCfg.APIKey, "/weather"))
-			r.Get("/forecast", weatherProxy.New(deps.Log, deps.HTTPClient, weatherCfg.BaseURL, weatherCfg.APIKey, "/forecast"))
+			r.Get("/", weatherProxy.New(deps.Log, deps.HTTPClient, weatherCfg.BaseURL, weatherCfg.APIKey, "/data/2.5/weather"))
+			r.Get("/forecast", weatherProxy.New(deps.Log, deps.HTTPClient, weatherCfg.BaseURL, weatherCfg.APIKey, "/data/2.5/forecast"))
 		})
 
 		r.Get("/telegram/gidro/test", test.New(deps.Log, deps.MongoRepo))
