@@ -979,7 +979,6 @@ func (g *Generator) processInfraEvents(
 	// section.TemplateRow = column headers row
 	// section.TemplateRow + 1 = data template row
 	labelRow := section.HeaderRow
-	dataTemplateRow := section.TemplateRow + 1
 
 	// Group events by category ID
 	eventsByCategory := make(map[int64][]*infraevent.ResponseModel)
@@ -1005,13 +1004,27 @@ func (g *Generator) processInfraEvents(
 		return nil
 	}
 
-	// Duplicate the 3-row block for additional active categories (all except the first).
-	for i := len(activeCategories) - 1; i >= 1; i-- {
-		for row := dataTemplateRow; row >= labelRow; row-- {
-			if err := f.DuplicateRow(sheet, row); err != nil {
-				return fmt.Errorf("failed to duplicate infra block row %d: %w", row, err)
+	// Duplicate the 3-row block for additional active categories.
+	// Use DuplicateRowTo to place copies at exact contiguous positions.
+	// Source rows (labelRow..labelRow+2) are always above insertion points, so they never shift.
+	for i := 1; i < len(activeCategories); i++ {
+		targetBase := labelRow + i*3
+		for j := 0; j < 3; j++ {
+			if err := f.DuplicateRowTo(sheet, labelRow+j, targetBase+j); err != nil {
+				return fmt.Errorf("failed to duplicate infra block row to %d: %w", targetBase+j, err)
 			}
 		}
+		// Create merge cells for the duplicated block (template merges are not copied).
+		// Label row: A:O full merge
+		_ = f.MergeCell(sheet, fmt.Sprintf("A%d", targetBase), fmt.Sprintf("O%d", targetBase))
+		// Header row: F:I, J:M, N:O
+		_ = f.MergeCell(sheet, fmt.Sprintf("F%d", targetBase+1), fmt.Sprintf("I%d", targetBase+1))
+		_ = f.MergeCell(sheet, fmt.Sprintf("J%d", targetBase+1), fmt.Sprintf("M%d", targetBase+1))
+		_ = f.MergeCell(sheet, fmt.Sprintf("N%d", targetBase+1), fmt.Sprintf("O%d", targetBase+1))
+		// Data template row: F:I, J:M, N:O
+		_ = f.MergeCell(sheet, fmt.Sprintf("F%d", targetBase+2), fmt.Sprintf("I%d", targetBase+2))
+		_ = f.MergeCell(sheet, fmt.Sprintf("J%d", targetBase+2), fmt.Sprintf("M%d", targetBase+2))
+		_ = f.MergeCell(sheet, fmt.Sprintf("N%d", targetBase+2), fmt.Sprintf("O%d", targetBase+2))
 	}
 
 	// Now we have N blocks of 3 rows each, starting from labelRow.
@@ -1037,6 +1050,11 @@ func (g *Generator) processInfraEvents(
 			if err := f.DuplicateRow(sheet, catDataRow); err != nil {
 				return fmt.Errorf("failed to duplicate data row for category %s: %w", cat.Slug, err)
 			}
+			// Create merge cells for the duplicated data row
+			row := catDataRow + i
+			_ = f.MergeCell(sheet, fmt.Sprintf("F%d", row), fmt.Sprintf("I%d", row))
+			_ = f.MergeCell(sheet, fmt.Sprintf("J%d", row), fmt.Sprintf("M%d", row))
+			_ = f.MergeCell(sheet, fmt.Sprintf("N%d", row), fmt.Sprintf("O%d", row))
 		}
 
 		// Fill data rows
