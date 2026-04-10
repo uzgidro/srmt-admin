@@ -118,8 +118,8 @@ func (r *Repo) GetInfraEvents(ctx context.Context, categoryID int64, day time.Ti
 
 	query := selectInfraEventFields + fromInfraEventJoins +
 		`WHERE e.category_id = $1
-		   AND ((e.occurred_at >= $2 AND e.occurred_at < $3)
-		     OR (e.restored_at IS NULL AND e.occurred_at < $2 AND $2 <= NOW() AND NOW() < $3))
+		   AND e.occurred_at < $3
+		   AND (e.restored_at IS NULL OR e.restored_at >= $2)
 		 ORDER BY e.occurred_at ASC`
 
 	return r.queryInfraEvents(ctx, op, query, categoryID, startOfDay, endOfDay)
@@ -132,8 +132,8 @@ func (r *Repo) GetInfraEventsByDate(ctx context.Context, day time.Time) ([]*infr
 	endOfDay := startOfDay.Add(24 * time.Hour)
 
 	query := selectInfraEventFields + fromInfraEventJoins +
-		`WHERE (e.occurred_at >= $1 AND e.occurred_at < $2)
-		    OR (e.restored_at IS NULL AND e.occurred_at < $1 AND $1 <= NOW() AND NOW() < $2)
+		`WHERE e.occurred_at < $2
+		   AND (e.restored_at IS NULL OR e.restored_at >= $1)
 		 ORDER BY c.sort_order ASC, e.occurred_at ASC`
 
 	return r.queryInfraEvents(ctx, op, query, startOfDay, endOfDay)
