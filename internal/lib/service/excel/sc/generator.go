@@ -1098,13 +1098,15 @@ func (g *Generator) processInfraEvents(
 				set(fmt.Sprintf("N%d", row), *ev.Notes)
 			}
 
-			// Adjust row height for long text
-			maxLen := len([]rune(ev.Description))
-			if ev.Remediation != nil && len([]rune(*ev.Remediation)) > maxLen {
-				maxLen = len([]rune(*ev.Remediation))
+			// Adjust row height based on longest text in F:I and J:M
+			h := calcRowHeight(ev.Description, 40)
+			if ev.Remediation != nil {
+				if rh := calcRowHeight(*ev.Remediation, 40); rh > h {
+					h = rh
+				}
 			}
-			if maxLen > 40 {
-				_ = f.SetRowHeight(sheet, row, calcRowHeight(ev.Description, 40))
+			if h > 35 {
+				_ = f.SetRowHeight(sheet, row, h)
 			}
 		}
 
