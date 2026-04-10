@@ -650,6 +650,9 @@ func (r *Repo) CloseDischarge(ctx context.Context, id int64, endTime time.Time) 
 		endTime, id,
 	)
 	if err != nil {
+		if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
+			return translatedErr
+		}
 		return fmt.Errorf("%s: %w", op, err)
 	}
 

@@ -105,6 +105,12 @@ func Add(log *slog.Logger, adder ShutdownAdder) http.HandlerFunc {
 				render.JSON(w, r, resp.Conflict("Для данной организации уже существует незавершенный холостой сброс"))
 				return
 			}
+			if errors.Is(err, storage.ErrCheckConstraintViolation) {
+				log.Warn("new start time is before existing discharge start time", "org_id", req.OrganizationID)
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest("Время начала остановки раньше начала текущего незавершённого холостого сброса"))
+				return
+			}
 			if errors.Is(err, storage.ErrForeignKeyViolation) {
 				log.Warn("FK violation (org or contact not found)")
 				render.Status(r, http.StatusBadRequest)

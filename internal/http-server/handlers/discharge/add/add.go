@@ -86,6 +86,12 @@ func New(log *slog.Logger, adder DischargeAdder, checker OngoingChecker) http.Ha
 				render.JSON(w, r, resp.Conflict("Для данной организации уже существует незавершенный холостой сброс"))
 				return
 			}
+			if errors.Is(err, storage.ErrDischargeEndBeforeStart) {
+				log.Warn("new start time is before existing discharge start time", "org_id", req.OrganizationID)
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest("Время начала нового сброса раньше начала текущего незавершённого сброса"))
+				return
+			}
 			log.Error("failed to check ongoing discharge", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)
 			render.JSON(w, r, resp.InternalServerError("Failed to check ongoing discharges"))

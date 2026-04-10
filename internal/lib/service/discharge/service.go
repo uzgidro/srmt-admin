@@ -2,6 +2,7 @@ package discharge
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"srmt-admin/internal/storage"
 	"time"
@@ -43,6 +44,9 @@ func (s *Service) EnsureNoOngoingDischarge(ctx context.Context, orgID int64, for
 	}
 
 	if err := s.repo.CloseDischarge(ctx, id, newStartTime); err != nil {
+		if errors.Is(err, storage.ErrCheckConstraintViolation) {
+			return storage.ErrDischargeEndBeforeStart
+		}
 		return fmt.Errorf("%s: %w", op, err)
 	}
 

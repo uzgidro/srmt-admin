@@ -46,6 +46,9 @@ func (r *Repo) AddShutdown(ctx context.Context, req dto.AddShutdownRequest) (int
 				req.StartTime, existingID,
 			)
 			if err != nil {
+				if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
+					return 0, translatedErr
+				}
 				return 0, fmt.Errorf("%s: failed to close ongoing discharge: %w", op, err)
 			}
 		} else if !errors.Is(err, sql.ErrNoRows) {

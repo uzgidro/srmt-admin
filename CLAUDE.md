@@ -77,9 +77,11 @@ func New(log *slog.Logger, svc Getter) http.HandlerFunc {
 - **Response helpers** (`internal/lib/api/response/`): `resp.OK()`, `resp.Created()`, `resp.BadRequest(msg)`, `resp.NotFound(msg)`, `resp.Conflict(msg)`, `resp.Forbidden(msg)`, `resp.Unauthorized(msg)`, `resp.InternalServerError(msg)`, `resp.Delete()`, `resp.ValidationErrors(errs)`
 - **JSON rendering:** `github.com/go-chi/render` — `render.JSON`, `render.DecodeJSON`, `render.Status`
 - **Validation:** `github.com/go-playground/validator/v10`
+- **Auth helpers** (`internal/lib/service/auth/`): `auth.GetUserID(ctx)`, `auth.GetOrganizationID(ctx)`, `auth.CheckOrgAccess(ctx, orgID)` — "sc"/"rais" roles get full access, others restricted to own org
 - **Auth claims:** `mwauth.ClaimsFromContext(ctx)` returns `(*token.Claims, bool)` with `.UserID`, `.ContactID`, `.Roles`
 - **Role middleware:** `mwauth.RequireAnyRole("role1", "role2")`
-- **Sentinel errors:** `internal/storage/storage.go` — `ErrUserNotFound`, `ErrDuplicate`, `ErrDataNotFound`, `ErrUniqueViolation`, etc.
+- **Sentinel errors:** `internal/storage/storage.go` — `ErrNotFound`, `ErrDuplicate`, `ErrForeignKeyViolation`, `ErrOngoingDischargeExists`, `ErrOngoingShutdownExists`, and many HRM-specific errors
+- **Error translator** (`internal/storage/driver/postgres/`): `r.translator.Translate(err, op)` maps PG error codes (23505→`ErrDuplicate`, 23503→`ErrForeignKeyViolation`, 23502→`ErrNotNullViolation`, 23514→`ErrCheckConstraintViolation`)
 - **Migrations:** `migrations/postgres/` — auto-run on startup via `golang-migrate`. Format: `000NNN_name.{up,down}.sql`
 
 ### Key Paths
@@ -109,6 +111,10 @@ func New(log *slog.Logger, svc Getter) http.HandlerFunc {
 5. Add handler(s) in `internal/http-server/handlers/{module}/{action}.go`
 6. Register routes in `internal/http-server/router/router.go`
 7. If new service/repo needed in DI: add provider in `internal/providers/`, update `AppContainer`/`AppDependencies`, run `make wire`
+
+### Background Scheduler
+
+The day rotation service (`internal/lib/service/dayrotation/`) runs as a background goroutine started in `cmd/main.go`. It executes daily at 04:00 (Asia/Tashkent) with a 05:00 cutoff to rotate ongoing records (idle discharges, infra events) across the operational day boundary: closes old records at cutoff, clones them with new start time = cutoff, copies file links.
 
 ### Config
 

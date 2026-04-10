@@ -70,7 +70,8 @@ var (
 	ErrAccessRequestNotFound = errors.New("access request not found")
 
 	// Discharge errors
-	ErrOngoingDischargeExists = errors.New("ongoing idle discharge already exists for this organization")
+	ErrOngoingDischargeExists      = errors.New("ongoing idle discharge already exists for this organization")
+	ErrDischargeEndBeforeStart     = errors.New("cannot close discharge: new start time is before existing discharge start time")
 
 	// Constraint errors
 	ErrNotNullViolation         = errors.New("required field is missing")

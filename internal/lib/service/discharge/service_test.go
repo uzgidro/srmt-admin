@@ -99,3 +99,22 @@ func TestEnsureNoOngoingDischarge_CloseError(t *testing.T) {
 		t.Fatalf("expected close error, got %v", err)
 	}
 }
+
+func TestEnsureNoOngoingDischarge_ForceCloseCheckConstraint(t *testing.T) {
+	// Simulate: existing discharge starts at 21:00, new one at 05:00.
+	// CloseDischarge sets end_time=05:00 which violates CHECK (end_time > start_time).
+	// The repo returns ErrCheckConstraintViolation, service should translate to ErrDischargeEndBeforeStart.
+	svc := NewService(&mockRepository{
+		checkOngoingFunc: func(_ context.Context, _ int64) (int64, bool, error) {
+			return 42, true, nil
+		},
+		closeFunc: func(_ context.Context, _ int64, _ time.Time) error {
+			return storage.ErrCheckConstraintViolation
+		},
+	})
+
+	err := svc.EnsureNoOngoingDischarge(context.Background(), 1, true, time.Now())
+	if !errors.Is(err, storage.ErrDischargeEndBeforeStart) {
+		t.Fatalf("expected ErrDischargeEndBeforeStart, got %v", err)
+	}
+}
