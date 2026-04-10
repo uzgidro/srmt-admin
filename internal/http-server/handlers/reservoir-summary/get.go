@@ -69,23 +69,13 @@ func Get(log *slog.Logger, getter reservoirSummaryGetter, fetcher staticDataFetc
 			if summary.OrganizationID != nil {
 				if val, ok := dataAtDayBegin[*summary.OrganizationID]; ok && val.Data != nil {
 					isEdited := true
-					if summary.Income.Current == 0 {
-						if val.Data.AvgIncome != nil {
-							summary.Income.Current = *val.Data.AvgIncome
-							summary.Income.IsEdited = &isEdited
-						} else if val.Data.Income != nil && *val.Data.Income != 0 {
-							summary.Income.Current = *val.Data.Income
-							summary.Income.IsEdited = &isEdited
-						}
+					if summary.Income.Current == 0 && val.Data.AvgIncome != nil {
+						summary.Income.Current = *val.Data.AvgIncome
+						summary.Income.IsEdited = &isEdited
 					}
-					if summary.Release.Current == 0 {
-						if val.Data.AvgRelease != nil {
-							summary.Release.Current = *val.Data.AvgRelease
-							summary.Release.IsEdited = &isEdited
-						} else if val.Data.Release != nil && *val.Data.Release != 0 {
-							summary.Release.Current = *val.Data.Release
-							summary.Release.IsEdited = &isEdited
-						}
+					if summary.Release.Current == 0 && val.Data.AvgRelease != nil {
+						summary.Release.Current = *val.Data.AvgRelease
+						summary.Release.IsEdited = &isEdited
 					}
 					if val.Data.Level != nil && *val.Data.Level != 0 && summary.Level.Current == 0 {
 						summary.Level.Current = *val.Data.Level
