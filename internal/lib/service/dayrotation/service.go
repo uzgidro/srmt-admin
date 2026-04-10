@@ -69,7 +69,6 @@ func (s *Service) Run(ctx context.Context, cutoff time.Time) {
 	s.log.Info("day rotation completed",
 		slog.Int("linked_discharges_rotated", result.LinkedDischargesRotated),
 		slog.Int("discharges_rotated", result.DischargesRotated),
-		slog.Int("infra_events_rotated", result.InfraEventsRotated),
 	)
 
 	// Fetch weather data for each cascade

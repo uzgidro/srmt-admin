@@ -10,7 +10,6 @@ import (
 type DayRotationResult struct {
 	LinkedDischargesRotated int
 	DischargesRotated       int
-	InfraEventsRotated      int
 }
 
 // RotateDayBoundary closes all ongoing shutdowns and independent discharges at cutoff,
@@ -36,12 +35,6 @@ func (r *Repo) RotateDayBoundary(ctx context.Context, cutoff time.Time) (*DayRot
 		return nil, err
 	}
 
-	// Step 3: Rotate ongoing infra events
-	infraCount, err := rotateInfraEvents(ctx, tx, cutoff, op)
-	if err != nil {
-		return nil, err
-	}
-
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("%s: commit: %w", op, err)
 	}
@@ -49,7 +42,6 @@ func (r *Repo) RotateDayBoundary(ctx context.Context, cutoff time.Time) (*DayRot
 	return &DayRotationResult{
 		LinkedDischargesRotated: linkedCount,
 		DischargesRotated:       dischargeCount,
-		InfraEventsRotated:      infraCount,
 	}, nil
 }
 
@@ -179,83 +171,4 @@ func rotateDischarges(ctx context.Context, tx *sql.Tx, cutoff time.Time, op stri
 	}
 
 	return len(discharges), nil
-}
-
-func rotateInfraEvents(ctx context.Context, tx *sql.Tx, cutoff time.Time, op string) (int, error) {
-	const selectQuery = `
-		SELECT id, category_id, organization_id, description, remediation, notes, created_by_user_id
-		FROM sc_infra_events
-		WHERE restored_at IS NULL
-		  AND occurred_at < $1`
-
-	rows, err := tx.QueryContext(ctx, selectQuery, cutoff)
-	if err != nil {
-		return 0, fmt.Errorf("%s: select ongoing infra events: %w", op, err)
-	}
-	defer rows.Close()
-
-	type infraRow struct {
-		ID          int64
-		CategoryID  int64
-		OrgID       int64
-		Description string
-		Remediation *string
-		Notes       *string
-		CreatedBy   *int64
-	}
-
-	var events []infraRow
-	for rows.Next() {
-		var e infraRow
-		var remediation, notes sql.NullString
-		var createdBy sql.NullInt64
-		if err := rows.Scan(&e.ID, &e.CategoryID, &e.OrgID, &e.Description, &remediation, &notes, &createdBy); err != nil {
-			return 0, fmt.Errorf("%s: scan infra event: %w", op, err)
-		}
-		if remediation.Valid {
-			e.Remediation = &remediation.String
-		}
-		if notes.Valid {
-			e.Notes = &notes.String
-		}
-		if createdBy.Valid {
-			e.CreatedBy = &createdBy.Int64
-		}
-		events = append(events, e)
-	}
-	if err := rows.Err(); err != nil {
-		return 0, fmt.Errorf("%s: rows error: %w", op, err)
-	}
-
-	for _, e := range events {
-		// Close old event
-		_, err := tx.ExecContext(ctx,
-			"UPDATE sc_infra_events SET restored_at = $1 WHERE id = $2",
-			cutoff, e.ID)
-		if err != nil {
-			return 0, fmt.Errorf("%s: close infra event %d: %w", op, e.ID, err)
-		}
-
-		// Clone event
-		var newID int64
-		err = tx.QueryRowContext(ctx, `
-			INSERT INTO sc_infra_events (category_id, organization_id, occurred_at, description, remediation, notes, created_by_user_id)
-			VALUES ($1, $2, $3, $4, $5, $6, $7)
-			RETURNING id`,
-			e.CategoryID, e.OrgID, cutoff, e.Description, e.Remediation, e.Notes, e.CreatedBy).Scan(&newID)
-		if err != nil {
-			return 0, fmt.Errorf("%s: clone infra event %d: %w", op, e.ID, err)
-		}
-
-		// Copy file links
-		_, err = tx.ExecContext(ctx, `
-			INSERT INTO sc_infra_event_file_links (event_id, file_id)
-			SELECT $1, file_id FROM sc_infra_event_file_links WHERE event_id = $2`,
-			newID, e.ID)
-		if err != nil {
-			return 0, fmt.Errorf("%s: copy infra event file links %d: %w", op, e.ID, err)
-		}
-	}
-
-	return len(events), nil
 }
