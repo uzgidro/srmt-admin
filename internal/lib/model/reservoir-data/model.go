@@ -25,14 +25,22 @@ func (o *Optional[T]) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// ReservoirDataItem represents a single reservoir data record
+// ReservoirDataItem represents a single reservoir data record.
+//
+// The numeric fields (income/level/release/volume/total_income_volume*) use
+// the three-state Optional wrapper so callers can do partial updates:
+//   - field absent from JSON → existing DB value is preserved
+//   - field is explicit null → writes 0 for NOT NULL columns
+//     (income/level/release/volume) or NULL for nullable columns
+//     (total_income_volume*)
+//   - field is a number → writes that number (including 0)
 type ReservoirDataItem struct {
 	OrganizationID            int64             `json:"organization_id" validate:"required"`
 	Date                      string            `json:"date" validate:"required"`
-	Income                    float64           `json:"income"`
-	Level                     float64           `json:"level"`
-	Release                   float64           `json:"release"`
-	Volume                    float64           `json:"volume"`
+	Income                    Optional[float64] `json:"income"`
+	Level                     Optional[float64] `json:"level"`
+	Release                   Optional[float64] `json:"release"`
+	Volume                    Optional[float64] `json:"volume"`
 	ModsnowCurrent            *float64          `json:"modsnow_current"`
 	ModsnowYearAgo            *float64          `json:"modsnow_year_ago"`
 	TotalIncomeVolume         Optional[float64] `json:"total_income_volume"`
