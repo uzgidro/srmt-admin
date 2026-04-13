@@ -19,7 +19,7 @@ import (
 )
 
 type DailyDataUpserter interface {
-	UpsertGESDailyData(ctx context.Context, req model.UpsertDailyDataRequest, userID int64) error
+	UpsertGESDailyData(ctx context.Context, items []model.UpsertDailyDataRequest, userID int64) error
 }
 
 type DailyDataGetter interface {
@@ -40,30 +40,66 @@ func UpsertDailyData(log *slog.Logger, repo DailyDataUpserter) http.HandlerFunc 
 			return
 		}
 
-		var req model.UpsertDailyDataRequest
-		if err := render.DecodeJSON(r.Body, &req); err != nil {
+		var data []model.UpsertDailyDataRequest
+		if err := render.DecodeJSON(r.Body, &data); err != nil {
 			log.Error("failed to decode request", sl.Err(err))
 			render.Status(r, http.StatusBadRequest)
 			render.JSON(w, r, resp.BadRequest("invalid request format"))
 			return
 		}
 
-		if err := validate.Struct(req); err != nil {
-			var vErrs validator.ValidationErrors
-			errors.As(err, &vErrs)
-			log.Error("validation failed", sl.Err(err))
+		if len(data) == 0 {
+			log.Warn("empty data array received")
 			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, resp.ValidationErrors(vErrs))
+			render.JSON(w, r, resp.BadRequest("data array cannot be empty"))
 			return
 		}
 
-		if _, err := time.Parse("2006-01-02", req.Date); err != nil {
-			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, resp.BadRequest("invalid date format, expected YYYY-MM-DD"))
+		// Per-item validation
+		for i, item := range data {
+			if err := validate.Struct(item); err != nil {
+				var vErrs validator.ValidationErrors
+				errors.As(err, &vErrs)
+				log.Error("validation failed",
+					sl.Err(err),
+					slog.Int("item_index", i),
+				)
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, map[string]any{
+					"error":      "validation failed",
+					"item_index": i,
+					"details":    vErrs.Error(),
+				})
+				return
+			}
+			if _, err := time.Parse("2006-01-02", item.Date); err != nil {
+				log.Error("invalid date format",
+					sl.Err(err),
+					slog.Int("item_index", i),
+					slog.String("date", item.Date),
+				)
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, map[string]any{
+					"error":      "invalid date format, expected YYYY-MM-DD",
+					"item_index": i,
+				})
+				return
+			}
+		}
+
+		// Batch organization access check
+		orgIDs := make([]int64, 0, len(data))
+		for _, item := range data {
+			orgIDs = append(orgIDs, item.OrganizationID)
+		}
+		if err := auth.CheckOrgAccessBatch(r.Context(), orgIDs); err != nil {
+			log.Warn("org access denied for ges daily data upsert", sl.Err(err))
+			render.Status(r, http.StatusForbidden)
+			render.JSON(w, r, resp.Forbidden("access denied to one or more organizations"))
 			return
 		}
 
-		if err := repo.UpsertGESDailyData(r.Context(), req, userID); err != nil {
+		if err := repo.UpsertGESDailyData(r.Context(), data, userID); err != nil {
 			log.Error("failed to upsert ges daily data", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)
 			render.JSON(w, r, resp.InternalServerError("failed to save daily data"))
@@ -71,8 +107,8 @@ func UpsertDailyData(log *slog.Logger, repo DailyDataUpserter) http.HandlerFunc 
 		}
 
 		log.Info("ges daily data upserted",
-			slog.Int64("organization_id", req.OrganizationID),
-			slog.String("date", req.Date),
+			slog.Int("count", len(data)),
+			slog.Int64("user_id", userID),
 		)
 
 		render.Status(r, http.StatusOK)
