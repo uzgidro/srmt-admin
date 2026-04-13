@@ -54,8 +54,6 @@ type DailyData struct {
 	ReservoirIncomeM3s    *float64 `json:"reservoir_income_m3s"`
 	TotalOutflowM3s       *float64 `json:"total_outflow_m3s"`
 	GESFlowM3s            *float64 `json:"ges_flow_m3s"`
-	Temperature           *float64 `json:"temperature"`
-	WeatherCondition      *string  `json:"weather_condition"`
 }
 
 type UpsertDailyDataRequest struct {
@@ -69,8 +67,6 @@ type UpsertDailyDataRequest struct {
 	ReservoirIncomeM3s    *float64 `json:"reservoir_income_m3s"`
 	TotalOutflowM3s       *float64 `json:"total_outflow_m3s"`
 	GESFlowM3s            *float64 `json:"ges_flow_m3s"`
-	Temperature           *float64 `json:"temperature"`
-	WeatherCondition      *string  `json:"weather_condition"`
 }
 
 // --- Production Plan ---
@@ -105,8 +101,24 @@ type DailyReport struct {
 type CascadeReport struct {
 	CascadeID   int64           `json:"cascade_id"`
 	CascadeName string          `json:"cascade_name"`
+	Weather     *CascadeWeather `json:"weather"`
 	Summary     *SummaryBlock   `json:"summary"`
 	Stations    []StationReport `json:"stations"`
+}
+
+// CascadeWeather holds per-cascade weather for the report response.
+// Populated by the service from cascade_daily_data (not from station rows).
+type CascadeWeather struct {
+	Temperature         *float64 `json:"temperature"`
+	Condition           *string  `json:"weather_condition"`
+	PrevYearTemperature *float64 `json:"prev_year_temperature"`
+}
+
+// CascadeWeatherKey is the map key for batch weather lookups by (cascade org id, date).
+// Must remain comparable — do not add pointer fields.
+type CascadeWeatherKey struct {
+	OrgID int64
+	Date  string
 }
 
 type StationReport struct {
@@ -139,8 +151,6 @@ type CurrentData struct {
 	TotalOutflowM3s       *float64 `json:"total_outflow_m3s"`
 	GESFlowM3s            *float64 `json:"ges_flow_m3s"`
 	IdleDischargeM3s      *float64 `json:"idle_discharge_m3s"`
-	Temperature           *float64 `json:"temperature"`
-	WeatherCondition      *string  `json:"weather_condition"`
 }
 
 type DiffData struct {
@@ -165,7 +175,6 @@ type PlanData struct {
 }
 
 type PrevYearData struct {
-	Temperature        *float64 `json:"temperature"`
 	WaterLevelM        *float64 `json:"water_level_m"`
 	WaterVolumeMlnM3   *float64 `json:"water_volume_mln_m3"`
 	WaterHeadM         *float64 `json:"water_head_m"`
@@ -225,8 +234,6 @@ type RawDailyRow struct {
 	ReservoirIncomeM3s    *float64
 	TotalOutflowM3s       *float64
 	GESFlowM3s            *float64
-	Temperature           *float64
-	WeatherCondition      *string
 	InstalledCapacityMWt  float64
 	TotalAggregates       int
 	HasReservoir          bool
