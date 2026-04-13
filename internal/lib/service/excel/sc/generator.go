@@ -188,7 +188,7 @@ func (g *Generator) GenerateExcel(
 		return nil, fmt.Errorf("failed to re-scan sections for infra: %w", err)
 	}
 	if sec, ok := sections["infra"]; ok {
-		if err := g.processInfraEvents(f, sheet, sec, infraEvents, infraCategories, loc, set); err != nil {
+		if err := g.processInfraEvents(f, sheet, sec, infraEvents, infraCategories, loc, dateEnd, set); err != nil {
 			f.Close()
 			return nil, fmt.Errorf("failed to process infra events: %w", err)
 		}
@@ -973,6 +973,7 @@ func (g *Generator) processInfraEvents(
 	events []*infraevent.ResponseModel,
 	categories []*infraeventcategory.Model,
 	loc *time.Location,
+	cutoff time.Time,
 	set func(cell string, value interface{}),
 ) error {
 	// section.HeaderRow = label row (with P tag "infra")
@@ -1058,7 +1059,6 @@ func (g *Generator) processInfraEvents(
 		}
 
 		// Fill data rows
-		now := time.Now().In(loc)
 		for i, ev := range catEvents {
 			row := catDataRow + i
 
@@ -1071,12 +1071,12 @@ func (g *Generator) processInfraEvents(
 			// C: occurred_at (dd.MM.yyyy HH:mm)
 			set(fmt.Sprintf("C%d", row), ev.OccurredAt.In(loc).Format("02.01.2006 15:04"))
 
-			// D: duration
+			// D: duration (unresolved events counted until operational-day cutoff, not wall clock)
 			var duration time.Duration
 			if ev.RestoredAt != nil {
 				duration = ev.RestoredAt.Sub(ev.OccurredAt)
 			} else {
-				duration = now.Sub(ev.OccurredAt)
+				duration = cutoff.Sub(ev.OccurredAt)
 			}
 			set(fmt.Sprintf("D%d", row), formatDuration(duration))
 
