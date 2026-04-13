@@ -94,5 +94,21 @@ func TestGetCascadeDailyWeatherBatch_QueryStructure(t *testing.T) {
 	}
 }
 
+// TestUpsertGESDailyData_BulkContract documents the SQL contract for the bulk
+// partial-update upsert: transactional, CASE WHEN guards on all 8 numeric
+// fields, COALESCE-to-zero on the 2 NOT NULL columns
+// (daily_production_mln_kwh, working_aggregates).
+func TestUpsertGESDailyData_BulkContract(t *testing.T) {
+	// Contract:
+	//   - Signature: UpsertGESDailyData(ctx, items []gesreport.UpsertDailyDataRequest, userID int64) error
+	//   - Wraps all INSERTs in a single transaction (BeginTx, defer Rollback, Commit)
+	//   - For each item: one INSERT INTO ges_daily_data ... ON CONFLICT (organization_id, date) DO UPDATE SET ...
+	//   - Each of the 8 numeric columns gets a CASE WHEN $N::boolean THEN EXCLUDED.col ELSE ges_daily_data.col END guard
+	//   - daily_production_mln_kwh and working_aggregates additionally wrap EXCLUDED.col in COALESCE(..., 0) because the columns are NOT NULL
+	//   - VALUES: COALESCE($N, 0) for the 2 NOT NULL columns; bare $N for the 6 nullable columns
+	//   - 19 placeholders total (orgID + date + 8 values + userID + 8 set flags)
+	t.Log("UpsertGESDailyData: bulk + Optional partial-update contract")
+}
+
 func ptrFloat64(v float64) *float64 { return &v }
 func ptrString(v string) *string    { return &v }

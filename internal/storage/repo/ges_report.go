@@ -228,9 +228,28 @@ func (r *Repo) DeleteCascadeConfig(ctx context.Context, organizationID int64) er
 
 // --- GES Daily Data CRUD ---
 
-// UpsertGESDailyData inserts or updates daily operational data.
-func (r *Repo) UpsertGESDailyData(ctx context.Context, req gesreport.UpsertDailyDataRequest, userID int64) error {
+// UpsertGESDailyData inserts or updates daily operational data in bulk.
+// Each item is upserted in a single transaction with per-column partial-update
+// guards: a column is only written when the corresponding Optional[T].Set flag
+// is true, otherwise the existing value is preserved on conflict.
+//
+// The two NOT NULL columns (daily_production_mln_kwh, working_aggregates) use
+// COALESCE($N, 0) in VALUES and COALESCE(EXCLUDED.col, 0) in DO UPDATE — null
+// is indistinguishable from 0 for those by design. The 6 nullable columns pass
+// NULL through verbatim via Optional[T].Value, which is a *T that database/sql
+// encodes as SQL NULL when nil.
+func (r *Repo) UpsertGESDailyData(ctx context.Context, items []gesreport.UpsertDailyDataRequest, userID int64) error {
 	const op = "storage.repo.GESReport.UpsertGESDailyData"
+
+	if len(items) == 0 {
+		return nil
+	}
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("%s: failed to begin transaction: %w", op, err)
+	}
+	defer tx.Rollback()
 
 	const query = `
 		INSERT INTO ges_daily_data (
@@ -241,41 +260,72 @@ func (r *Repo) UpsertGESDailyData(ctx context.Context, req gesreport.UpsertDaily
 			created_by_user_id, updated_by_user_id, created_at, updated_at
 		) VALUES (
 			$1, $2::date,
-			$3, $4,
+			COALESCE($3, 0), COALESCE($4, 0),
 			$5, $6, $7,
 			$8, $9, $10,
 			$11, $11, NOW(), NOW()
 		)
 		ON CONFLICT (organization_id, date) DO UPDATE SET
-			daily_production_mln_kwh = EXCLUDED.daily_production_mln_kwh,
-			working_aggregates = EXCLUDED.working_aggregates,
-			water_level_m = EXCLUDED.water_level_m,
-			water_volume_mln_m3 = EXCLUDED.water_volume_mln_m3,
-			water_head_m = EXCLUDED.water_head_m,
-			reservoir_income_m3s = EXCLUDED.reservoir_income_m3s,
-			total_outflow_m3s = EXCLUDED.total_outflow_m3s,
-			ges_flow_m3s = EXCLUDED.ges_flow_m3s,
+			daily_production_mln_kwh = CASE WHEN $12::boolean
+				THEN COALESCE(EXCLUDED.daily_production_mln_kwh, 0)
+				ELSE ges_daily_data.daily_production_mln_kwh END,
+			working_aggregates = CASE WHEN $13::boolean
+				THEN COALESCE(EXCLUDED.working_aggregates, 0)
+				ELSE ges_daily_data.working_aggregates END,
+			water_level_m = CASE WHEN $14::boolean
+				THEN EXCLUDED.water_level_m
+				ELSE ges_daily_data.water_level_m END,
+			water_volume_mln_m3 = CASE WHEN $15::boolean
+				THEN EXCLUDED.water_volume_mln_m3
+				ELSE ges_daily_data.water_volume_mln_m3 END,
+			water_head_m = CASE WHEN $16::boolean
+				THEN EXCLUDED.water_head_m
+				ELSE ges_daily_data.water_head_m END,
+			reservoir_income_m3s = CASE WHEN $17::boolean
+				THEN EXCLUDED.reservoir_income_m3s
+				ELSE ges_daily_data.reservoir_income_m3s END,
+			total_outflow_m3s = CASE WHEN $18::boolean
+				THEN EXCLUDED.total_outflow_m3s
+				ELSE ges_daily_data.total_outflow_m3s END,
+			ges_flow_m3s = CASE WHEN $19::boolean
+				THEN EXCLUDED.ges_flow_m3s
+				ELSE ges_daily_data.ges_flow_m3s END,
 			updated_by_user_id = EXCLUDED.updated_by_user_id,
 			updated_at = NOW()`
 
-	_, err := r.db.ExecContext(ctx, query,
-		req.OrganizationID,
-		req.Date,
-		req.DailyProductionMlnKWh,
-		req.WorkingAggregates,
-		req.WaterLevelM,
-		req.WaterVolumeMlnM3,
-		req.WaterHeadM,
-		req.ReservoirIncomeM3s,
-		req.TotalOutflowM3s,
-		req.GESFlowM3s,
-		userID,
-	)
-	if err != nil {
-		if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
-			return translatedErr
+	for _, item := range items {
+		_, err := tx.ExecContext(ctx, query,
+			item.OrganizationID,               // $1
+			item.Date,                         // $2
+			item.DailyProductionMlnKWh.Value,  // $3
+			item.WorkingAggregates.Value,      // $4
+			item.WaterLevelM.Value,            // $5
+			item.WaterVolumeMlnM3.Value,       // $6
+			item.WaterHeadM.Value,             // $7
+			item.ReservoirIncomeM3s.Value,     // $8
+			item.TotalOutflowM3s.Value,        // $9
+			item.GESFlowM3s.Value,             // $10
+			userID,                            // $11
+			item.DailyProductionMlnKWh.Set,    // $12
+			item.WorkingAggregates.Set,        // $13
+			item.WaterLevelM.Set,              // $14
+			item.WaterVolumeMlnM3.Set,         // $15
+			item.WaterHeadM.Set,               // $16
+			item.ReservoirIncomeM3s.Set,       // $17
+			item.TotalOutflowM3s.Set,          // $18
+			item.GESFlowM3s.Set,               // $19
+		)
+		if err != nil {
+			if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
+				return translatedErr
+			}
+			return fmt.Errorf("%s: failed to upsert ges daily data for org_id=%d, date=%s: %w",
+				op, item.OrganizationID, item.Date, err)
 		}
-		return fmt.Errorf("%s: %w", op, err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("%s: failed to commit transaction: %w", op, err)
 	}
 	return nil
 }
