@@ -238,15 +238,13 @@ func (r *Repo) UpsertGESDailyData(ctx context.Context, req gesreport.UpsertDaily
 			daily_production_mln_kwh, working_aggregates,
 			water_level_m, water_volume_mln_m3, water_head_m,
 			reservoir_income_m3s, total_outflow_m3s, ges_flow_m3s,
-			temperature, weather_condition,
 			created_by_user_id, updated_by_user_id, created_at, updated_at
 		) VALUES (
 			$1, $2::date,
 			$3, $4,
 			$5, $6, $7,
 			$8, $9, $10,
-			$11, $12,
-			$13, $13, NOW(), NOW()
+			$11, $11, NOW(), NOW()
 		)
 		ON CONFLICT (organization_id, date) DO UPDATE SET
 			daily_production_mln_kwh = EXCLUDED.daily_production_mln_kwh,
@@ -257,8 +255,6 @@ func (r *Repo) UpsertGESDailyData(ctx context.Context, req gesreport.UpsertDaily
 			reservoir_income_m3s = EXCLUDED.reservoir_income_m3s,
 			total_outflow_m3s = EXCLUDED.total_outflow_m3s,
 			ges_flow_m3s = EXCLUDED.ges_flow_m3s,
-			temperature = EXCLUDED.temperature,
-			weather_condition = EXCLUDED.weather_condition,
 			updated_by_user_id = EXCLUDED.updated_by_user_id,
 			updated_at = NOW()`
 
@@ -273,8 +269,6 @@ func (r *Repo) UpsertGESDailyData(ctx context.Context, req gesreport.UpsertDaily
 		req.ReservoirIncomeM3s,
 		req.TotalOutflowM3s,
 		req.GESFlowM3s,
-		req.Temperature,
-		req.WeatherCondition,
 		userID,
 	)
 	if err != nil {
@@ -295,8 +289,7 @@ func (r *Repo) GetGESDailyData(ctx context.Context, organizationID int64, date s
 			id, organization_id, date::text,
 			daily_production_mln_kwh, working_aggregates,
 			water_level_m, water_volume_mln_m3, water_head_m,
-			reservoir_income_m3s, total_outflow_m3s, ges_flow_m3s,
-			temperature, weather_condition
+			reservoir_income_m3s, total_outflow_m3s, ges_flow_m3s
 		FROM ges_daily_data
 		WHERE organization_id = $1 AND date = $2::date`
 
@@ -313,8 +306,6 @@ func (r *Repo) GetGESDailyData(ctx context.Context, organizationID int64, date s
 		&d.ReservoirIncomeM3s,
 		&d.TotalOutflowM3s,
 		&d.GESFlowM3s,
-		&d.Temperature,
-		&d.WeatherCondition,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -408,7 +399,6 @@ func (r *Repo) GetGESDailyDataBatch(ctx context.Context, date string) ([]gesrepo
 			COALESCE(d.working_aggregates, 0),
 			d.water_level_m, d.water_volume_mln_m3, d.water_head_m,
 			d.reservoir_income_m3s, d.total_outflow_m3s, d.ges_flow_m3s,
-			d.temperature, d.weather_condition,
 			c.installed_capacity_mwt, c.total_aggregates, c.has_reservoir, c.sort_order
 		FROM ges_config c
 		JOIN organizations o ON c.organization_id = o.id
@@ -442,8 +432,6 @@ func (r *Repo) GetGESDailyDataBatch(ctx context.Context, date string) ([]gesrepo
 			&row.ReservoirIncomeM3s,
 			&row.TotalOutflowM3s,
 			&row.GESFlowM3s,
-			&row.Temperature,
-			&row.WeatherCondition,
 			&row.InstalledCapacityMWt,
 			&row.TotalAggregates,
 			&row.HasReservoir,
@@ -580,25 +568,70 @@ func (r *Repo) GetIdleDischargesForDate(ctx context.Context, start, end time.Tim
 	return result, nil
 }
 
-// UpsertWeatherData inserts or updates only weather fields in ges_daily_data.
-// Creates a minimal row if none exists (other fields default to 0/NULL).
-func (r *Repo) UpsertWeatherData(ctx context.Context, orgID int64, date string, temp *float64, condition *string) error {
-	const op = "storage.repo.GESReport.UpsertWeatherData"
+// UpsertCascadeDailyWeather inserts or updates weather data for a cascade organization.
+// Keyed by (organization_id, date). Nil values are written as NULL.
+func (r *Repo) UpsertCascadeDailyWeather(ctx context.Context, cascadeOrgID int64, date string, temperature *float64, weatherCondition *string) error {
+	const op = "storage.repo.GESReport.UpsertCascadeDailyWeather"
 
 	const query = `
-		INSERT INTO ges_daily_data (organization_id, date, temperature, weather_condition)
+		INSERT INTO cascade_daily_data (organization_id, date, temperature, weather_condition)
 		VALUES ($1, $2::date, $3, $4)
 		ON CONFLICT (organization_id, date) DO UPDATE SET
 			temperature = EXCLUDED.temperature,
 			weather_condition = EXCLUDED.weather_condition,
 			updated_at = NOW()`
 
-	_, err := r.db.ExecContext(ctx, query, orgID, date, temp, condition)
-	if err != nil {
+	if _, err := r.db.ExecContext(ctx, query, cascadeOrgID, date, temperature, weatherCondition); err != nil {
 		if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
 			return translatedErr
 		}
 		return fmt.Errorf("%s: %w", op, err)
 	}
 	return nil
+}
+
+// GetCascadeDailyWeatherBatch fetches weather rows for the given cascade org IDs and dates.
+// Returns a map keyed by (OrgID, Date as "YYYY-MM-DD").
+func (r *Repo) GetCascadeDailyWeatherBatch(ctx context.Context, orgIDs []int64, dates []string) (map[gesreport.CascadeWeatherKey]*gesreport.CascadeWeather, error) {
+	const op = "storage.repo.GESReport.GetCascadeDailyWeatherBatch"
+
+	result := make(map[gesreport.CascadeWeatherKey]*gesreport.CascadeWeather)
+	if len(orgIDs) == 0 || len(dates) == 0 {
+		return result, nil
+	}
+
+	const query = `
+		SELECT organization_id, date::text, temperature, weather_condition
+		FROM cascade_daily_data
+		WHERE organization_id = ANY($1) AND date = ANY($2::date[])`
+
+	rows, err := r.db.QueryContext(ctx, query, pq.Array(orgIDs), pq.Array(dates))
+	if err != nil {
+		return nil, fmt.Errorf("%s: query: %w", op, err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var orgID int64
+		var date string
+		var temp sql.NullFloat64
+		var cond sql.NullString
+		if err := rows.Scan(&orgID, &date, &temp, &cond); err != nil {
+			return nil, fmt.Errorf("%s: scan: %w", op, err)
+		}
+		w := &gesreport.CascadeWeather{}
+		if temp.Valid {
+			v := temp.Float64
+			w.Temperature = &v
+		}
+		if cond.Valid {
+			v := cond.String
+			w.Condition = &v
+		}
+		result[gesreport.CascadeWeatherKey{OrgID: orgID, Date: date}] = w
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: rows: %w", op, err)
+	}
+	return result, nil
 }
