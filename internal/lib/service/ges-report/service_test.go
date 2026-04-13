@@ -11,15 +11,16 @@ import (
 
 // mockRepo implements Repository with date-based dispatch for GetGESDailyDataBatch.
 type mockRepo struct {
-	todayData     []model.RawDailyRow
-	yesterdayData []model.RawDailyRow
-	prevYearData  []model.RawDailyRow
-	todayDate     string
-	yesterdayDate string
-	prevYearDate  string
-	aggregations  []model.ProductionAggregation
-	plans         []model.PlanRow
-	discharges    []model.IdleDischargeRow
+	todayData      []model.RawDailyRow
+	yesterdayData  []model.RawDailyRow
+	prevYearData   []model.RawDailyRow
+	todayDate      string
+	yesterdayDate  string
+	prevYearDate   string
+	aggregations   []model.ProductionAggregation
+	plans          []model.PlanRow
+	discharges     []model.IdleDischargeRow
+	cascadeWeather map[model.CascadeWeatherKey]*model.CascadeWeather
 }
 
 func (m *mockRepo) GetGESDailyDataBatch(_ context.Context, date string) ([]model.RawDailyRow, error) {
@@ -45,8 +46,24 @@ func (m *mockRepo) GetIdleDischargesForDate(_ context.Context, _, _ time.Time) (
 	return m.discharges, nil
 }
 
+func (m *mockRepo) GetCascadeDailyWeatherBatch(_ context.Context, orgIDs []int64, dates []string) (map[model.CascadeWeatherKey]*model.CascadeWeather, error) {
+	result := make(map[model.CascadeWeatherKey]*model.CascadeWeather)
+	for _, id := range orgIDs {
+		for _, d := range dates {
+			key := model.CascadeWeatherKey{OrgID: id, Date: d}
+			if w, ok := m.cascadeWeather[key]; ok {
+				result[key] = w
+			}
+		}
+	}
+	return result, nil
+}
+
 // ptr returns a pointer to the given float64.
 func ptr(v float64) *float64 { return &v }
+
+// ptrStr returns a pointer to the given string.
+func ptrStr(v string) *string { return &v }
 
 // approxEqual checks two float64 values are within epsilon.
 func approxEqual(a, b float64) bool {
@@ -447,5 +464,88 @@ func TestBuildReport_MultipleDischargesPerOrg(t *testing.T) {
 	// IsOngoing = true because second row is ongoing.
 	if !st.IdleDischarge.IsOngoing {
 		t.Error("IsOngoing: got false, want true (second row has IsOngoing=true)")
+	}
+}
+
+// TestBuildReport_CascadeWeather verifies that per-cascade weather is loaded
+// via GetCascadeDailyWeatherBatch and attached to CascadeReport.Weather, with
+// both current-day and previous-year temperatures populated correctly.
+func TestBuildReport_CascadeWeather(t *testing.T) {
+	cascadeID := int64(10)
+	cascadeName := "Cascade W"
+	orgID := int64(1000)
+
+	repo := &mockRepo{
+		todayDate:     "2026-04-13",
+		yesterdayDate: "2026-04-12",
+		prevYearDate:  "2025-04-13",
+		todayData: []model.RawDailyRow{
+			{
+				OrganizationID:        orgID,
+				OrganizationName:      "Station W",
+				CascadeID:             &cascadeID,
+				CascadeName:           &cascadeName,
+				Date:                  "2026-04-13",
+				DailyProductionMlnKWh: 10.0,
+				WorkingAggregates:     2,
+				InstalledCapacityMWt:  200.0,
+				TotalAggregates:       3,
+			},
+		},
+		yesterdayData: nil,
+		prevYearData:  nil,
+		aggregations: []model.ProductionAggregation{
+			{OrganizationID: orgID, MTD: 40.0, YTD: 120.0},
+		},
+		plans: []model.PlanRow{
+			{OrganizationID: orgID, Year: 2026, Month: 4, PlanMlnKWh: 60.0},
+			{OrganizationID: orgID, Year: 2026, Month: 5, PlanMlnKWh: 60.0},
+			{OrganizationID: orgID, Year: 2026, Month: 6, PlanMlnKWh: 60.0},
+		},
+		discharges: nil,
+		cascadeWeather: map[model.CascadeWeatherKey]*model.CascadeWeather{
+			{OrgID: cascadeID, Date: "2026-04-13"}: {
+				Temperature: ptr(22.5),
+				Condition:   ptrStr("01d"),
+			},
+			{OrgID: cascadeID, Date: "2025-04-13"}: {
+				Temperature: ptr(18.0),
+			},
+		},
+	}
+
+	loc := mustLoc("Asia/Tashkent")
+	svc := NewService(repo, loc)
+
+	report, err := svc.BuildDailyReport(context.Background(), "2026-04-13")
+	if err != nil {
+		t.Fatalf("BuildDailyReport returned error: %v", err)
+	}
+
+	if len(report.Cascades) != 1 {
+		t.Fatalf("cascades: got %d, want 1", len(report.Cascades))
+	}
+
+	cascade := report.Cascades[0]
+	if cascade.Weather == nil {
+		t.Fatal("cascade.Weather is nil, expected weather data")
+	}
+	if cascade.Weather.Temperature == nil {
+		t.Fatal("cascade.Weather.Temperature is nil")
+	}
+	if !approxEqual(*cascade.Weather.Temperature, 22.5) {
+		t.Errorf("Weather.Temperature: got %.4f, want 22.5", *cascade.Weather.Temperature)
+	}
+	if cascade.Weather.Condition == nil {
+		t.Fatal("cascade.Weather.Condition is nil")
+	}
+	if *cascade.Weather.Condition != "01d" {
+		t.Errorf("Weather.Condition: got %q, want %q", *cascade.Weather.Condition, "01d")
+	}
+	if cascade.Weather.PrevYearTemperature == nil {
+		t.Fatal("cascade.Weather.PrevYearTemperature is nil")
+	}
+	if !approxEqual(*cascade.Weather.PrevYearTemperature, 18.0) {
+		t.Errorf("Weather.PrevYearTemperature: got %.4f, want 18.0", *cascade.Weather.PrevYearTemperature)
 	}
 }

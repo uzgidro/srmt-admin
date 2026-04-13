@@ -14,6 +14,7 @@ type Repository interface {
 	GetGESProductionAggregations(ctx context.Context, date string) ([]model.ProductionAggregation, error)
 	GetGESPlansForReport(ctx context.Context, year int, months []int) ([]model.PlanRow, error)
 	GetIdleDischargesForDate(ctx context.Context, start, end time.Time) ([]model.IdleDischargeRow, error)
+	GetCascadeDailyWeatherBatch(ctx context.Context, orgIDs []int64, dates []string) (map[model.CascadeWeatherKey]*model.CascadeWeather, error)
 }
 
 // Service assembles the GES daily report.
@@ -72,6 +73,27 @@ func (s *Service) BuildDailyReport(ctx context.Context, date string) (*model.Dai
 		return nil, fmt.Errorf("GetIdleDischargesForDate: %w", err)
 	}
 
+	// Collect unique cascade org IDs from todayData for batch weather lookup.
+	cascadeOrgIDSet := make(map[int64]struct{})
+	cascadeOrgIDs := make([]int64, 0)
+	for _, row := range todayData {
+		if row.CascadeID != nil {
+			if _, seen := cascadeOrgIDSet[*row.CascadeID]; !seen {
+				cascadeOrgIDSet[*row.CascadeID] = struct{}{}
+				cascadeOrgIDs = append(cascadeOrgIDs, *row.CascadeID)
+			}
+		}
+	}
+
+	weatherToday, err := s.repo.GetCascadeDailyWeatherBatch(ctx, cascadeOrgIDs, []string{date})
+	if err != nil {
+		return nil, fmt.Errorf("GetCascadeDailyWeatherBatch(today): %w", err)
+	}
+	weatherPrevYear, err := s.repo.GetCascadeDailyWeatherBatch(ctx, cascadeOrgIDs, []string{prevYear})
+	if err != nil {
+		return nil, fmt.Errorf("GetCascadeDailyWeatherBatch(prevYear): %w", err)
+	}
+
 	// 4. Build lookup maps.
 	yesterdayMap := buildRawMap(yesterdayData)
 	prevYearMap := buildRawMap(prevYearData)
@@ -114,6 +136,7 @@ func (s *Service) BuildDailyReport(ctx context.Context, date string) (*model.Dai
 		cascades = append(cascades, model.CascadeReport{
 			CascadeID:   key.id,
 			CascadeName: key.name,
+			Weather:     buildCascadeWeather(key.id, date, prevYear, weatherToday, weatherPrevYear),
 			Summary:     summary,
 			Stations:    stations,
 		})
@@ -159,8 +182,6 @@ func (s *Service) computeStation(
 		TotalOutflowM3s:       row.TotalOutflowM3s,
 		GESFlowM3s:            row.GESFlowM3s,
 		IdleDischargeM3s:      idleM3s,
-		Temperature:           row.Temperature,
-		WeatherCondition:      row.WeatherCondition,
 	}
 
 	// Diffs vs yesterday.
@@ -206,7 +227,6 @@ func (s *Service) computeStation(
 	if py, ok := prevYearMap[row.OrganizationID]; ok {
 		pyPower := py.DailyProductionMlnKWh * 1000.0 / 24.0
 		prevYear = &model.PrevYearData{
-			Temperature:        py.Temperature,
 			WaterLevelM:        py.WaterLevelM,
 			WaterVolumeMlnM3:   py.WaterVolumeMlnM3,
 			WaterHeadM:         py.WaterHeadM,
@@ -333,6 +353,29 @@ func computeGrandTotal(cascades []model.CascadeReport) *model.SummaryBlock {
 	gt.YoYDifference = gt.YTDProductionMlnKWh - gt.PrevYearYTD
 
 	return gt
+}
+
+// buildCascadeWeather composes a CascadeWeather for the given cascade from the
+// today and previous-year batch lookup maps. Returns nil if no data is available.
+func buildCascadeWeather(
+	cascadeID int64,
+	date, prevYear string,
+	today, prevYr map[model.CascadeWeatherKey]*model.CascadeWeather,
+) *model.CascadeWeather {
+	wt := today[model.CascadeWeatherKey{OrgID: cascadeID, Date: date}]
+	wp := prevYr[model.CascadeWeatherKey{OrgID: cascadeID, Date: prevYear}]
+	if wt == nil && wp == nil {
+		return nil
+	}
+	result := &model.CascadeWeather{}
+	if wt != nil {
+		result.Temperature = wt.Temperature
+		result.Condition = wt.Condition
+	}
+	if wp != nil {
+		result.PrevYearTemperature = wp.Temperature
+	}
+	return result
 }
 
 // --- Lookup map builders ---
