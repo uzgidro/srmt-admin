@@ -30,9 +30,7 @@ func (o *Optional[T]) UnmarshalJSON(data []byte) error {
 // The numeric fields (income/level/release/volume/total_income_volume*) use
 // the three-state Optional wrapper so callers can do partial updates:
 //   - field absent from JSON → existing DB value is preserved
-//   - field is explicit null → writes 0 for NOT NULL columns
-//     (income/level/release/volume) or NULL for nullable columns
-//     (total_income_volume*)
+//   - field is explicit null → writes NULL (all numeric columns are nullable)
 //   - field is a number → writes that number (including 0)
 type ReservoirDataItem struct {
 	OrganizationID            int64             `json:"organization_id" validate:"required"`

@@ -29,25 +29,20 @@ func (r *Repo) UpsertReservoirData(ctx context.Context, data []reservoirdata.Res
 			total_income_volume_mln_m3, total_income_volume_prev_year_mln_m3,
 			created_by_user_id, updated_by_user_id, created_at, updated_at
 		)
-		VALUES (
-			$1, $2,
-			COALESCE($3, 0), COALESCE($4, 0), COALESCE($5, 0), COALESCE($6, 0),
-			$7, $8,
-			$9, $9, NOW(), NOW()
-		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9, NOW(), NOW())
 		ON CONFLICT (organization_id, date)
 		DO UPDATE SET
 			income_m3_s = CASE WHEN $10::boolean
-				THEN COALESCE(EXCLUDED.income_m3_s, 0)
+				THEN EXCLUDED.income_m3_s
 				ELSE reservoir_data.income_m3_s END,
 			release_m3_s = CASE WHEN $11::boolean
-				THEN COALESCE(EXCLUDED.release_m3_s, 0)
+				THEN EXCLUDED.release_m3_s
 				ELSE reservoir_data.release_m3_s END,
 			level_m = CASE WHEN $12::boolean
-				THEN COALESCE(EXCLUDED.level_m, 0)
+				THEN EXCLUDED.level_m
 				ELSE reservoir_data.level_m END,
 			volume_mln_m3 = CASE WHEN $13::boolean
-				THEN COALESCE(EXCLUDED.volume_mln_m3, 0)
+				THEN EXCLUDED.volume_mln_m3
 				ELSE reservoir_data.volume_mln_m3 END,
 			total_income_volume_mln_m3 = CASE WHEN $14::boolean
 				THEN EXCLUDED.total_income_volume_mln_m3
