@@ -43,8 +43,8 @@ type weatherUpdateCall struct {
 	Condition *string
 }
 
-func (m *mockWeatherUpdater) UpsertWeatherData(ctx context.Context, orgID int64, date string, temp *float64, condition *string) error {
-	m.calls = append(m.calls, weatherUpdateCall{orgID, date, temp, condition})
+func (m *mockWeatherUpdater) UpsertCascadeDailyWeather(ctx context.Context, orgID int64, date string, temperature *float64, weatherCondition *string) error {
+	m.calls = append(m.calls, weatherUpdateCall{orgID, date, temperature, weatherCondition})
 	return m.err
 }
 

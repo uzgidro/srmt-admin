@@ -18,7 +18,7 @@ type CascadeConfigGetter interface {
 }
 
 type WeatherUpdater interface {
-	UpsertWeatherData(ctx context.Context, orgID int64, date string, temp *float64, condition *string) error
+	UpsertCascadeDailyWeather(ctx context.Context, orgID int64, date string, temperature *float64, weatherCondition *string) error
 }
 
 type WeatherFetcher interface {
@@ -76,7 +76,7 @@ func (s *Service) Run(ctx context.Context, cutoff time.Time) {
 	s.fetchWeather(ctx, date)
 }
 
-// fetchWeather fetches weather data for all cascades and stores it in ges_daily_data.
+// fetchWeather fetches weather data for all cascades and stores it in cascade_daily_data.
 func (s *Service) fetchWeather(ctx context.Context, date string) {
 	if s.weatherFetcher == nil {
 		s.log.Warn("weather fetcher not configured, skipping weather fetch")
@@ -111,7 +111,7 @@ func (s *Service) fetchWeather(ctx context.Context, date string) {
 			continue
 		}
 
-		if err := s.weatherRepo.UpsertWeatherData(fetchCtx, cfg.OrganizationID, date, &data.Temperature, &data.Icon); err != nil {
+		if err := s.weatherRepo.UpsertCascadeDailyWeather(fetchCtx, cfg.OrganizationID, date, &data.Temperature, &data.Icon); err != nil {
 			s.log.Error("failed to save weather data",
 				slog.Int64("organization_id", cfg.OrganizationID),
 				slog.String("error", err.Error()))
