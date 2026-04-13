@@ -1,5 +1,9 @@
 package gesreport
 
+import (
+	optional "srmt-admin/internal/lib/optional"
+)
+
 // --- Config ---
 
 type Config struct {
@@ -57,16 +61,16 @@ type DailyData struct {
 }
 
 type UpsertDailyDataRequest struct {
-	OrganizationID        int64    `json:"organization_id" validate:"required"`
-	Date                  string   `json:"date" validate:"required"`
-	DailyProductionMlnKWh float64  `json:"daily_production_mln_kwh" validate:"gte=0"`
-	WorkingAggregates     int      `json:"working_aggregates" validate:"gte=0"`
-	WaterLevelM           *float64 `json:"water_level_m"`
-	WaterVolumeMlnM3      *float64 `json:"water_volume_mln_m3"`
-	WaterHeadM            *float64 `json:"water_head_m"`
-	ReservoirIncomeM3s    *float64 `json:"reservoir_income_m3s"`
-	TotalOutflowM3s       *float64 `json:"total_outflow_m3s"`
-	GESFlowM3s            *float64 `json:"ges_flow_m3s"`
+	OrganizationID        int64                      `json:"organization_id" validate:"required"`
+	Date                  string                     `json:"date" validate:"required"`
+	DailyProductionMlnKWh optional.Optional[float64] `json:"daily_production_mln_kwh"`
+	WorkingAggregates     optional.Optional[int]     `json:"working_aggregates"`
+	WaterLevelM           optional.Optional[float64] `json:"water_level_m"`
+	WaterVolumeMlnM3      optional.Optional[float64] `json:"water_volume_mln_m3"`
+	WaterHeadM            optional.Optional[float64] `json:"water_head_m"`
+	ReservoirIncomeM3s    optional.Optional[float64] `json:"reservoir_income_m3s"`
+	TotalOutflowM3s       optional.Optional[float64] `json:"total_outflow_m3s"`
+	GESFlowM3s            optional.Optional[float64] `json:"ges_flow_m3s"`
 }
 
 // --- Production Plan ---
