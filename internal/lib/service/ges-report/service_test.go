@@ -510,6 +510,7 @@ func TestBuildReport_CascadeWeather(t *testing.T) {
 			},
 			{OrgID: cascadeID, Date: "2025-04-13"}: {
 				Temperature: ptr(18.0),
+				Condition:   ptrStr("02d"),
 			},
 		},
 	}
@@ -547,5 +548,11 @@ func TestBuildReport_CascadeWeather(t *testing.T) {
 	}
 	if !approxEqual(*cascade.Weather.PrevYearTemperature, 18.0) {
 		t.Errorf("Weather.PrevYearTemperature: got %.4f, want 18.0", *cascade.Weather.PrevYearTemperature)
+	}
+	if cascade.Weather.PrevYearCondition == nil {
+		t.Fatal("cascade.Weather.PrevYearCondition is nil")
+	}
+	if *cascade.Weather.PrevYearCondition != "02d" {
+		t.Errorf("Weather.PrevYearCondition: got %q, want %q", *cascade.Weather.PrevYearCondition, "02d")
 	}
 }

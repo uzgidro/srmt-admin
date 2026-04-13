@@ -112,6 +112,7 @@ type CascadeWeather struct {
 	Temperature         *float64 `json:"temperature"`
 	Condition           *string  `json:"weather_condition"`
 	PrevYearTemperature *float64 `json:"prev_year_temperature"`
+	PrevYearCondition   *string  `json:"prev_year_condition"`
 }
 
 // CascadeWeatherKey is the map key for batch weather lookups by (cascade org id, date).

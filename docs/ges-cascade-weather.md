@@ -44,7 +44,8 @@ OpenWeatherMap One Call 3.0 по координатам из `cascade_config` и
       "weather": {
         "temperature": 22.5,
         "weather_condition": "01d",
-        "prev_year_temperature": 18.0
+        "prev_year_temperature": 18.0,
+        "prev_year_condition": "02d"
       },
       "summary": { ... },
       "stations": [ ... ]
@@ -58,6 +59,8 @@ OpenWeatherMap One Call 3.0 по координатам из `cascade_config` и
   `"01n"` = ясно ночью), `string nullable`
 - `prev_year_temperature` — температура за тот же день год назад, `float64
   nullable`
+- `prev_year_condition` — иконочный код погоды за тот же день год назад,
+  `string nullable`
 
 Станционные `StationReport.current` и `StationReport.previous_year` **не
 содержат** погодных полей.

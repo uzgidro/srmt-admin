@@ -374,6 +374,7 @@ func buildCascadeWeather(
 	}
 	if wp != nil {
 		result.PrevYearTemperature = wp.Temperature
+		result.PrevYearCondition = wp.Condition
 	}
 	return result
 }
