@@ -560,6 +560,8 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 				r.Get("/cascade-config", gesreporthandler.GetCascadeConfigs(deps.Log, deps.PgRepo))
 				r.Post("/cascade-config", gesreporthandler.UpsertCascadeConfig(deps.Log, deps.PgRepo))
 				r.Delete("/cascade-config", gesreporthandler.DeleteCascadeConfig(deps.Log, deps.PgRepo))
+				r.Get("/cascade-daily-data", gesreporthandler.GetCascadeDailyWeather(deps.Log, deps.PgRepo))
+				r.Post("/cascade-daily-data", gesreporthandler.UpsertCascadeDailyWeather(deps.Log, deps.PgRepo))
 			})
 		})
 
