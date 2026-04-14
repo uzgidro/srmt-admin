@@ -685,3 +685,125 @@ func (r *Repo) GetCascadeDailyWeatherBatch(ctx context.Context, orgIDs []int64, 
 	}
 	return result, nil
 }
+
+// UpsertCascadeDailyWeatherBulk bulk-upserts weather rows into cascade_daily_data
+// with three-state partial-update semantics via CASE WHEN guards. Both temperature
+// and weather_condition columns are nullable in the DB, so no COALESCE asymmetry.
+// Runs in a single transaction — if any row fails, all roll back.
+func (r *Repo) UpsertCascadeDailyWeatherBulk(ctx context.Context, items []gesreport.UpsertCascadeDailyWeatherRequest) error {
+	const op = "storage.repo.GESReport.UpsertCascadeDailyWeatherBulk"
+	if len(items) == 0 {
+		return nil
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("%s: begin: %w", op, err)
+	}
+	defer tx.Rollback()
+
+	const query = `
+		INSERT INTO cascade_daily_data (
+			organization_id, date, temperature, weather_condition, created_at, updated_at
+		) VALUES ($1, $2::date, $3, $4, NOW(), NOW())
+		ON CONFLICT (organization_id, date) DO UPDATE SET
+			temperature = CASE WHEN $5::boolean
+				THEN EXCLUDED.temperature
+				ELSE cascade_daily_data.temperature END,
+			weather_condition = CASE WHEN $6::boolean
+				THEN EXCLUDED.weather_condition
+				ELSE cascade_daily_data.weather_condition END,
+			updated_at = NOW()`
+
+	for _, item := range items {
+		if _, err := tx.ExecContext(ctx, query,
+			item.OrganizationID,         // $1
+			item.Date,                   // $2
+			item.Temperature.Value,      // $3
+			item.WeatherCondition.Value, // $4
+			item.Temperature.Set,        // $5
+			item.WeatherCondition.Set,   // $6
+		); err != nil {
+			if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
+				return translatedErr
+			}
+			return fmt.Errorf("%s: exec for org_id=%d date=%s: %w",
+				op, item.OrganizationID, item.Date, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("%s: commit: %w", op, err)
+	}
+	return nil
+}
+
+// GetCascadeConfigByOrgID returns the CascadeConfig for the given organization
+// or storage.ErrNotFound if the org is not a cascade (has no row in cascade_config).
+func (r *Repo) GetCascadeConfigByOrgID(ctx context.Context, orgID int64) (*gesreport.CascadeConfig, error) {
+	const op = "storage.repo.GESReport.GetCascadeConfigByOrgID"
+
+	const query = `
+		SELECT cc.id, cc.organization_id, o.name, cc.latitude, cc.longitude, cc.sort_order
+		FROM cascade_config cc
+		JOIN organizations o ON o.id = cc.organization_id
+		WHERE cc.organization_id = $1`
+
+	var cfg gesreport.CascadeConfig
+	var lat, lon sql.NullFloat64
+	err := r.db.QueryRowContext(ctx, query, orgID).Scan(
+		&cfg.ID,
+		&cfg.OrganizationID,
+		&cfg.OrganizationName,
+		&lat,
+		&lon,
+		&cfg.SortOrder,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, storage.ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+	if lat.Valid {
+		v := lat.Float64
+		cfg.Latitude = &v
+	}
+	if lon.Valid {
+		v := lon.Float64
+		cfg.Longitude = &v
+	}
+	return &cfg, nil
+}
+
+// GetCascadeDailyWeather returns the weather row for a single cascade and date,
+// or storage.ErrNotFound if no row exists. Used by the GET cascade-daily-data
+// endpoint to preload the manual-correction form.
+func (r *Repo) GetCascadeDailyWeather(ctx context.Context, orgID int64, date string) (*gesreport.CascadeWeather, error) {
+	const op = "storage.repo.GESReport.GetCascadeDailyWeather"
+
+	const query = `
+		SELECT temperature, weather_condition
+		FROM cascade_daily_data
+		WHERE organization_id = $1 AND date = $2::date`
+
+	var temp sql.NullFloat64
+	var cond sql.NullString
+	err := r.db.QueryRowContext(ctx, query, orgID, date).Scan(&temp, &cond)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, storage.ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+
+	w := &gesreport.CascadeWeather{}
+	if temp.Valid {
+		v := temp.Float64
+		w.Temperature = &v
+	}
+	if cond.Valid {
+		v := cond.String
+		w.Condition = &v
+	}
+	return w, nil
+}

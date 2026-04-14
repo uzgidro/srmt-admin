@@ -110,5 +110,43 @@ func TestUpsertGESDailyData_BulkContract(t *testing.T) {
 	t.Log("UpsertGESDailyData: bulk + Optional partial-update contract")
 }
 
+// TestUpsertCascadeDailyWeatherBulk_Contract documents the SQL contract for the
+// bulk partial-update upsert used by the cascade-daily-data endpoint.
+func TestUpsertCascadeDailyWeatherBulk_Contract(t *testing.T) {
+	// Contract:
+	//   - Signature: UpsertCascadeDailyWeatherBulk(ctx, items []gesreport.UpsertCascadeDailyWeatherRequest) error
+	//   - Early return on empty slice.
+	//   - Wraps all INSERTs in a single transaction (BeginTx, defer Rollback, Commit).
+	//   - For each item: one INSERT INTO cascade_daily_data ... ON CONFLICT (organization_id, date) DO UPDATE SET ...
+	//   - Both temperature and weather_condition get CASE WHEN $N::boolean THEN EXCLUDED.col ELSE cascade_daily_data.col END guards.
+	//   - NO COALESCE because both columns are nullable in the DB (migration 000068).
+	//   - 6 placeholders per row: $1 org_id, $2 date, $3 temperature value, $4 condition value, $5 temperature.Set, $6 condition.Set.
+	t.Log("UpsertCascadeDailyWeatherBulk: bulk + Optional three-state contract for cascade weather")
+}
+
+// TestGetCascadeConfigByOrgID_Contract documents the lookup used to validate
+// that an organization is a valid cascade (has an entry in cascade_config).
+func TestGetCascadeConfigByOrgID_Contract(t *testing.T) {
+	// Contract:
+	//   - Signature: GetCascadeConfigByOrgID(ctx, orgID int64) (*gesreport.CascadeConfig, error)
+	//   - Returns (*CascadeConfig, nil) when the org has a row in cascade_config.
+	//   - Returns (nil, storage.ErrNotFound) when there is no matching row.
+	//   - Joins organizations for the OrganizationName field.
+	//   - Reads latitude/longitude via sql.NullFloat64 because columns are nullable.
+	t.Log("GetCascadeConfigByOrgID: validates cascade membership, returns ErrNotFound for non-cascades")
+}
+
+// TestGetCascadeDailyWeather_Contract documents the single-row getter used by
+// the GET cascade-daily-data endpoint to preload the form.
+func TestGetCascadeDailyWeather_Contract(t *testing.T) {
+	// Contract:
+	//   - Signature: GetCascadeDailyWeather(ctx, orgID int64, date string) (*gesreport.CascadeWeather, error)
+	//   - Returns (*CascadeWeather, nil) when the row exists.
+	//   - Returns (nil, storage.ErrNotFound) when no row for (organization_id, date).
+	//   - Populates CascadeWeather.Temperature and .Condition only when the DB values are non-null.
+	//   - PrevYearTemperature is left zero by this method (not its responsibility).
+	t.Log("GetCascadeDailyWeather: single-row getter, ErrNotFound on missing row")
+}
+
 func ptrFloat64(v float64) *float64 { return &v }
 func ptrString(v string) *string    { return &v }
