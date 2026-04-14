@@ -73,6 +73,17 @@ type UpsertDailyDataRequest struct {
 	GESFlowM3s            optional.Optional[float64] `json:"ges_flow_m3s"`
 }
 
+// UpsertCascadeDailyWeatherRequest is the body item for manual weather corrections
+// on a cascade organization. The handler writes to cascade_daily_data using
+// three-state Optional semantics: absent preserves the column, null writes NULL,
+// a value writes that value.
+type UpsertCascadeDailyWeatherRequest struct {
+	OrganizationID   int64                      `json:"organization_id" validate:"required"`
+	Date             string                     `json:"date" validate:"required"`
+	Temperature      optional.Optional[float64] `json:"temperature"`
+	WeatherCondition optional.Optional[string]  `json:"weather_condition"`
+}
+
 // --- Production Plan ---
 
 type ProductionPlan struct {
