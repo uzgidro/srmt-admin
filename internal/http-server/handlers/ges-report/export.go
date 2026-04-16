@@ -40,6 +40,7 @@ func Export(
 	planGetter ExportPlanGetter,
 	orgTypesGetter ExportOrgTypesGetter,
 	generator *gesgen.Generator,
+	weatherIconsPath string,
 	loc *time.Location,
 ) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -163,9 +164,10 @@ func Export(
 			YTDPlans:      ytdPlans,
 			AnnualPlans:   annualPlans,
 			MonthlyPlans:  monthlyPlans,
-			OrgTypeCounts: orgTypes,
-			Modernization: modernization,
-			Repair:        repair,
+			OrgTypeCounts:    orgTypes,
+			Modernization:    modernization,
+			Repair:           repair,
+			WeatherIconsPath: weatherIconsPath,
 		})
 		if err != nil {
 			log.Error("failed to generate Excel file", sl.Err(err))

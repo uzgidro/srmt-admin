@@ -18,7 +18,7 @@ import (
 // and spot-checks key cells.
 func TestGenerateExcel_IntegrationWithRealData(t *testing.T) {
 	gen := New(templatePath(t))
-	params := buildRealisticParams()
+	params := buildRealisticParams(t)
 
 	f, err := gen.GenerateExcel(params)
 	if err != nil {
@@ -163,7 +163,7 @@ func TestGenerateExcel_IntegrationWithRealData(t *testing.T) {
 	}
 }
 
-func buildRealisticParams() ExcelParams {
+func buildRealisticParams(t *testing.T) ExcelParams {
 	loc, _ := time.LoadLocation("Asia/Tashkent")
 	date := time.Date(2026, 3, 13, 0, 0, 0, 0, loc)
 
@@ -333,10 +333,11 @@ func buildRealisticParams() ExcelParams {
 			Micro: 6,
 			Total: 38,
 		},
-		Modernization: 4,
-		Repair:        14,
-		Date:          date,
-		Loc:           loc,
+		Modernization:    4,
+		Repair:           14,
+		Date:             date,
+		Loc:              loc,
+		WeatherIconsPath: filepath.Join(resolveRepoRoot(t), "template", "weather-icons"),
 	}
 }
 

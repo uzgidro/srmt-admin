@@ -3,6 +3,7 @@ package ges
 import (
 	"fmt"
 	"math"
+	"path/filepath"
 	"time"
 
 	model "srmt-admin/internal/lib/model/ges-report"
@@ -21,15 +22,16 @@ func New(templatePath string) *Generator {
 
 // ExcelParams holds all data needed to generate the Excel report.
 type ExcelParams struct {
-	Report        *model.DailyReport
-	YTDPlans      map[int64]float64
-	AnnualPlans   map[int64]float64
-	MonthlyPlans  map[int64]float64
-	OrgTypeCounts OrgTypeCounts
-	Modernization int
-	Repair        int
-	Date          time.Time
-	Loc           *time.Location
+	Report           *model.DailyReport
+	YTDPlans         map[int64]float64
+	AnnualPlans      map[int64]float64
+	MonthlyPlans     map[int64]float64
+	OrgTypeCounts    OrgTypeCounts
+	Modernization    int
+	Repair           int
+	Date             time.Time
+	Loc              *time.Location
+	WeatherIconsPath string // directory with {code}.png files
 }
 
 // OrgTypeCounts holds station counts by type.
@@ -121,8 +123,8 @@ func (g *Generator) GenerateExcel(params ExcelParams) (*excelize.File, error) {
 
 		// Weather: merge station cells in D and Z, split into temp + icon
 		if w := cascade.Weather; w != nil && len(cascade.Stations) > 0 {
-			fillWeatherCells(f, newSheet, stationStart, len(cascade.Stations), w.Temperature, w.Condition, "D")
-			fillWeatherCells(f, newSheet, stationStart, len(cascade.Stations), w.PrevYearTemperature, w.PrevYearCondition, "Z")
+			fillWeatherCells(f, newSheet, stationStart, len(cascade.Stations), w.Temperature, w.Condition, "D", params.WeatherIconsPath)
+			fillWeatherCells(f, newSheet, stationStart, len(cascade.Stations), w.PrevYearTemperature, w.PrevYearCondition, "Z", params.WeatherIconsPath)
 		}
 	}
 
@@ -145,9 +147,9 @@ func (g *Generator) GenerateExcel(params ExcelParams) (*excelize.File, error) {
 }
 
 // fillWeatherCells merges station rows in a column and splits them into
-// temperature (upper half) and IMAGE() icon (lower half).
+// temperature (upper half) and embedded PNG icon (lower half).
 // If odd station count, the smaller half goes to temperature (top).
-func fillWeatherCells(f *excelize.File, sheet string, startRow, stationCount int, temperature *float64, conditionCode *string, col string) {
+func fillWeatherCells(f *excelize.File, sheet string, startRow, stationCount int, temperature *float64, conditionCode *string, col string, iconsPath string) {
 	if temperature == nil && conditionCode == nil {
 		return
 	}
@@ -177,16 +179,20 @@ func fillWeatherCells(f *excelize.File, sheet string, startRow, stationCount int
 		_ = f.SetCellValue(sheet, topStart, fmt.Sprintf("%.0f°С", math.Round(*temperature)))
 	}
 
-	// Lower block: IMAGE() formula for weather icon
-	if conditionCode != nil && iconRows > 0 {
+	// Lower block: embedded PNG icon
+	if conditionCode != nil && iconRows > 0 && iconsPath != "" {
 		iconStart := startRow + tempRows
 		botStart := cell(col, iconStart)
 		botEnd := cell(col, iconStart+iconRows-1)
 		if iconRows > 1 {
 			_ = f.MergeCell(sheet, botStart, botEnd)
 		}
-		url := fmt.Sprintf("https://openweathermap.org/payload/api/media/file/%s.png", *conditionCode)
-		_ = f.SetCellFormula(sheet, botStart, fmt.Sprintf(`_xlfn.IMAGE("%s")`, url))
+		iconFile := filepath.Join(iconsPath, *conditionCode+".png")
+		_ = f.AddPicture(sheet, botStart, iconFile, &excelize.GraphicOptions{
+			ScaleX:      0.5,
+			ScaleY:      0.5,
+			Positioning: "oneCell",
+		})
 	}
 }
 

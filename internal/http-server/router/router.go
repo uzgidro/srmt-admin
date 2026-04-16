@@ -215,6 +215,7 @@ type AppDependencies struct {
 	HourlyExcelTemplatePath    string
 	FilterExcelTemplatePath    string
 	GESExcelTemplatePath       string
+	WeatherIconsPath           string
 	AlarmProcessor             *alarm.Processor
 	HRMPersonnelService        *hrmpersonnel.Service
 	HRMVacationService         *hrmvacation.Service
@@ -564,7 +565,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 				r.Delete("/cascade-config", gesreporthandler.DeleteCascadeConfig(deps.Log, deps.PgRepo))
 				r.Get("/cascade-daily-data", gesreporthandler.GetCascadeDailyWeather(deps.Log, deps.PgRepo))
 				r.Post("/cascade-daily-data", gesreporthandler.UpsertCascadeDailyWeather(deps.Log, deps.PgRepo))
-				r.Get("/export", gesreporthandler.Export(deps.Log, deps.GESReportService, deps.PgRepo, deps.PgRepo, gesgen.New(deps.GESExcelTemplatePath), loc))
+				r.Get("/export", gesreporthandler.Export(deps.Log, deps.GESReportService, deps.PgRepo, deps.PgRepo, gesgen.New(deps.GESExcelTemplatePath), deps.WeatherIconsPath, loc))
 			})
 		})
 
