@@ -185,7 +185,7 @@ func fillWeatherCells(f *excelize.File, sheet string, startRow, stationCount int
 		if iconRows > 1 {
 			_ = f.MergeCell(sheet, botStart, botEnd)
 		}
-		url := fmt.Sprintf("https://openweathermap.org/img/wn/%s@2x.png", *conditionCode)
+		url := fmt.Sprintf("https://openweathermap.org/payload/api/media/file/%s%%402x.png", *conditionCode)
 		_ = f.SetCellFormula(sheet, botStart, fmt.Sprintf(`IMAGE("%s")`, url))
 	}
 }
