@@ -169,6 +169,7 @@ import (
 	scExcelGen "srmt-admin/internal/lib/service/excel/sc"
 	hrmaccess "srmt-admin/internal/lib/service/hrm/access"
 	gesreporthandler "srmt-admin/internal/http-server/handlers/ges-report"
+	gesgen "srmt-admin/internal/lib/service/excel/ges"
 	gesreportsvc "srmt-admin/internal/lib/service/ges-report"
 	hrmanalytics "srmt-admin/internal/lib/service/hrm/analytics"
 	hrmcompetency "srmt-admin/internal/lib/service/hrm/competency"
@@ -213,6 +214,7 @@ type AppDependencies struct {
 	SCExcelTemplatePath        string
 	HourlyExcelTemplatePath    string
 	FilterExcelTemplatePath    string
+	GESExcelTemplatePath       string
 	AlarmProcessor             *alarm.Processor
 	HRMPersonnelService        *hrmpersonnel.Service
 	HRMVacationService         *hrmvacation.Service
@@ -562,6 +564,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 				r.Delete("/cascade-config", gesreporthandler.DeleteCascadeConfig(deps.Log, deps.PgRepo))
 				r.Get("/cascade-daily-data", gesreporthandler.GetCascadeDailyWeather(deps.Log, deps.PgRepo))
 				r.Post("/cascade-daily-data", gesreporthandler.UpsertCascadeDailyWeather(deps.Log, deps.PgRepo))
+				r.Get("/export", gesreporthandler.Export(deps.Log, deps.GESReportService, deps.PgRepo, deps.PgRepo, gesgen.New(deps.GESExcelTemplatePath), loc))
 			})
 		})
 
