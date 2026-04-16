@@ -2,6 +2,7 @@ package ges
 
 import (
 	"fmt"
+	_ "image/png"
 	"math"
 	"path/filepath"
 	"time"
@@ -188,11 +189,14 @@ func fillWeatherCells(f *excelize.File, sheet string, startRow, stationCount int
 			_ = f.MergeCell(sheet, botStart, botEnd)
 		}
 		iconFile := filepath.Join(iconsPath, *conditionCode+".png")
-		_ = f.AddPicture(sheet, botStart, iconFile, &excelize.GraphicOptions{
+		if err := f.AddPicture(sheet, botStart, iconFile, &excelize.GraphicOptions{
 			ScaleX:      0.5,
 			ScaleY:      0.5,
 			Positioning: "oneCell",
-		})
+		}); err != nil {
+			// Log but don't fail — icon is cosmetic
+			fmt.Printf("weather icon error: cell=%s file=%s err=%v\n", botStart, iconFile, err)
+		}
 	}
 }
 
