@@ -180,6 +180,26 @@ func fillWeatherCells(f *excelize.File, sheet string, startRow, stationCount int
 		_ = f.SetCellValue(sheet, topStart, fmt.Sprintf("%.0f°С", math.Round(*temperature)))
 	}
 
+	// Dashed border between temperature and icon blocks
+	if temperature != nil && conditionCode != nil && stationCount >= 2 {
+		borderRow := startRow + tempRows - 1 // last row of temp block
+		borderCell := cell(col, borderRow)
+		styleID, _ := f.GetCellStyle(sheet, borderCell)
+		existing, _ := f.GetStyle(styleID)
+		newStyle := &excelize.Style{
+			Border: []excelize.Border{{Type: "bottom", Color: "000000", Style: 3}}, // 3 = dashed
+		}
+		if existing != nil {
+			newStyle.Fill = existing.Fill
+			newStyle.Font = existing.Font
+			newStyle.Alignment = existing.Alignment
+			newStyle.NumFmt = existing.NumFmt
+		}
+		if sid, err := f.NewStyle(newStyle); err == nil {
+			_ = f.SetCellStyle(sheet, borderCell, borderCell, sid)
+		}
+	}
+
 	// Lower block: embedded PNG icon, centered in merge area
 	if conditionCode != nil && iconRows > 0 && iconsPath != "" {
 		iconStart := startRow + tempRows
