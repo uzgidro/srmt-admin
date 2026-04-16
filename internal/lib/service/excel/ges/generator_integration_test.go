@@ -31,7 +31,7 @@ func TestGenerateExcel_IntegrationWithRealData(t *testing.T) {
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		t.Fatalf("create output dir: %v", err)
 	}
-	outPath := filepath.Join(outDir, "ges-test-output.xlsx")
+	outPath := filepath.Join(outDir, fmt.Sprintf("ges-test-%d.xlsx", time.Now().Unix()))
 	if err := f.SaveAs(outPath); err != nil {
 		t.Fatalf("SaveAs: %v", err)
 	}

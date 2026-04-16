@@ -146,7 +146,6 @@ func fillStationRow(f *excelize.File, sheet string, row int, s model.StationRepo
 	c := s.Current
 	d := s.Diffs
 	agg := s.Aggregations
-	plan := s.Plan
 	cfg := s.Config
 
 	_ = f.SetCellValue(sheet, cell("A", row), s.Name)
@@ -191,9 +190,8 @@ func fillStationRow(f *excelize.File, sheet string, row int, s model.StationRepo
 	setCellFloatVal(f, sheet, cell("V", row), agg.MTDProductionMlnKWh)
 	setCellFloatVal(f, sheet, cell("W", row), agg.YTDProductionMlnKWh)
 
-	// X-Y: plan fulfillment
-	setCellFloat(f, sheet, cell("X", row), plan.FulfillmentPct)
-	setCellFloatVal(f, sheet, cell("Y", row), plan.DifferenceMlnKWh)
+	// X-Y: formulas in template, skip
+	// AJ-AK: formulas in template, skip
 
 	// Previous year columns Z-AI
 	if weather != nil {
@@ -210,10 +208,6 @@ func fillStationRow(f *excelize.File, sheet string, row int, s model.StationRepo
 		setCellFloatVal(f, sheet, cell("AH", row), py.MTDProduction)
 		setCellFloatVal(f, sheet, cell("AI", row), py.YTDProduction)
 	}
-
-	// YoY columns AJ-AK
-	setCellFloat(f, sheet, cell("AJ", row), s.YoY.GrowthRate)
-	setCellFloatVal(f, sheet, cell("AK", row), s.YoY.DifferenceMlnKWh)
 }
 
 func fillCascadeRow(f *excelize.File, sheet string, row int, c model.CascadeReport, params ExcelParams) {
@@ -255,14 +249,10 @@ func fillCascadeRow(f *excelize.File, sheet string, row int, c model.CascadeRepo
 	setCellFloatVal(f, sheet, cell("V", row), s.MTDProductionMlnKWh)
 	setCellFloatVal(f, sheet, cell("W", row), s.YTDProductionMlnKWh)
 
-	// X-Y: plan fulfillment
-	setCellFloat(f, sheet, cell("X", row), s.FulfillmentPct)
-	setCellFloatVal(f, sheet, cell("Y", row), s.DifferenceMlnKWh)
+	// X-Y, AJ-AK: formulas in template, skip
 
-	// Previous year + YoY
+	// Previous year
 	setCellFloatVal(f, sheet, cell("AI", row), s.PrevYearYTD)
-	setCellFloat(f, sheet, cell("AJ", row), s.YoYGrowthRate)
-	setCellFloatVal(f, sheet, cell("AK", row), s.YoYDifference)
 }
 
 func fillGrandTotalRow(f *excelize.File, sheet string, row int, gt *model.SummaryBlock, report *model.DailyReport, params ExcelParams) {
@@ -301,14 +291,10 @@ func fillGrandTotalRow(f *excelize.File, sheet string, row int, gt *model.Summar
 	setCellFloatVal(f, sheet, cell("V", row), gt.MTDProductionMlnKWh)
 	setCellFloatVal(f, sheet, cell("W", row), gt.YTDProductionMlnKWh)
 
-	// X-Y: plan fulfillment
-	setCellFloat(f, sheet, cell("X", row), gt.FulfillmentPct)
-	setCellFloatVal(f, sheet, cell("Y", row), gt.DifferenceMlnKWh)
+	// X-Y, AJ-AK: formulas in template, skip
 
-	// Previous year + YoY
+	// Previous year
 	setCellFloatVal(f, sheet, cell("AI", row), gt.PrevYearYTD)
-	setCellFloat(f, sheet, cell("AJ", row), gt.YoYGrowthRate)
-	setCellFloatVal(f, sheet, cell("AK", row), gt.YoYDifference)
 }
 
 func fillForecasts(f *excelize.File, sheet string, row int, params ExcelParams) {
