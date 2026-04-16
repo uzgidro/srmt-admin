@@ -109,7 +109,7 @@ func (g *Generator) GenerateExcel(params ExcelParams) (*excelize.File, error) {
 
 	// Grand total row
 	grandRow := row
-	fillGrandTotalRow(f, newSheet, grandRow, params.Report.GrandTotal)
+	fillGrandTotalRow(f, newSheet, grandRow, params.Report.GrandTotal, params.Report, params)
 
 	// Forecast rows (originally rows 10-13, now shifted)
 	forecastRow := grandRow + 1
@@ -224,36 +224,88 @@ func fillCascadeRow(f *excelize.File, sheet string, row int, c model.CascadeRepo
 		return
 	}
 
+	// B: installed capacity
 	setCellFloatVal(f, sheet, cell("B", row), s.InstalledCapacityMWt)
+
+	// C: YTD plan (sum of station plans in this cascade)
+	var cascadeYTDPlan float64
+	for _, st := range c.Stations {
+		if ytd, ok := params.YTDPlans[st.OrganizationID]; ok {
+			cascadeYTDPlan += ytd
+		}
+	}
+	setCellFloatVal(f, sheet, cell("C", row), cascadeYTDPlan)
+
+	// P-W: aggregates through YTD production (all summed)
 	setCellInt(f, sheet, cell("P", row), s.TotalAggregates)
 	setCellInt(f, sheet, cell("Q", row), s.WorkingAggregates)
 	setCellFloatVal(f, sheet, cell("R", row), s.PowerMWt)
+
+	// S: power change (sum from stations, not in SummaryBlock)
+	var powerChangeSum float64
+	for _, st := range c.Stations {
+		if st.Diffs.PowerChangeMWt != nil {
+			powerChangeSum += *st.Diffs.PowerChangeMWt
+		}
+	}
+	setCellFloatVal(f, sheet, cell("S", row), powerChangeSum)
+
 	setCellFloatVal(f, sheet, cell("T", row), s.DailyProductionMlnKWh)
 	setCellFloatVal(f, sheet, cell("U", row), s.ProductionChange)
 	setCellFloatVal(f, sheet, cell("V", row), s.MTDProductionMlnKWh)
 	setCellFloatVal(f, sheet, cell("W", row), s.YTDProductionMlnKWh)
+
+	// X-Y: plan fulfillment
 	setCellFloat(f, sheet, cell("X", row), s.FulfillmentPct)
 	setCellFloatVal(f, sheet, cell("Y", row), s.DifferenceMlnKWh)
+
+	// Previous year + YoY
 	setCellFloatVal(f, sheet, cell("AI", row), s.PrevYearYTD)
 	setCellFloat(f, sheet, cell("AJ", row), s.YoYGrowthRate)
 	setCellFloatVal(f, sheet, cell("AK", row), s.YoYDifference)
 }
 
-func fillGrandTotalRow(f *excelize.File, sheet string, row int, gt *model.SummaryBlock) {
+func fillGrandTotalRow(f *excelize.File, sheet string, row int, gt *model.SummaryBlock, report *model.DailyReport, params ExcelParams) {
 	if gt == nil {
 		return
 	}
 
+	// B: installed capacity
 	setCellFloatVal(f, sheet, cell("B", row), gt.InstalledCapacityMWt)
+
+	// C: YTD plan total (sum across all stations)
+	var ytdPlanTotal float64
+	for _, v := range params.YTDPlans {
+		ytdPlanTotal += v
+	}
+	setCellFloatVal(f, sheet, cell("C", row), ytdPlanTotal)
+
+	// P-W: aggregates through YTD production
 	setCellInt(f, sheet, cell("P", row), gt.TotalAggregates)
 	setCellInt(f, sheet, cell("Q", row), gt.WorkingAggregates)
 	setCellFloatVal(f, sheet, cell("R", row), gt.PowerMWt)
+
+	// S: power change total (sum from all stations)
+	var powerChangeTotal float64
+	for _, cascade := range report.Cascades {
+		for _, st := range cascade.Stations {
+			if st.Diffs.PowerChangeMWt != nil {
+				powerChangeTotal += *st.Diffs.PowerChangeMWt
+			}
+		}
+	}
+	setCellFloatVal(f, sheet, cell("S", row), powerChangeTotal)
+
 	setCellFloatVal(f, sheet, cell("T", row), gt.DailyProductionMlnKWh)
 	setCellFloatVal(f, sheet, cell("U", row), gt.ProductionChange)
 	setCellFloatVal(f, sheet, cell("V", row), gt.MTDProductionMlnKWh)
 	setCellFloatVal(f, sheet, cell("W", row), gt.YTDProductionMlnKWh)
+
+	// X-Y: plan fulfillment
 	setCellFloat(f, sheet, cell("X", row), gt.FulfillmentPct)
 	setCellFloatVal(f, sheet, cell("Y", row), gt.DifferenceMlnKWh)
+
+	// Previous year + YoY
 	setCellFloatVal(f, sheet, cell("AI", row), gt.PrevYearYTD)
 	setCellFloat(f, sheet, cell("AJ", row), gt.YoYGrowthRate)
 	setCellFloatVal(f, sheet, cell("AK", row), gt.YoYDifference)
