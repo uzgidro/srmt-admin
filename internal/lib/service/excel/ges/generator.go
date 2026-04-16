@@ -274,7 +274,22 @@ func fillCascadeRow(f *excelize.File, sheet string, row int, c model.CascadeRepo
 
 	// X-Y, AJ-AK: formulas in template, skip
 
-	// Previous year
+	// AF-AI: previous year sums (AF, AG, AH not in SummaryBlock — sum from stations)
+	var prevPowerSum, prevProductionSum, prevMTDSum float64
+	for _, st := range c.Stations {
+		if py := st.PreviousYear; py != nil {
+			if py.PowerMWt != nil {
+				prevPowerSum += *py.PowerMWt
+			}
+			if py.DailyProduction != nil {
+				prevProductionSum += *py.DailyProduction
+			}
+			prevMTDSum += py.MTDProduction
+		}
+	}
+	setCellFloatVal(f, sheet, cell("AF", row), prevPowerSum)
+	setCellFloatVal(f, sheet, cell("AG", row), prevProductionSum)
+	setCellFloatVal(f, sheet, cell("AH", row), prevMTDSum)
 	setCellFloatVal(f, sheet, cell("AI", row), s.PrevYearYTD)
 }
 
@@ -316,7 +331,24 @@ func fillGrandTotalRow(f *excelize.File, sheet string, row int, gt *model.Summar
 
 	// X-Y, AJ-AK: formulas in template, skip
 
-	// Previous year
+	// AF-AI: previous year sums
+	var prevPowerTotal, prevProductionTotal, prevMTDTotal float64
+	for _, cascade := range report.Cascades {
+		for _, st := range cascade.Stations {
+			if py := st.PreviousYear; py != nil {
+				if py.PowerMWt != nil {
+					prevPowerTotal += *py.PowerMWt
+				}
+				if py.DailyProduction != nil {
+					prevProductionTotal += *py.DailyProduction
+				}
+				prevMTDTotal += py.MTDProduction
+			}
+		}
+	}
+	setCellFloatVal(f, sheet, cell("AF", row), prevPowerTotal)
+	setCellFloatVal(f, sheet, cell("AG", row), prevProductionTotal)
+	setCellFloatVal(f, sheet, cell("AH", row), prevMTDTotal)
 	setCellFloatVal(f, sheet, cell("AI", row), gt.PrevYearYTD)
 }
 
