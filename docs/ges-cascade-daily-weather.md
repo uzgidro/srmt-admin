@@ -101,7 +101,7 @@ Query params:
 Пример запроса:
 
 ```http
-GET /api/v3/ges-report/cascade-daily-data?organization_id=10&date=2026-04-13
+GET /ges-report/cascade-daily-data?organization_id=10&date=2026-04-13
 ```
 
 Если запись существует:
@@ -138,14 +138,14 @@ null
 ## Гайдлайн для фронта
 
 - Перед редактированием сделайте `GET
-  /api/v3/ges-report/cascade-daily-data?organization_id=...&date=...` —
+  /ges-report/cascade-daily-data?organization_id=...&date=...` —
   предзаполните форму текущими значениями.
 - Отправляйте в POST **только те поля, которые пользователь реально
   отредактировал**. Отсутствующие поля не будут затёрты.
 - Чтобы явно сбросить значение в `NULL` — пришлите `null`, не опускайте
   поле.
 - `organization_id` должна быть **каскадной** — проверяйте через
-  `GET /api/v3/ges-report/cascade-config`, какие org являются каскадами.
+  `GET /ges-report/cascade-config`, какие org являются каскадами.
 - Помните про перезапись тикером: ручная коррекция держится до
   следующего 04:00 Asia/Tashkent. Если нужно «залочить» значение
   надолго — это отдельная задача (потребуется флаг `manual_override` на

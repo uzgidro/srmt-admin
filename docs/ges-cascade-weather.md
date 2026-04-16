@@ -28,10 +28,10 @@ CREATE TABLE cascade_daily_data (
 OpenWeatherMap One Call 3.0 по координатам из `cascade_config` и апсертит
 результат для каждого каскада.
 
-Фронтенд **не** задаёт погоду. В `POST /api/v3/ges-report/daily-data` поля
+Фронтенд **не** задаёт погоду. В `POST /ges-report/daily-data` поля
 `temperature`/`weather_condition` **отсутствуют** в DTO.
 
-## В ответе `GET /api/v3/ges-report/?date=YYYY-MM-DD`
+## В ответе `GET /ges-report/?date=YYYY-MM-DD`
 
 Погода живёт на `CascadeReport.weather`:
 
