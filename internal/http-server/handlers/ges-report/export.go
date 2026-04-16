@@ -180,7 +180,7 @@ func Export(
 		if format == "excel" {
 			exportExcel(w, excelFile, parsedDate, log)
 		} else {
-			if err := exportGESPDF(w, excelFile, parsedDate, log); err != nil {
+			if err := exportPDFGes(w, excelFile, parsedDate, log); err != nil {
 				log.Error("failed to export PDF", sl.Err(err))
 				render.Status(r, http.StatusInternalServerError)
 				render.JSON(w, r, resp.InternalServerError("failed to convert to PDF"))
@@ -227,8 +227,8 @@ func exportExcel(w http.ResponseWriter, f *excelize.File, date time.Time, log *s
 	)
 }
 
-// exportGESPDF converts the Excel file to PDF using LibreOffice and sends it.
-func exportGESPDF(w http.ResponseWriter, f *excelize.File, date time.Time, log *slog.Logger) error {
+// exportPDFGes converts the Excel file to PDF using LibreOffice and sends it.
+func exportPDFGes(w http.ResponseWriter, f *excelize.File, date time.Time, log *slog.Logger) error {
 	tempDir, err := os.MkdirTemp("", "ges-pdf-*")
 	if err != nil {
 		return fmt.Errorf("failed to create temp directory: %w", err)

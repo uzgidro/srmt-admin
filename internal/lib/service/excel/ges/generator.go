@@ -70,16 +70,10 @@ func (g *Generator) GenerateExcel(params ExcelParams) (*excelize.File, error) {
 		return f, nil
 	}
 
-	// Calculate total station count per cascade and total rows needed
-	stationsPerCascade := make([]int, n)
+	// Calculate total data rows needed (cascade headers + station rows)
 	totalDataRows := 0
-	for i, c := range cascades {
-		sc := len(c.Stations)
-		if sc == 0 {
-			sc = 1
-		}
-		stationsPerCascade[i] = sc
-		totalDataRows += 1 + sc // cascade header + stations
+	for _, c := range cascades {
+		totalDataRows += 1 + len(c.Stations) // cascade header + stations
 	}
 
 	// Template has 2 rows (7=cascade, 8=station). We need totalDataRows.
@@ -101,7 +95,7 @@ func (g *Generator) GenerateExcel(params ExcelParams) (*excelize.File, error) {
 
 	// Phase 2: fill data
 	row := templateCascadeRow
-	for i, cascade := range cascades {
+	for _, cascade := range cascades {
 		// Cascade total row
 		fillCascadeRow(f, newSheet, row, cascade, params)
 		row++
@@ -111,7 +105,6 @@ func (g *Generator) GenerateExcel(params ExcelParams) (*excelize.File, error) {
 			fillStationRow(f, newSheet, row, station, cascade.Weather, params)
 			row++
 		}
-		_ = stationsPerCascade[i]
 	}
 
 	// Grand total row
@@ -126,10 +119,7 @@ func (g *Generator) GenerateExcel(params ExcelParams) (*excelize.File, error) {
 	aggRow := forecastRow + 4
 	fillAggregates(f, newSheet, aggRow, params)
 
-	if err := f.UpdateLinkedValue(); err != nil {
-		// Non-fatal — some templates may not have linked values
-		_ = err
-	}
+	_ = f.UpdateLinkedValue()
 
 	return f, nil
 }
@@ -325,11 +315,3 @@ func fillAggregates(f *excelize.File, sheet string, row int, params ExcelParams)
 	_ = f.SetCellValue(sheet, cell("E", row+5), fmt.Sprintf("%d та", params.Modernization))
 }
 
-// fillForecastFulfillment writes the fulfillment percentage row
-// (row after forecast actual).
-func fillForecastFulfillment(f *excelize.File, sheet string, row int, params ExcelParams) {
-	if params.Report.GrandTotal != nil {
-		gt := params.Report.GrandTotal
-		setCellFloat(f, sheet, cell("T", row), gt.FulfillmentPct)
-	}
-}
