@@ -180,7 +180,7 @@ func fillWeatherCells(f *excelize.File, sheet string, startRow, stationCount int
 		_ = f.SetCellValue(sheet, topStart, fmt.Sprintf("%.0f°С", math.Round(*temperature)))
 	}
 
-	// Lower block: embedded PNG icon
+	// Lower block: embedded PNG icon, centered in merge area
 	if conditionCode != nil && iconRows > 0 && iconsPath != "" {
 		iconStart := startRow + tempRows
 		botStart := cell(col, iconStart)
@@ -188,13 +188,38 @@ func fillWeatherCells(f *excelize.File, sheet string, startRow, stationCount int
 		if iconRows > 1 {
 			_ = f.MergeCell(sheet, botStart, botEnd)
 		}
+
+		// Calculate offsets to center the icon.
+		// OWM icons are 100x100px, scaled to 50x50px (scale 0.5).
+		const iconPx = 50.0
+
+		// Column width in characters → pixels (~7px per character unit)
+		colWidth, _ := f.GetColWidth(sheet, col)
+		colPx := colWidth * 7.0
+		offsetX := int((colPx - iconPx) / 2)
+		if offsetX < 0 {
+			offsetX = 0
+		}
+
+		// Row heights in points → pixels (~1.33px per point)
+		var totalHeightPx float64
+		for r := iconStart; r < iconStart+iconRows; r++ {
+			h, _ := f.GetRowHeight(sheet, r)
+			totalHeightPx += h * 1.33
+		}
+		offsetY := int((totalHeightPx - iconPx) / 2)
+		if offsetY < 0 {
+			offsetY = 0
+		}
+
 		iconFile := filepath.Join(iconsPath, *conditionCode+".png")
 		if err := f.AddPicture(sheet, botStart, iconFile, &excelize.GraphicOptions{
 			ScaleX:      0.5,
 			ScaleY:      0.5,
+			OffsetX:     offsetX,
+			OffsetY:     offsetY,
 			Positioning: "oneCell",
 		}); err != nil {
-			// Log but don't fail — icon is cosmetic
 			fmt.Printf("weather icon error: cell=%s file=%s err=%v\n", botStart, iconFile, err)
 		}
 	}
