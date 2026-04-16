@@ -14,7 +14,8 @@ wire_gen.go
 
 # Keep example configs (no secrets)
 !/config/*.example.yaml
-/template/
+/template/*
+!/template/*.xlsx
 srmt-admin
 
 /k8s-config/
