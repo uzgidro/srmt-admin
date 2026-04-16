@@ -173,9 +173,9 @@ func buildRealisticParams() ExcelParams {
 		CascadeName: "Чирчиқ-Бўзсув каскади",
 		Weather: &model.CascadeWeather{
 			Temperature:         floatPtr(18.0),
-			Condition:           strPtr("ясно"),
+			Condition:           strPtr("01d"),
 			PrevYearTemperature: floatPtr(15.5),
-			PrevYearCondition:   strPtr("облачно"),
+			PrevYearCondition:   strPtr("04d"),
 		},
 		Summary: &model.SummaryBlock{
 			InstalledCapacityMWt:  921,
@@ -212,9 +212,9 @@ func buildRealisticParams() ExcelParams {
 		CascadeName: "Сурхондарё каскади",
 		Weather: &model.CascadeWeather{
 			Temperature:         floatPtr(22.0),
-			Condition:           strPtr("ясно"),
+			Condition:           strPtr("10d"),
 			PrevYearTemperature: floatPtr(19.5),
-			PrevYearCondition:   strPtr("ясно"),
+			PrevYearCondition:   strPtr("02d"),
 		},
 		Summary: &model.SummaryBlock{
 			InstalledCapacityMWt:  180,
@@ -247,9 +247,9 @@ func buildRealisticParams() ExcelParams {
 		CascadeName: "Қуйи Сирдарё каскади",
 		Weather: &model.CascadeWeather{
 			Temperature:         floatPtr(20.0),
-			Condition:           strPtr("қисман булутли"),
+			Condition:           strPtr("03d"),
 			PrevYearTemperature: floatPtr(17.0),
-			PrevYearCondition:   strPtr("ясно"),
+			PrevYearCondition:   strPtr("01d"),
 		},
 		Summary: &model.SummaryBlock{
 			InstalledCapacityMWt:  690,
