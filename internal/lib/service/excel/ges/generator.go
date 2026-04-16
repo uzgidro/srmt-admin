@@ -70,33 +70,44 @@ func (g *Generator) GenerateExcel(params ExcelParams) (*excelize.File, error) {
 		return f, nil
 	}
 
-	// Calculate total data rows needed (cascade headers + station rows)
-	totalDataRows := 0
-	for _, c := range cascades {
-		totalDataRows += 1 + len(c.Stations) // cascade header + stations
-	}
-
-	// Template has 2 rows (7=cascade, 8=station). We need totalDataRows.
-	// We'll duplicate row 8 (station template) to create all needed rows.
-	// Strategy: insert rows after row 8 to make space, then fill.
-	extraRows := totalDataRows - 2 // already have cascade+station=2
-	if extraRows > 0 {
-		if err := f.DuplicateRowTo(newSheet, templateStationRow, templateStationRow+1); err != nil {
-			return nil, fmt.Errorf("initial duplicate: %w", err)
-		}
-		// Now we have 3 rows at 7,8,9. We need totalDataRows total.
-		// Insert remaining rows after current position.
-		for i := 1; i < extraRows; i++ {
-			if err := f.DuplicateRowTo(newSheet, templateStationRow, templateStationRow+1+i); err != nil {
-				return nil, fmt.Errorf("duplicate row %d: %w", i, err)
+	// Phase 1a: duplicate the 2-row block (cascade+station) for each cascade.
+	// Template rows 7-8 form one block. DuplicateRowTo copies each row of
+	// the source block to contiguous target positions, preserving formulas.
+	// Source rows are always above insertion points, so they never shift.
+	blockSize := 2
+	for i := 1; i < n; i++ {
+		targetBase := templateCascadeRow + i*blockSize
+		for j := 0; j < blockSize; j++ {
+			if err := f.DuplicateRowTo(newSheet, templateCascadeRow+j, targetBase+j); err != nil {
+				return nil, fmt.Errorf("duplicate block %d row %d: %w", i, j, err)
 			}
 		}
+	}
+
+	// Phase 1b: within each block, duplicate the station row for extra stations.
+	// Process forward, tracking cumulative offset from inserted rows.
+	offset := 0
+	for i, cascade := range cascades {
+		stationCount := len(cascade.Stations)
+		if stationCount <= 1 {
+			continue
+		}
+		// Current station template row for this cascade's block
+		stationRow := templateCascadeRow + i*blockSize + 1 + offset
+		for j := 1; j < stationCount; j++ {
+			if err := f.DuplicateRow(newSheet, stationRow); err != nil {
+				return nil, fmt.Errorf("duplicate station row cascade %d: %w", i, err)
+			}
+		}
+		offset += stationCount - 1
 	}
 
 	// Phase 2: fill data
 	row := templateCascadeRow
 	for _, cascade := range cascades {
-		// Cascade total row
+		// Cascade total row — set formulas for X, Y, AJ, AK
+		// (DuplicateRowTo does not copy shared formulas)
+		setCascadeFormulas(f, newSheet, row)
 		fillCascadeRow(f, newSheet, row, cascade, params)
 		row++
 
@@ -109,6 +120,7 @@ func (g *Generator) GenerateExcel(params ExcelParams) (*excelize.File, error) {
 
 	// Grand total row
 	grandRow := row
+	setCascadeFormulas(f, newSheet, grandRow)
 	fillGrandTotalRow(f, newSheet, grandRow, params.Report.GrandTotal, params.Report, params)
 
 	// Forecast rows (originally rows 10-13, now shifted)
@@ -122,6 +134,17 @@ func (g *Generator) GenerateExcel(params ExcelParams) (*excelize.File, error) {
 	_ = f.UpdateLinkedValue()
 
 	return f, nil
+}
+
+// setCascadeFormulas writes the template formulas for X, Y, AJ, AK into a
+// cascade-total or grand-total row. DuplicateRowTo does not copy shared
+// formulas, so we re-create them explicitly.
+func setCascadeFormulas(f *excelize.File, sheet string, row int) {
+	r := fmt.Sprintf("%d", row)
+	_ = f.SetCellFormula(sheet, "X"+r, fmt.Sprintf("IFERROR(W%[1]s/C%[1]s,0)", r))
+	_ = f.SetCellFormula(sheet, "Y"+r, fmt.Sprintf("W%[1]s-C%[1]s", r))
+	_ = f.SetCellFormula(sheet, "AJ"+r, fmt.Sprintf(`IFERROR(W%[1]s/AI%[1]s-1,0)`, r))
+	_ = f.SetCellFormula(sheet, "AK"+r, fmt.Sprintf("W%[1]s-AI%[1]s", r))
 }
 
 func setCellFloat(f *excelize.File, sheet, cell string, v *float64) {
