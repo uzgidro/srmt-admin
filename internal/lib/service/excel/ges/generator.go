@@ -2,6 +2,7 @@ package ges
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	model "srmt-admin/internal/lib/model/ges-report"
@@ -112,9 +113,16 @@ func (g *Generator) GenerateExcel(params ExcelParams) (*excelize.File, error) {
 		row++
 
 		// Station rows
+		stationStart := row
 		for _, station := range cascade.Stations {
-			fillStationRow(f, newSheet, row, station, cascade.Weather, params)
+			fillStationRow(f, newSheet, row, station, params)
 			row++
+		}
+
+		// Weather: merge station cells in D and Z, split into temp + icon
+		if w := cascade.Weather; w != nil && len(cascade.Stations) > 0 {
+			fillWeatherCells(f, newSheet, stationStart, len(cascade.Stations), w.Temperature, w.Condition, "D")
+			fillWeatherCells(f, newSheet, stationStart, len(cascade.Stations), w.PrevYearTemperature, w.PrevYearCondition, "Z")
 		}
 	}
 
@@ -134,6 +142,52 @@ func (g *Generator) GenerateExcel(params ExcelParams) (*excelize.File, error) {
 	_ = f.UpdateLinkedValue()
 
 	return f, nil
+}
+
+// fillWeatherCells merges station rows in a column and splits them into
+// temperature (upper half) and IMAGE() icon (lower half).
+// If odd station count, the smaller half goes to temperature (top).
+func fillWeatherCells(f *excelize.File, sheet string, startRow, stationCount int, temperature *float64, conditionCode *string, col string) {
+	if temperature == nil && conditionCode == nil {
+		return
+	}
+	if stationCount <= 0 {
+		return
+	}
+
+	if stationCount == 1 {
+		// Single station: temperature only, no icon
+		if temperature != nil {
+			_ = f.SetCellValue(sheet, cell(col, startRow), fmt.Sprintf("%.0f°С", math.Round(*temperature)))
+		}
+		return
+	}
+
+	// Split: smaller half on top (temperature), larger on bottom (icon)
+	tempRows := stationCount / 2
+	iconRows := stationCount - tempRows
+
+	// Upper block: temperature
+	if temperature != nil {
+		topStart := cell(col, startRow)
+		topEnd := cell(col, startRow+tempRows-1)
+		if tempRows > 1 {
+			_ = f.MergeCell(sheet, topStart, topEnd)
+		}
+		_ = f.SetCellValue(sheet, topStart, fmt.Sprintf("%.0f°С", math.Round(*temperature)))
+	}
+
+	// Lower block: IMAGE() formula for weather icon
+	if conditionCode != nil && iconRows > 0 {
+		iconStart := startRow + tempRows
+		botStart := cell(col, iconStart)
+		botEnd := cell(col, iconStart+iconRows-1)
+		if iconRows > 1 {
+			_ = f.MergeCell(sheet, botStart, botEnd)
+		}
+		url := fmt.Sprintf("https://openweathermap.org/img/wn/%s@2x.png", *conditionCode)
+		_ = f.SetCellFormula(sheet, botStart, fmt.Sprintf(`IMAGE("%s")`, url))
+	}
 }
 
 // setCascadeFormulas writes the template formulas for X, Y, AJ, AK into a
@@ -165,7 +219,7 @@ func cell(col string, row int) string {
 	return fmt.Sprintf("%s%d", col, row)
 }
 
-func fillStationRow(f *excelize.File, sheet string, row int, s model.StationReport, weather *model.CascadeWeather, params ExcelParams) {
+func fillStationRow(f *excelize.File, sheet string, row int, s model.StationReport, params ExcelParams) {
 	c := s.Current
 	d := s.Diffs
 	agg := s.Aggregations
@@ -179,10 +233,7 @@ func fillStationRow(f *excelize.File, sheet string, row int, s model.StationRepo
 		setCellFloatVal(f, sheet, cell("C", row), ytd)
 	}
 
-	// D = temperature (cascade-level)
-	if weather != nil {
-		setCellFloat(f, sheet, cell("D", row), weather.Temperature)
-	}
+	// D = weather handled by fillWeatherCells (merged across station rows)
 
 	// E-O: current water/flow data
 	setCellFloat(f, sheet, cell("E", row), c.WaterLevelM)
@@ -216,10 +267,7 @@ func fillStationRow(f *excelize.File, sheet string, row int, s model.StationRepo
 	// X-Y: formulas in template, skip
 	// AJ-AK: formulas in template, skip
 
-	// Previous year columns Z-AI
-	if weather != nil {
-		setCellFloat(f, sheet, cell("Z", row), weather.PrevYearTemperature)
-	}
+	// Previous year columns AA-AI (Z = weather handled by fillWeatherCells)
 	if py := s.PreviousYear; py != nil {
 		setCellFloat(f, sheet, cell("AA", row), py.WaterLevelM)
 		setCellFloat(f, sheet, cell("AB", row), py.WaterVolumeMlnM3)
