@@ -134,12 +134,12 @@ func (g *Generator) GenerateExcel(params ExcelParams) (*excelize.File, error) {
 	setCascadeFormulas(f, newSheet, grandRow)
 	fillGrandTotalRow(f, newSheet, grandRow, params.Report.GrandTotal, params.Report, params)
 
-	// Forecast rows (originally rows 10-13, now shifted)
+	// Forecast rows (originally rows 10-14, now shifted)
 	forecastRow := grandRow + 1
-	fillForecasts(f, newSheet, forecastRow, params)
+	fillForecasts(f, newSheet, forecastRow, grandRow, params)
 
-	// Aggregate rows (originally rows 14-19, now shifted)
-	aggRow := forecastRow + 4
+	// Aggregate rows (originally rows 15-19, now shifted)
+	aggRow := forecastRow + 5
 	fillAggregates(f, newSheet, aggRow, params)
 
 	_ = f.UpdateLinkedValue()
@@ -460,7 +460,7 @@ func fillGrandTotalRow(f *excelize.File, sheet string, row int, gt *model.Summar
 	setCellFloatVal(f, sheet, cell("AI", row), gt.PrevYearYTD)
 }
 
-func fillForecasts(f *excelize.File, sheet string, row int, params ExcelParams) {
+func fillForecasts(f *excelize.File, sheet string, row int, grandRow int, params ExcelParams) {
 	// Row 0: annual plan total
 	var annualTotal float64
 	for _, v := range params.AnnualPlans {
@@ -475,15 +475,17 @@ func fillForecasts(f *excelize.File, sheet string, row int, params ExcelParams) 
 	}
 	setCellFloatVal(f, sheet, cell("T", row+1), monthlyTotal)
 
-	// Row 2: daily production (from grand total)
+	// Row 2: daily forecast
 	if params.Report.GrandTotal != nil {
 		setCellFloatVal(f, sheet, cell("T", row+2), params.Report.GrandTotal.DailyProductionMlnKWh)
 	}
 
-	// Row 3: actual (same as daily for now)
-	if params.Report.GrandTotal != nil {
-		setCellFloatVal(f, sheet, cell("T", row+3), params.Report.GrandTotal.DailyProductionMlnKWh)
-	}
+	// Row 3: Амалда (факт) = MTD production from grand total (formula: +V{grandRow})
+	_ = f.SetCellFormula(sheet, cell("T", row+3), fmt.Sprintf("+V%d", grandRow))
+
+	// Row 4: Бажарилди (выполнение %) = IFERROR(T{row+3}/T{row+1}*100, 0)
+	_ = f.SetCellFormula(sheet, cell("T", row+4),
+		fmt.Sprintf("IFERROR(T%d/T%d*100,0)", row+3, row+1))
 }
 
 func fillAggregates(f *excelize.File, sheet string, row int, params ExcelParams) {
