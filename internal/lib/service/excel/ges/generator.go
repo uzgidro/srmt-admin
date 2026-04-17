@@ -140,7 +140,7 @@ func (g *Generator) GenerateExcel(params ExcelParams) (*excelize.File, error) {
 
 	// Aggregate rows (originally rows 15-19, now shifted)
 	aggRow := forecastRow + 5
-	fillAggregates(f, newSheet, aggRow, params)
+	fillAggregates(f, newSheet, aggRow, grandRow, params)
 
 	_ = f.UpdateLinkedValue()
 
@@ -488,33 +488,27 @@ func fillForecasts(f *excelize.File, sheet string, row int, grandRow int, params
 		fmt.Sprintf("IFERROR(T%d/T%d*100,0)", row+3, row+1))
 }
 
-func fillAggregates(f *excelize.File, sheet string, row int, params ExcelParams) {
-	gt := params.Report.GrandTotal
+func fillAggregates(f *excelize.File, sheet string, row int, grandRow int, params ExcelParams) {
 	counts := params.OrgTypeCounts
+	r := func(n int) string { return fmt.Sprintf("%d", row+n) }
 
-	// Row 0: total GES count
-	_ = f.SetCellValue(sheet, cell("E", row), fmt.Sprintf("%d та", counts.Total))
+	// Row 0: Умумий ГЭСлар сони (total GES count — value)
+	setCellInt(f, sheet, cell("E", row), counts.Total)
 
-	// Row 1: total aggregates
-	if gt != nil {
-		_ = f.SetCellValue(sheet, cell("E", row+1), fmt.Sprintf("%d та", gt.TotalAggregates))
-	}
+	// Row 1: Умумий агрегатлар сони = +P{grandRow} (formula)
+	_ = f.SetCellFormula(sheet, cell("E", row+1), fmt.Sprintf("+P%d", grandRow))
 
-	// Row 2: working aggregates
-	if gt != nil {
-		_ = f.SetCellValue(sheet, cell("E", row+2), fmt.Sprintf("%d та", gt.WorkingAggregates))
-	}
+	// Row 2: Ишлаётган агрегатлар сони = +Q{grandRow} (formula)
+	_ = f.SetCellFormula(sheet, cell("E", row+2), fmt.Sprintf("+Q%d", grandRow))
 
-	// Row 3: reserve aggregates (total - working - repair - modernization)
-	if gt != nil {
-		reserve := gt.TotalAggregates - gt.WorkingAggregates - params.Repair - params.Modernization
-		_ = f.SetCellValue(sheet, cell("E", row+3), fmt.Sprintf("%d та", reserve))
-	}
+	// Row 3: Заҳирадаги = E{row+1}-E{row+2}-E{row+4}-E{row+5} (formula)
+	_ = f.SetCellFormula(sheet, cell("E", row+3),
+		fmt.Sprintf("+E%s-E%s-E%s-E%s", r(1), r(2), r(4), r(5)))
 
-	// Row 4: repair
-	_ = f.SetCellValue(sheet, cell("E", row+4), fmt.Sprintf("%d та", params.Repair))
+	// Row 4: Таъмирдаги (repair — value from handler)
+	setCellInt(f, sheet, cell("E", row+4), params.Repair)
 
-	// Row 5: modernization
-	_ = f.SetCellValue(sheet, cell("E", row+5), fmt.Sprintf("%d та", params.Modernization))
+	// Row 5: Модернизацияда (modernization — value from handler)
+	setCellInt(f, sheet, cell("E", row+5), params.Modernization)
 }
 
