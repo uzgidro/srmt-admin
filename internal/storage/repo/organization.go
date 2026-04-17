@@ -839,6 +839,27 @@ func (r *Repo) GetOrganizationNamesByIDs(ctx context.Context, ids []int64) (map[
 	return result, nil
 }
 
+// GetOrganizationParentID returns the parent organization ID for a given org.
+// Returns *int64 (parent ID) if the org has a parent, nil if no parent.
+// Returns storage.ErrNotFound if the organization does not exist.
+func (r *Repo) GetOrganizationParentID(ctx context.Context, orgID int64) (*int64, error) {
+	const op = "storage.repo.GetOrganizationParentID"
+	var parentID sql.NullInt64
+	err := r.db.QueryRowContext(ctx,
+		"SELECT parent_organization_id FROM organizations WHERE id = $1", orgID,
+	).Scan(&parentID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, storage.ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+	if parentID.Valid {
+		return &parentID.Int64, nil
+	}
+	return nil, nil
+}
+
 // GetOrganizationParentMap returns a map of org_id -> parent_org_id for all organizations.
 func (r *Repo) GetOrganizationParentMap(ctx context.Context) (map[int64]*int64, error) {
 	const op = "storage.repo.GetOrganizationParentMap"
