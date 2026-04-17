@@ -20,10 +20,12 @@ import (
 
 type DailyDataUpserter interface {
 	UpsertGESDailyData(ctx context.Context, items []model.UpsertDailyDataRequest, userID int64) error
+	GetOrganizationParentID(ctx context.Context, orgID int64) (*int64, error)
 }
 
 type DailyDataGetter interface {
 	GetGESDailyData(ctx context.Context, organizationID int64, date string) (*model.DailyData, error)
+	GetOrganizationParentID(ctx context.Context, orgID int64) (*int64, error)
 }
 
 func UpsertDailyData(log *slog.Logger, repo DailyDataUpserter) http.HandlerFunc {
@@ -92,8 +94,8 @@ func UpsertDailyData(log *slog.Logger, repo DailyDataUpserter) http.HandlerFunc 
 		for _, item := range data {
 			orgIDs = append(orgIDs, item.OrganizationID)
 		}
-		if err := auth.CheckOrgAccessBatch(r.Context(), orgIDs); err != nil {
-			log.Warn("org access denied for ges daily data upsert", sl.Err(err))
+		if err := auth.CheckCascadeStationAccessBatch(r.Context(), orgIDs, repo); err != nil {
+			log.Warn("cascade access denied for ges daily data upsert", sl.Err(err))
 			render.Status(r, http.StatusForbidden)
 			render.JSON(w, r, resp.Forbidden("access denied to one or more organizations"))
 			return
@@ -137,6 +139,13 @@ func GetDailyData(log *slog.Logger, repo DailyDataGetter) http.HandlerFunc {
 		if _, err := time.Parse("2006-01-02", date); err != nil {
 			render.Status(r, http.StatusBadRequest)
 			render.JSON(w, r, resp.BadRequest("invalid date format, expected YYYY-MM-DD"))
+			return
+		}
+
+		if err := auth.CheckCascadeStationAccess(r.Context(), orgID, repo); err != nil {
+			log.Warn("cascade access denied for ges daily data get", sl.Err(err))
+			render.Status(r, http.StatusForbidden)
+			render.JSON(w, r, resp.Forbidden("access denied"))
 			return
 		}
 

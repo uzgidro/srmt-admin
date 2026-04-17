@@ -33,9 +33,10 @@ func (m *mockTokenVerifier) Verify(_ string) (*token.Claims, error) {
 // captureGESUpserter records the slice passed to UpsertGESDailyData so tests
 // can assert per-item Optional field state.
 type captureGESUpserter struct {
-	mu   sync.Mutex
-	last []model.UpsertDailyDataRequest
-	err  error
+	mu      sync.Mutex
+	last    []model.UpsertDailyDataRequest
+	err     error
+	parents map[int64]*int64 // optional: per-org parent overrides for cascade tests
 }
 
 func (c *captureGESUpserter) UpsertGESDailyData(_ context.Context, items []model.UpsertDailyDataRequest, _ int64) error {
@@ -44,6 +45,18 @@ func (c *captureGESUpserter) UpsertGESDailyData(_ context.Context, items []model
 	c.last = make([]model.UpsertDailyDataRequest, len(items))
 	copy(c.last, items)
 	return c.err
+}
+
+// GetOrganizationParentID returns the parent_org_id configured for the given
+// org via the parents map. With no map configured (sc/rais tests), the lookup
+// is never reached.
+func (c *captureGESUpserter) GetOrganizationParentID(_ context.Context, orgID int64) (*int64, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.parents == nil {
+		return nil, nil
+	}
+	return c.parents[orgID], nil
 }
 
 func newGESTestRouter(upserter *captureGESUpserter) http.Handler {
