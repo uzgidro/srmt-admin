@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	mwauth "srmt-admin/internal/http-server/middleware/auth"
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
 	model "srmt-admin/internal/lib/model/ges-report"
@@ -78,9 +79,37 @@ func GetCascadeConfigs(log *slog.Logger, repo CascadeConfigGetter) http.HandlerF
 			return
 		}
 
+		// Filter by own cascade for non-sc/rais users
+		configs = filterCascadeConfigsForCaller(r.Context(), configs)
+
 		render.Status(r, http.StatusOK)
 		render.JSON(w, r, configs)
 	}
+}
+
+// filterCascadeConfigsForCaller returns cascade configs visible to the current
+// user. sc/rais see all cascades. Others see only their own cascade (where
+// organization_id == claims.OrganizationID).
+func filterCascadeConfigsForCaller(ctx context.Context, configs []model.CascadeConfig) []model.CascadeConfig {
+	claims, ok := mwauth.ClaimsFromContext(ctx)
+	if !ok || claims == nil {
+		return configs
+	}
+	for _, role := range claims.Roles {
+		if role == "sc" || role == "rais" {
+			return configs
+		}
+	}
+	if claims.OrganizationID == 0 {
+		return configs
+	}
+	filtered := make([]model.CascadeConfig, 0, 1)
+	for _, c := range configs {
+		if c.OrganizationID == claims.OrganizationID {
+			filtered = append(filtered, c)
+		}
+	}
+	return filtered
 }
 
 func DeleteCascadeConfig(log *slog.Logger, repo CascadeConfigDeleter) http.HandlerFunc {

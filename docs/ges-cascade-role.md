@@ -32,11 +32,11 @@ SELECT 42, id FROM roles WHERE name = 'cascade';
 | `GET /ges-report/cascade-daily-data` | Любой каскад | Только свой каскад |
 | `POST /ges-report/cascade-daily-data` | Любые каскады | Только свой каскад |
 | `GET /ges-report/export` | Да | **403 Forbidden** |
-| `GET /ges-report/config` | Да | Да (только чтение) |
+| `GET /ges-report/config` | Все конфиги | Только станции своего каскада |
 | `POST/DELETE /ges-report/config` | Да | **403 Forbidden** |
 | `GET /ges-report/plans` | Да | Да (только чтение) |
 | `POST /ges-report/plans` | Да | **403 Forbidden** |
-| `GET /ges-report/cascade-config` | Да | Да (только чтение) |
+| `GET /ges-report/cascade-config` | Все каскады | Только свой каскад |
 | `POST/DELETE /ges-report/cascade-config` | Да | **403 Forbidden** |
 
 ## Как работает фильтрация

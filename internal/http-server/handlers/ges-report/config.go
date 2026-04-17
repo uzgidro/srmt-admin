@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	mwauth "srmt-admin/internal/http-server/middleware/auth"
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
 	model "srmt-admin/internal/lib/model/ges-report"
@@ -78,9 +79,41 @@ func GetConfigs(log *slog.Logger, repo ConfigGetter) http.HandlerFunc {
 			return
 		}
 
+		// Filter by cascade for non-sc/rais users
+		configs = filterGESConfigsForCaller(r.Context(), configs)
+
 		render.Status(r, http.StatusOK)
 		render.JSON(w, r, configs)
 	}
+}
+
+// filterGESConfigsForCaller returns configs visible to the current user.
+// sc/rais see all. Others see only stations whose cascade_id matches their
+// organization_id (i.e. stations in their own cascade, plus their own org).
+func filterGESConfigsForCaller(ctx context.Context, configs []model.Config) []model.Config {
+	claims, ok := mwauth.ClaimsFromContext(ctx)
+	if !ok || claims == nil {
+		return configs
+	}
+	for _, role := range claims.Roles {
+		if role == "sc" || role == "rais" {
+			return configs
+		}
+	}
+	if claims.OrganizationID == 0 {
+		return configs
+	}
+	filtered := make([]model.Config, 0, len(configs))
+	for _, c := range configs {
+		if c.OrganizationID == claims.OrganizationID {
+			filtered = append(filtered, c)
+			continue
+		}
+		if c.CascadeID != nil && *c.CascadeID == claims.OrganizationID {
+			filtered = append(filtered, c)
+		}
+	}
+	return filtered
 }
 
 func DeleteConfig(log *slog.Logger, repo ConfigDeleter) http.HandlerFunc {
