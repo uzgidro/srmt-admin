@@ -549,7 +549,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 
 		// GES Daily Report
 		r.Route("/ges-report", func(r chi.Router) {
-			// Tier 1: sc/rais/cascade — read report and input data
+			// Tier 1: sc/rais/cascade — read report, input data, read configs/plans
 			r.Group(func(r chi.Router) {
 				r.Use(mwauth.RequireAnyRole("sc", "rais", "cascade"))
 				r.Get("/", gesreporthandler.GetReport(deps.Log, deps.GESReportService))
@@ -557,18 +557,18 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 				r.Post("/daily-data", gesreporthandler.UpsertDailyData(deps.Log, deps.PgRepo))
 				r.Get("/cascade-daily-data", gesreporthandler.GetCascadeDailyWeather(deps.Log, deps.PgRepo))
 				r.Post("/cascade-daily-data", gesreporthandler.UpsertCascadeDailyWeather(deps.Log, deps.PgRepo))
+				r.Get("/config", gesreporthandler.GetConfigs(deps.Log, deps.PgRepo))
+				r.Get("/plans", gesreporthandler.GetPlans(deps.Log, deps.PgRepo))
+				r.Get("/cascade-config", gesreporthandler.GetCascadeConfigs(deps.Log, deps.PgRepo))
 			})
 
-			// Tier 2: sc/rais only — config, plans, export
+			// Tier 2: sc/rais only — config write, plans write, export
 			r.Group(func(r chi.Router) {
 				r.Use(mwauth.RequireAnyRole("sc", "rais"))
 				r.Get("/export", gesreporthandler.Export(deps.Log, deps.GESReportService, deps.PgRepo, deps.PgRepo, gesgen.New(deps.GESExcelTemplatePath), deps.WeatherIconsPath, loc))
-				r.Get("/config", gesreporthandler.GetConfigs(deps.Log, deps.PgRepo))
 				r.Post("/config", gesreporthandler.UpsertConfig(deps.Log, deps.PgRepo))
 				r.Delete("/config", gesreporthandler.DeleteConfig(deps.Log, deps.PgRepo))
-				r.Get("/plans", gesreporthandler.GetPlans(deps.Log, deps.PgRepo))
 				r.Post("/plans", gesreporthandler.BulkUpsertPlan(deps.Log, deps.PgRepo))
-				r.Get("/cascade-config", gesreporthandler.GetCascadeConfigs(deps.Log, deps.PgRepo))
 				r.Post("/cascade-config", gesreporthandler.UpsertCascadeConfig(deps.Log, deps.PgRepo))
 				r.Delete("/cascade-config", gesreporthandler.DeleteCascadeConfig(deps.Log, deps.PgRepo))
 			})

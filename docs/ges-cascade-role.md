@@ -32,9 +32,12 @@ SELECT 42, id FROM roles WHERE name = 'cascade';
 | `GET /ges-report/cascade-daily-data` | Любой каскад | Только свой каскад |
 | `POST /ges-report/cascade-daily-data` | Любые каскады | Только свой каскад |
 | `GET /ges-report/export` | Да | **403 Forbidden** |
-| `GET/POST/DELETE /ges-report/config` | Да | **403 Forbidden** |
-| `GET/POST /ges-report/plans` | Да | **403 Forbidden** |
-| `GET/POST/DELETE /ges-report/cascade-config` | Да | **403 Forbidden** |
+| `GET /ges-report/config` | Да | Да (только чтение) |
+| `POST/DELETE /ges-report/config` | Да | **403 Forbidden** |
+| `GET /ges-report/plans` | Да | Да (только чтение) |
+| `POST /ges-report/plans` | Да | **403 Forbidden** |
+| `GET /ges-report/cascade-config` | Да | Да (только чтение) |
+| `POST/DELETE /ges-report/cascade-config` | Да | **403 Forbidden** |
 
 ## Как работает фильтрация
 
@@ -84,6 +87,10 @@ SELECT 42, id FROM roles WHERE name = 'cascade';
   organization_id=10 → 200
 - ❌ `POST /ges-report/cascade-daily-data` с
   organization_id=20 → 403
+- ✅ `GET /ges-report/config` → 200 (читает все конфиги ГЭС)
+- ✅ `GET /ges-report/plans` → 200 (читает все планы)
+- ✅ `GET /ges-report/cascade-config` → 200 (читает каскад-конфиги)
+- ❌ `POST /ges-report/config` → 403
 - ❌ `GET /ges-report/export` → 403
 - ❌ `GET /ges-report/config` → 403
 
