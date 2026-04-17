@@ -193,10 +193,17 @@ func fillWeatherCells(f *excelize.File, sheet string, startRow, stationCount int
 		if temperature != nil {
 			styleID, _ := f.GetCellStyle(sheet, botStart)
 			existing, _ := f.GetStyle(styleID)
+			dashedTop := excelize.Border{Type: "top", Color: "000000", Style: 3}
 			newStyle := &excelize.Style{
-				Border: []excelize.Border{{Type: "top", Color: "000000", Style: 3}},
+				Border: []excelize.Border{dashedTop},
 			}
 			if existing != nil {
+				// Preserve existing borders (right, left, bottom), add dashed top
+				for _, b := range existing.Border {
+					if b.Type != "top" {
+						newStyle.Border = append(newStyle.Border, b)
+					}
+				}
 				newStyle.Fill = existing.Fill
 				newStyle.Font = existing.Font
 				newStyle.Alignment = existing.Alignment
