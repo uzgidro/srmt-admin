@@ -21,15 +21,21 @@ import (
 // CascadeDailyWeatherUpserter is the repo interface required by the POST handler.
 // UpsertCascadeDailyWeatherBulk writes the partial-update rows in a single
 // transaction; GetCascadeConfigByOrgID lets the handler verify each item's
-// organization is actually a cascade before writing.
+// organization is actually a cascade before writing; GetOrganizationParentID
+// is consumed by auth.CheckCascadeStationAccessBatch to enforce per-cascade
+// scoping for the "cascade" role.
 type CascadeDailyWeatherUpserter interface {
 	GetCascadeConfigByOrgID(ctx context.Context, orgID int64) (*model.CascadeConfig, error)
 	UpsertCascadeDailyWeatherBulk(ctx context.Context, items []model.UpsertCascadeDailyWeatherRequest) error
+	GetOrganizationParentID(ctx context.Context, orgID int64) (*int64, error)
 }
 
 // CascadeDailyWeatherGetter is the repo interface required by the GET handler.
+// GetOrganizationParentID is needed by auth.CheckCascadeStationAccess so the
+// "cascade" role is restricted to its own cascade.
 type CascadeDailyWeatherGetter interface {
 	GetCascadeDailyWeather(ctx context.Context, orgID int64, date string) (*model.CascadeWeather, error)
+	GetOrganizationParentID(ctx context.Context, orgID int64) (*int64, error)
 }
 
 // UpsertCascadeDailyWeather returns the POST handler for manual weather
@@ -115,14 +121,15 @@ func UpsertCascadeDailyWeather(log *slog.Logger, repo CascadeDailyWeatherUpserte
 			}
 		}
 
-		// Batch org access check: roles "sc"/"rais" get full access; other roles
-		// are restricted to their own org.
+		// Batch cascade access check: sc/rais get full access; cascade users may
+		// only edit their own cascade (the cascade self-org case is handled
+		// inside CheckCascadeStationAccess); other roles fall back to own-org.
 		orgIDs := make([]int64, 0, len(data))
 		for _, item := range data {
 			orgIDs = append(orgIDs, item.OrganizationID)
 		}
-		if err := auth.CheckOrgAccessBatch(r.Context(), orgIDs); err != nil {
-			log.Warn("org access denied for cascade daily weather upsert", sl.Err(err))
+		if err := auth.CheckCascadeStationAccessBatch(r.Context(), orgIDs, repo); err != nil {
+			log.Warn("cascade access denied for cascade daily weather upsert", sl.Err(err))
 			render.Status(r, http.StatusForbidden)
 			render.JSON(w, r, resp.Forbidden("access denied to one or more organizations"))
 			return
@@ -171,8 +178,8 @@ func GetCascadeDailyWeather(log *slog.Logger, repo CascadeDailyWeatherGetter) ht
 			return
 		}
 
-		if err := auth.CheckOrgAccess(r.Context(), orgID); err != nil {
-			log.Warn("org access denied for cascade daily weather get", sl.Err(err))
+		if err := auth.CheckCascadeStationAccess(r.Context(), orgID, repo); err != nil {
+			log.Warn("cascade access denied for cascade daily weather get", sl.Err(err))
 			render.Status(r, http.StatusForbidden)
 			render.JSON(w, r, resp.Forbidden("access denied"))
 			return
