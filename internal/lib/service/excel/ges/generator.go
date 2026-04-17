@@ -134,12 +134,13 @@ func (g *Generator) GenerateExcel(params ExcelParams) (*excelize.File, error) {
 	setCascadeFormulas(f, newSheet, grandRow)
 	fillGrandTotalRow(f, newSheet, grandRow, params.Report.GrandTotal, params.Report, params)
 
-	// Forecast rows (originally rows 10-14, now shifted)
+	// Forecast rows (originally rows 10-13, now shifted)
 	forecastRow := grandRow + 1
 	fillForecasts(f, newSheet, forecastRow, grandRow, params)
 
-	// Aggregate rows (originally rows 15-19, now shifted)
-	aggRow := forecastRow + 5
+	// Aggregate rows start at forecastRow+4 (same row as Бажарилди in T column)
+	// In template: row 14 has both Бажарилди (T14) and Умумий ГЭСлар (A14:C14, E14)
+	aggRow := forecastRow + 4
 	fillAggregates(f, newSheet, aggRow, grandRow, params)
 
 	_ = f.UpdateLinkedValue()
