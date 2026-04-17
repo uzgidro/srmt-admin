@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	mwauth "srmt-admin/internal/http-server/middleware/auth"
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
 	model "srmt-admin/internal/lib/model/ges-report"
@@ -17,7 +18,7 @@ import (
 )
 
 type ReportBuilder interface {
-	BuildDailyReport(ctx context.Context, date string) (*model.DailyReport, error)
+	BuildDailyReport(ctx context.Context, date string, cascadeOrgID *int64) (*model.DailyReport, error)
 }
 
 func GetReport(log *slog.Logger, svc ReportBuilder) http.HandlerFunc {
@@ -37,7 +38,23 @@ func GetReport(log *slog.Logger, svc ReportBuilder) http.HandlerFunc {
 			return
 		}
 
-		report, err := svc.BuildDailyReport(r.Context(), date)
+		// Determine cascade scope: if user is NOT sc/rais, restrict to their cascade org.
+		var cascadeOrgID *int64
+		if claims, ok := mwauth.ClaimsFromContext(r.Context()); ok && claims != nil {
+			isSuperUser := false
+			for _, role := range claims.Roles {
+				if role == "sc" || role == "rais" {
+					isSuperUser = true
+					break
+				}
+			}
+			if !isSuperUser && claims.OrganizationID != 0 {
+				id := claims.OrganizationID
+				cascadeOrgID = &id
+			}
+		}
+
+		report, err := svc.BuildDailyReport(r.Context(), date, cascadeOrgID)
 		if err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
 				render.Status(r, http.StatusNotFound)

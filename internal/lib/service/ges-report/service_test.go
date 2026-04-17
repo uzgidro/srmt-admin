@@ -134,7 +134,7 @@ func TestBuildReport_SingleStation(t *testing.T) {
 	loc := mustLoc("Asia/Tashkent")
 	svc := NewService(repo, loc)
 
-	report, err := svc.BuildDailyReport(context.Background(), "2026-03-13")
+	report, err := svc.BuildDailyReport(context.Background(), "2026-03-13", nil)
 	if err != nil {
 		t.Fatalf("BuildDailyReport returned error: %v", err)
 	}
@@ -274,7 +274,7 @@ func TestBuildReport_DiffsFromYesterday(t *testing.T) {
 	loc := mustLoc("Asia/Tashkent")
 	svc := NewService(repo, loc)
 
-	report, err := svc.BuildDailyReport(context.Background(), "2026-03-13")
+	report, err := svc.BuildDailyReport(context.Background(), "2026-03-13", nil)
 	if err != nil {
 		t.Fatalf("BuildDailyReport returned error: %v", err)
 	}
@@ -361,7 +361,7 @@ func TestBuildReport_IdleDischarge(t *testing.T) {
 	loc := mustLoc("Asia/Tashkent")
 	svc := NewService(repo, loc)
 
-	report, err := svc.BuildDailyReport(context.Background(), "2026-03-13")
+	report, err := svc.BuildDailyReport(context.Background(), "2026-03-13", nil)
 	if err != nil {
 		t.Fatalf("BuildDailyReport returned error: %v", err)
 	}
@@ -438,7 +438,7 @@ func TestBuildReport_MultipleDischargesPerOrg(t *testing.T) {
 	loc := mustLoc("Asia/Tashkent")
 	svc := NewService(repo, loc)
 
-	report, err := svc.BuildDailyReport(context.Background(), "2026-03-13")
+	report, err := svc.BuildDailyReport(context.Background(), "2026-03-13", nil)
 	if err != nil {
 		t.Fatalf("BuildDailyReport returned error: %v", err)
 	}
@@ -518,7 +518,7 @@ func TestBuildReport_CascadeWeather(t *testing.T) {
 	loc := mustLoc("Asia/Tashkent")
 	svc := NewService(repo, loc)
 
-	report, err := svc.BuildDailyReport(context.Background(), "2026-04-13")
+	report, err := svc.BuildDailyReport(context.Background(), "2026-04-13", nil)
 	if err != nil {
 		t.Fatalf("BuildDailyReport returned error: %v", err)
 	}
@@ -554,5 +554,156 @@ func TestBuildReport_CascadeWeather(t *testing.T) {
 	}
 	if *cascade.Weather.PrevYearCondition != "02d" {
 		t.Errorf("Weather.PrevYearCondition: got %q, want %q", *cascade.Weather.PrevYearCondition, "02d")
+	}
+}
+
+// twoCascadeRepo builds a mockRepo with two cascades, each with a single station.
+// Cascade A (id=1) → station 100, daily=24, YTD=200
+// Cascade B (id=2) → station 200, daily=12, YTD=100
+func twoCascadeRepo() *mockRepo {
+	cascadeAID := int64(1)
+	cascadeAName := "Cascade A"
+	cascadeBID := int64(2)
+	cascadeBName := "Cascade B"
+
+	return &mockRepo{
+		todayDate:     "2026-03-13",
+		yesterdayDate: "2026-03-12",
+		prevYearDate:  "2025-03-13",
+		todayData: []model.RawDailyRow{
+			{
+				OrganizationID:        100,
+				OrganizationName:      "Station Alpha",
+				CascadeID:             &cascadeAID,
+				CascadeName:           &cascadeAName,
+				Date:                  "2026-03-13",
+				DailyProductionMlnKWh: 24.0,
+				WorkingAggregates:     3,
+				InstalledCapacityMWt:  500.0,
+				TotalAggregates:       4,
+			},
+			{
+				OrganizationID:        200,
+				OrganizationName:      "Station Beta",
+				CascadeID:             &cascadeBID,
+				CascadeName:           &cascadeBName,
+				Date:                  "2026-03-13",
+				DailyProductionMlnKWh: 12.0,
+				WorkingAggregates:     2,
+				InstalledCapacityMWt:  200.0,
+				TotalAggregates:       3,
+			},
+		},
+		aggregations: []model.ProductionAggregation{
+			{OrganizationID: 100, MTD: 50.0, YTD: 200.0, PrevYearYTD: 160.0},
+			{OrganizationID: 200, MTD: 30.0, YTD: 100.0, PrevYearYTD: 80.0},
+		},
+		plans: []model.PlanRow{
+			{OrganizationID: 100, Year: 2026, Month: 1, PlanMlnKWh: 100.0},
+			{OrganizationID: 100, Year: 2026, Month: 2, PlanMlnKWh: 100.0},
+			{OrganizationID: 100, Year: 2026, Month: 3, PlanMlnKWh: 100.0},
+			{OrganizationID: 200, Year: 2026, Month: 1, PlanMlnKWh: 50.0},
+			{OrganizationID: 200, Year: 2026, Month: 2, PlanMlnKWh: 50.0},
+			{OrganizationID: 200, Year: 2026, Month: 3, PlanMlnKWh: 50.0},
+		},
+	}
+}
+
+// TestBuildDailyReport_NoFilter verifies that passing nil cascadeOrgID returns
+// every cascade and aggregates GrandTotal across all of them.
+func TestBuildDailyReport_NoFilter(t *testing.T) {
+	repo := twoCascadeRepo()
+	loc := mustLoc("Asia/Tashkent")
+	svc := NewService(repo, loc)
+
+	report, err := svc.BuildDailyReport(context.Background(), "2026-03-13", nil)
+	if err != nil {
+		t.Fatalf("BuildDailyReport returned error: %v", err)
+	}
+
+	if len(report.Cascades) != 2 {
+		t.Fatalf("cascades: got %d, want 2", len(report.Cascades))
+	}
+	if report.GrandTotal == nil {
+		t.Fatal("grand total is nil")
+	}
+	// 24 + 12 = 36
+	if !approxEqual(report.GrandTotal.DailyProductionMlnKWh, 36.0) {
+		t.Errorf("grand total daily production: got %.4f, want 36.0", report.GrandTotal.DailyProductionMlnKWh)
+	}
+	// 200 + 100 = 300
+	if !approxEqual(report.GrandTotal.YTDProductionMlnKWh, 300.0) {
+		t.Errorf("grand total YTD: got %.4f, want 300.0", report.GrandTotal.YTDProductionMlnKWh)
+	}
+}
+
+// TestBuildDailyReport_FilterByCascade verifies that passing a known cascade ID
+// restricts the report to that single cascade and recomputes GrandTotal as
+// equal to that cascade's summary.
+func TestBuildDailyReport_FilterByCascade(t *testing.T) {
+	repo := twoCascadeRepo()
+	loc := mustLoc("Asia/Tashkent")
+	svc := NewService(repo, loc)
+
+	cascadeBID := int64(2)
+	report, err := svc.BuildDailyReport(context.Background(), "2026-03-13", &cascadeBID)
+	if err != nil {
+		t.Fatalf("BuildDailyReport returned error: %v", err)
+	}
+
+	if len(report.Cascades) != 1 {
+		t.Fatalf("cascades: got %d, want 1", len(report.Cascades))
+	}
+	if report.Cascades[0].CascadeID != cascadeBID {
+		t.Errorf("cascade id: got %d, want %d", report.Cascades[0].CascadeID, cascadeBID)
+	}
+	if report.GrandTotal == nil {
+		t.Fatal("grand total is nil")
+	}
+	// GrandTotal must equal Cascade B's summary: daily=12, YTD=100.
+	if !approxEqual(report.GrandTotal.DailyProductionMlnKWh, 12.0) {
+		t.Errorf("grand total daily production: got %.4f, want 12.0", report.GrandTotal.DailyProductionMlnKWh)
+	}
+	if !approxEqual(report.GrandTotal.YTDProductionMlnKWh, 100.0) {
+		t.Errorf("grand total YTD: got %.4f, want 100.0", report.GrandTotal.YTDProductionMlnKWh)
+	}
+	// Sanity: GrandTotal matches the lone cascade's Summary.
+	if report.Cascades[0].Summary == nil {
+		t.Fatal("cascade summary is nil")
+	}
+	if !approxEqual(report.GrandTotal.DailyProductionMlnKWh, report.Cascades[0].Summary.DailyProductionMlnKWh) {
+		t.Errorf("grand total != cascade summary (daily): %.4f vs %.4f",
+			report.GrandTotal.DailyProductionMlnKWh, report.Cascades[0].Summary.DailyProductionMlnKWh)
+	}
+	if !approxEqual(report.GrandTotal.YTDProductionMlnKWh, report.Cascades[0].Summary.YTDProductionMlnKWh) {
+		t.Errorf("grand total != cascade summary (YTD): %.4f vs %.4f",
+			report.GrandTotal.YTDProductionMlnKWh, report.Cascades[0].Summary.YTDProductionMlnKWh)
+	}
+}
+
+// TestBuildDailyReport_FilterNonExistent verifies that passing an unknown
+// cascade ID returns an empty cascades slice and a zeroed GrandTotal.
+func TestBuildDailyReport_FilterNonExistent(t *testing.T) {
+	repo := twoCascadeRepo()
+	loc := mustLoc("Asia/Tashkent")
+	svc := NewService(repo, loc)
+
+	unknown := int64(9999)
+	report, err := svc.BuildDailyReport(context.Background(), "2026-03-13", &unknown)
+	if err != nil {
+		t.Fatalf("BuildDailyReport returned error: %v", err)
+	}
+
+	if len(report.Cascades) != 0 {
+		t.Fatalf("cascades: got %d, want 0", len(report.Cascades))
+	}
+	if report.GrandTotal == nil {
+		t.Fatal("grand total is nil (expected zeroed SummaryBlock)")
+	}
+	if !approxEqual(report.GrandTotal.DailyProductionMlnKWh, 0.0) {
+		t.Errorf("grand total daily production: got %.4f, want 0.0", report.GrandTotal.DailyProductionMlnKWh)
+	}
+	if !approxEqual(report.GrandTotal.YTDProductionMlnKWh, 0.0) {
+		t.Errorf("grand total YTD: got %.4f, want 0.0", report.GrandTotal.YTDProductionMlnKWh)
 	}
 }

@@ -29,7 +29,9 @@ func NewService(repo Repository, loc *time.Location) *Service {
 }
 
 // BuildDailyReport assembles the full GES daily report for the given date string (YYYY-MM-DD).
-func (s *Service) BuildDailyReport(ctx context.Context, date string) (*model.DailyReport, error) {
+// If cascadeOrgID is non-nil, the report is filtered to only include the cascade matching that
+// org ID, and GrandTotal is recomputed as the sum of just that cascade's stations.
+func (s *Service) BuildDailyReport(ctx context.Context, date string, cascadeOrgID *int64) (*model.DailyReport, error) {
 	// 1. Parse date and compute related dates.
 	t, err := time.ParseInLocation("2006-01-02", date, s.loc)
 	if err != nil {
@@ -142,7 +144,19 @@ func (s *Service) BuildDailyReport(ctx context.Context, date string) (*model.Dai
 		})
 	}
 
-	// 7. Grand total.
+	// 7. Optional cascade filter: restrict to a single cascade by org ID.
+	if cascadeOrgID != nil {
+		filtered := make([]model.CascadeReport, 0, 1)
+		for _, c := range cascades {
+			if c.CascadeID == *cascadeOrgID {
+				filtered = append(filtered, c)
+				break
+			}
+		}
+		cascades = filtered
+	}
+
+	// 8. Grand total (computed over the possibly-filtered cascade slice).
 	grandTotal := computeGrandTotal(cascades)
 
 	return &model.DailyReport{

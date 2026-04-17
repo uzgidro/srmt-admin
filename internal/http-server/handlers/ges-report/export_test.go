@@ -26,7 +26,7 @@ type mockReportBuilder struct {
 	err    error
 }
 
-func (m *mockReportBuilder) BuildDailyReport(_ context.Context, _ string) (*model.DailyReport, error) {
+func (m *mockReportBuilder) BuildDailyReport(_ context.Context, _ string, _ *int64) (*model.DailyReport, error) {
 	return m.report, m.err
 }
 

@@ -80,7 +80,8 @@ func Export(
 
 		// --- build report ---
 
-		report, err := reportSvc.BuildDailyReport(r.Context(), dateStr)
+		// Export is restricted to sc/rais by route middleware, so no cascade filter is applied.
+		report, err := reportSvc.BuildDailyReport(r.Context(), dateStr, nil)
 		if err != nil {
 			log.Error("failed to build daily report", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)
