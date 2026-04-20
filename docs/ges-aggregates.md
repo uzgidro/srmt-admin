@@ -31,6 +31,11 @@
 - Сервис отчёта клампит `reserve` к `0` для исторических / кривых
   данных (с лог-ворнингом и `organization_id`), чтобы UI не показывал
   отрицательный резерв.
+- `reserve_aggregates` доступен и в `current`, и в `previous_day`
+  (слепок за `date − 1`) — вычисляется по той же формуле
+  `total - working - repair - modernization`, с тем же clamp к 0
+  для «больных» данных. Подробнее про `previous_day` — см.
+  [GES_DAILY_REPORT_API.md](GES_DAILY_REPORT_API.md#previous-day-snapshot).
 
 ### Три состояния полей (`Optional[int]`)
 
