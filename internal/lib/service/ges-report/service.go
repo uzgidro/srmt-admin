@@ -182,16 +182,20 @@ func (s *Service) BuildDailyReport(ctx context.Context, date string, cascadeOrgI
 	}, nil
 }
 
-// computeStation builds a StationReport from a single today row and lookup maps.
-func (s *Service) computeStation(
+// computeDaySnapshot builds the current-state snapshot (CurrentData shape) for
+// a single RawDailyRow. Used both for the live `current` block and, when a
+// yesterday row is present, to populate the `previous_day` block — both share
+// identical derivation rules (power from daily production, idle = outflow -
+// ges_flow, reserve = total - working - repair - mod with non-negative clamp).
+//
+// snapshotLabel is used only in the clamp warning log to disambiguate
+// "current" from "previous_day" data states so operators can tell at a glance
+// which day's data is sick.
+func (s *Service) computeDaySnapshot(
 	ctx context.Context,
 	row model.RawDailyRow,
-	yesterdayMap map[int64]model.RawDailyRow,
-	prevYearMap map[int64]model.RawDailyRow,
-	aggMap map[int64]model.ProductionAggregation,
-	planMap map[int64]planEntry,
-	dischargeMap map[int64]model.IdleDischargeData,
-) model.StationReport {
+	snapshotLabel string,
+) model.CurrentData {
 	// Power from daily production.
 	power := row.DailyProductionMlnKWh * 1000.0 / 24.0
 
@@ -209,6 +213,7 @@ func (s *Service) computeStation(
 	reserveRaw := row.TotalAggregates - row.WorkingAggregates - row.RepairAggregates - row.ModernizationAggregates
 	if reserveRaw < 0 {
 		s.log.WarnContext(ctx, "aggregates exceed total — clamping station reserve to 0",
+			slog.String("snapshot", snapshotLabel),
 			slog.Int64("organization_id", row.OrganizationID),
 			slog.Int("total", row.TotalAggregates),
 			slog.Int("working", row.WorkingAggregates),
@@ -218,7 +223,7 @@ func (s *Service) computeStation(
 	}
 	reserve := clampNonNeg(reserveRaw)
 
-	current := model.CurrentData{
+	return model.CurrentData{
 		DailyProductionMlnKWh:   row.DailyProductionMlnKWh,
 		PowerMWt:                power,
 		WorkingAggregates:       row.WorkingAggregates,
@@ -233,9 +238,25 @@ func (s *Service) computeStation(
 		GESFlowM3s:              row.GESFlowM3s,
 		IdleDischargeM3s:        idleM3s,
 	}
+}
+
+// computeStation builds a StationReport from a single today row and lookup maps.
+func (s *Service) computeStation(
+	ctx context.Context,
+	row model.RawDailyRow,
+	yesterdayMap map[int64]model.RawDailyRow,
+	prevYearMap map[int64]model.RawDailyRow,
+	aggMap map[int64]model.ProductionAggregation,
+	planMap map[int64]planEntry,
+	dischargeMap map[int64]model.IdleDischargeData,
+) model.StationReport {
+	current := s.computeDaySnapshot(ctx, row, "current")
+	// Re-derive power locally for the Diffs block below (avoids re-reading current).
+	power := current.PowerMWt
 
 	// Diffs vs yesterday.
 	var diffs model.DiffData
+	var previousDay *model.PreviousDayData
 	if yest, ok := yesterdayMap[row.OrganizationID]; ok {
 		// Level change in cm (multiply by 100).
 		if row.WaterLevelM != nil && yest.WaterLevelM != nil {
@@ -252,6 +273,13 @@ func (s *Service) computeStation(
 
 		prodChange := row.DailyProductionMlnKWh - yest.DailyProductionMlnKWh
 		diffs.ProductionChange = &prodChange
+
+		// Previous-day snapshot: same derivation rules as current, fed from the
+		// yesterday row. PreviousDayData is structurally identical to CurrentData
+		// so a direct type conversion preserves every field.
+		snap := s.computeDaySnapshot(ctx, yest, "previous_day")
+		pd := model.PreviousDayData(snap)
+		previousDay = &pd
 	}
 
 	// Aggregations.
@@ -317,6 +345,7 @@ func (s *Service) computeStation(
 			HasReservoir:         row.HasReservoir,
 		},
 		Current:       current,
+		PreviousDay:   previousDay,
 		Diffs:         diffs,
 		Aggregations:  aggregations,
 		Plan:          planData,
