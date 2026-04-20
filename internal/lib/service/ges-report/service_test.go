@@ -2,12 +2,19 @@ package gesreportservice
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"math"
 	"testing"
 	"time"
 
 	model "srmt-admin/internal/lib/model/ges-report"
 )
+
+// discardLogger returns a logger whose output is silently discarded — used in unit tests.
+func discardLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
 
 // mockRepo implements Repository with date-based dispatch for GetGESDailyDataBatch.
 type mockRepo struct {
@@ -132,7 +139,7 @@ func TestBuildReport_SingleStation(t *testing.T) {
 	}
 
 	loc := mustLoc("Asia/Tashkent")
-	svc := NewService(repo, loc)
+	svc := NewService(repo, loc, discardLogger())
 
 	report, err := svc.BuildDailyReport(context.Background(), "2026-03-13", nil)
 	if err != nil {
@@ -272,7 +279,7 @@ func TestBuildReport_DiffsFromYesterday(t *testing.T) {
 	}
 
 	loc := mustLoc("Asia/Tashkent")
-	svc := NewService(repo, loc)
+	svc := NewService(repo, loc, discardLogger())
 
 	report, err := svc.BuildDailyReport(context.Background(), "2026-03-13", nil)
 	if err != nil {
@@ -359,7 +366,7 @@ func TestBuildReport_IdleDischarge(t *testing.T) {
 	}
 
 	loc := mustLoc("Asia/Tashkent")
-	svc := NewService(repo, loc)
+	svc := NewService(repo, loc, discardLogger())
 
 	report, err := svc.BuildDailyReport(context.Background(), "2026-03-13", nil)
 	if err != nil {
@@ -436,7 +443,7 @@ func TestBuildReport_MultipleDischargesPerOrg(t *testing.T) {
 	}
 
 	loc := mustLoc("Asia/Tashkent")
-	svc := NewService(repo, loc)
+	svc := NewService(repo, loc, discardLogger())
 
 	report, err := svc.BuildDailyReport(context.Background(), "2026-03-13", nil)
 	if err != nil {
@@ -516,7 +523,7 @@ func TestBuildReport_CascadeWeather(t *testing.T) {
 	}
 
 	loc := mustLoc("Asia/Tashkent")
-	svc := NewService(repo, loc)
+	svc := NewService(repo, loc, discardLogger())
 
 	report, err := svc.BuildDailyReport(context.Background(), "2026-04-13", nil)
 	if err != nil {
@@ -614,7 +621,7 @@ func twoCascadeRepo() *mockRepo {
 func TestBuildDailyReport_NoFilter(t *testing.T) {
 	repo := twoCascadeRepo()
 	loc := mustLoc("Asia/Tashkent")
-	svc := NewService(repo, loc)
+	svc := NewService(repo, loc, discardLogger())
 
 	report, err := svc.BuildDailyReport(context.Background(), "2026-03-13", nil)
 	if err != nil {
@@ -643,7 +650,7 @@ func TestBuildDailyReport_NoFilter(t *testing.T) {
 func TestBuildDailyReport_FilterByCascade(t *testing.T) {
 	repo := twoCascadeRepo()
 	loc := mustLoc("Asia/Tashkent")
-	svc := NewService(repo, loc)
+	svc := NewService(repo, loc, discardLogger())
 
 	cascadeBID := int64(2)
 	report, err := svc.BuildDailyReport(context.Background(), "2026-03-13", &cascadeBID)
@@ -681,12 +688,217 @@ func TestBuildDailyReport_FilterByCascade(t *testing.T) {
 	}
 }
 
+// TestComputeStation_ReserveCalculation verifies that reserve aggregates
+// are computed as total - working - repair - modernization for a healthy
+// configuration where the sum does not exceed total.
+func TestComputeStation_ReserveCalculation(t *testing.T) {
+	cascadeID := int64(7)
+	cascadeName := "Cascade R"
+	orgID := int64(700)
+
+	// total=10, working=4, repair=2, modernization=1 → reserve = 10-4-2-1 = 3.
+	repo := &mockRepo{
+		todayDate:     "2026-03-13",
+		yesterdayDate: "2026-03-12",
+		prevYearDate:  "2025-03-13",
+		todayData: []model.RawDailyRow{
+			{
+				OrganizationID:          orgID,
+				OrganizationName:        "Station Reserve",
+				CascadeID:               &cascadeID,
+				CascadeName:             &cascadeName,
+				Date:                    "2026-03-13",
+				DailyProductionMlnKWh:   24.0,
+				WorkingAggregates:       4,
+				RepairAggregates:        2,
+				ModernizationAggregates: 1,
+				InstalledCapacityMWt:    500.0,
+				TotalAggregates:         10,
+			},
+		},
+	}
+
+	loc := mustLoc("Asia/Tashkent")
+	svc := NewService(repo, loc, discardLogger())
+
+	report, err := svc.BuildDailyReport(context.Background(), "2026-03-13", nil)
+	if err != nil {
+		t.Fatalf("BuildDailyReport returned error: %v", err)
+	}
+	if len(report.Cascades) == 0 || len(report.Cascades[0].Stations) == 0 {
+		t.Fatal("expected at least one station in report")
+	}
+
+	st := report.Cascades[0].Stations[0]
+	if st.Current.RepairAggregates != 2 {
+		t.Errorf("RepairAggregates: got %d, want 2", st.Current.RepairAggregates)
+	}
+	if st.Current.ModernizationAggregates != 1 {
+		t.Errorf("ModernizationAggregates: got %d, want 1", st.Current.ModernizationAggregates)
+	}
+	if st.Current.ReserveAggregates != 3 {
+		t.Errorf("ReserveAggregates: got %d, want 3 (10-4-2-1)", st.Current.ReserveAggregates)
+	}
+}
+
+// TestComputeStation_ReserveClampsAtZero verifies that when working+repair+mod
+// exceed total (a "sick" data state), reserve is clamped to zero rather than
+// going negative — the trigger should normally prevent this, but if config
+// shrank or data was inserted before the trigger, we degrade gracefully.
+func TestComputeStation_ReserveClampsAtZero(t *testing.T) {
+	cascadeID := int64(8)
+	cascadeName := "Cascade S"
+	orgID := int64(800)
+
+	// total=5, working=4, repair=2, modernization=1 → 4+2+1=7 > 5 → reserve clamped to 0.
+	repo := &mockRepo{
+		todayDate:     "2026-03-13",
+		yesterdayDate: "2026-03-12",
+		prevYearDate:  "2025-03-13",
+		todayData: []model.RawDailyRow{
+			{
+				OrganizationID:          orgID,
+				OrganizationName:        "Station Sick",
+				CascadeID:               &cascadeID,
+				CascadeName:             &cascadeName,
+				Date:                    "2026-03-13",
+				DailyProductionMlnKWh:   24.0,
+				WorkingAggregates:       4,
+				RepairAggregates:        2,
+				ModernizationAggregates: 1,
+				InstalledCapacityMWt:    500.0,
+				TotalAggregates:         5,
+			},
+		},
+	}
+
+	loc := mustLoc("Asia/Tashkent")
+	svc := NewService(repo, loc, discardLogger())
+
+	report, err := svc.BuildDailyReport(context.Background(), "2026-03-13", nil)
+	if err != nil {
+		t.Fatalf("BuildDailyReport returned error: %v", err)
+	}
+	if len(report.Cascades) == 0 || len(report.Cascades[0].Stations) == 0 {
+		t.Fatal("expected at least one station in report")
+	}
+
+	st := report.Cascades[0].Stations[0]
+	if st.Current.ReserveAggregates != 0 {
+		t.Errorf("ReserveAggregates: got %d, want 0 (clamped from -2)", st.Current.ReserveAggregates)
+	}
+}
+
+// TestComputeSummary_AggregatesSumAcrossStations verifies that repair,
+// modernization, and reserve aggregates are summed correctly across stations
+// in a cascade, with reserve recomputed (and clamped) from cascade totals.
+func TestComputeSummary_AggregatesSumAcrossStations(t *testing.T) {
+	cascadeID := int64(9)
+	cascadeName := "Cascade T"
+
+	// Station 1: total=10, working=3, repair=1, mod=1 → reserve = 5
+	// Station 2: total=8,  working=4, repair=2, mod=0 → reserve = 2
+	// Cascade summary: total=18, working=7, repair=3, mod=1 → reserve = 7
+	repo := &mockRepo{
+		todayDate:     "2026-03-13",
+		yesterdayDate: "2026-03-12",
+		prevYearDate:  "2025-03-13",
+		todayData: []model.RawDailyRow{
+			{
+				OrganizationID:          910,
+				OrganizationName:        "Station One",
+				CascadeID:               &cascadeID,
+				CascadeName:             &cascadeName,
+				Date:                    "2026-03-13",
+				DailyProductionMlnKWh:   24.0,
+				WorkingAggregates:       3,
+				RepairAggregates:        1,
+				ModernizationAggregates: 1,
+				InstalledCapacityMWt:    500.0,
+				TotalAggregates:         10,
+			},
+			{
+				OrganizationID:          920,
+				OrganizationName:        "Station Two",
+				CascadeID:               &cascadeID,
+				CascadeName:             &cascadeName,
+				Date:                    "2026-03-13",
+				DailyProductionMlnKWh:   12.0,
+				WorkingAggregates:       4,
+				RepairAggregates:        2,
+				ModernizationAggregates: 0,
+				InstalledCapacityMWt:    200.0,
+				TotalAggregates:         8,
+			},
+		},
+	}
+
+	loc := mustLoc("Asia/Tashkent")
+	svc := NewService(repo, loc, discardLogger())
+
+	report, err := svc.BuildDailyReport(context.Background(), "2026-03-13", nil)
+	if err != nil {
+		t.Fatalf("BuildDailyReport returned error: %v", err)
+	}
+	if len(report.Cascades) != 1 {
+		t.Fatalf("cascades: got %d, want 1", len(report.Cascades))
+	}
+
+	cascade := report.Cascades[0]
+	// Per-station reserves.
+	if cascade.Stations[0].Current.ReserveAggregates != 5 {
+		t.Errorf("station[0].Reserve: got %d, want 5", cascade.Stations[0].Current.ReserveAggregates)
+	}
+	if cascade.Stations[1].Current.ReserveAggregates != 2 {
+		t.Errorf("station[1].Reserve: got %d, want 2", cascade.Stations[1].Current.ReserveAggregates)
+	}
+
+	// Cascade summary sums.
+	sum := cascade.Summary
+	if sum == nil {
+		t.Fatal("cascade summary is nil")
+	}
+	if sum.TotalAggregates != 18 {
+		t.Errorf("summary.Total: got %d, want 18", sum.TotalAggregates)
+	}
+	if sum.WorkingAggregates != 7 {
+		t.Errorf("summary.Working: got %d, want 7", sum.WorkingAggregates)
+	}
+	if sum.RepairAggregates != 3 {
+		t.Errorf("summary.Repair: got %d, want 3", sum.RepairAggregates)
+	}
+	if sum.ModernizationAggregates != 1 {
+		t.Errorf("summary.Modernization: got %d, want 1", sum.ModernizationAggregates)
+	}
+	if sum.ReserveAggregates != 7 {
+		t.Errorf("summary.Reserve: got %d, want 7 (18-7-3-1)", sum.ReserveAggregates)
+	}
+
+	// Grand total mirrors the single-cascade summary in this test.
+	gt := report.GrandTotal
+	if gt == nil {
+		t.Fatal("grand total is nil")
+	}
+	if gt.TotalAggregates != 18 {
+		t.Errorf("grandTotal.Total: got %d, want 18", gt.TotalAggregates)
+	}
+	if gt.RepairAggregates != 3 {
+		t.Errorf("grandTotal.Repair: got %d, want 3", gt.RepairAggregates)
+	}
+	if gt.ModernizationAggregates != 1 {
+		t.Errorf("grandTotal.Modernization: got %d, want 1", gt.ModernizationAggregates)
+	}
+	if gt.ReserveAggregates != 7 {
+		t.Errorf("grandTotal.Reserve: got %d, want 7", gt.ReserveAggregates)
+	}
+}
+
 // TestBuildDailyReport_FilterNonExistent verifies that passing an unknown
 // cascade ID returns an empty cascades slice and a zeroed GrandTotal.
 func TestBuildDailyReport_FilterNonExistent(t *testing.T) {
 	repo := twoCascadeRepo()
 	loc := mustLoc("Asia/Tashkent")
-	svc := NewService(repo, loc)
+	svc := NewService(repo, loc, discardLogger())
 
 	unknown := int64(9999)
 	report, err := svc.BuildDailyReport(context.Background(), "2026-03-13", &unknown)

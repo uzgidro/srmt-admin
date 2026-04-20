@@ -3,6 +3,7 @@ package gesreportservice
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	model "srmt-admin/internal/lib/model/ges-report"
@@ -21,11 +22,26 @@ type Repository interface {
 type Service struct {
 	repo Repository
 	loc  *time.Location
+	log  *slog.Logger
 }
 
-// NewService creates a new Service.
-func NewService(repo Repository, loc *time.Location) *Service {
-	return &Service{repo: repo, loc: loc}
+// NewService creates a new Service. The logger is used to surface "sick" data
+// states (e.g. when working+repair+modernization exceed the configured total
+// aggregates) where reserve must be clamped to zero.
+func NewService(repo Repository, loc *time.Location, log *slog.Logger) *Service {
+	return &Service{repo: repo, loc: loc, log: log}
+}
+
+// clampNonNeg returns v if non-negative, otherwise 0. Used to keep
+// reserve-aggregate counts from going negative when working+repair+modernization
+// exceed the configured total (a defence-in-depth check; the DB trigger should
+// normally prevent this, but data may have been inserted before the trigger or
+// config may have shrunk).
+func clampNonNeg(v int) int {
+	if v < 0 {
+		return 0
+	}
+	return v
 }
 
 // BuildDailyReport assembles the full GES daily report for the given date string (YYYY-MM-DD).
@@ -112,7 +128,7 @@ func (s *Service) BuildDailyReport(ctx context.Context, date string, cascadeOrgI
 	cascadeStations := map[cascadeKey][]model.StationReport{}
 
 	for _, row := range todayData {
-		station := s.computeStation(row, yesterdayMap, prevYearMap, aggMap, planMap, dischargeMap)
+		station := s.computeStation(ctx, row, yesterdayMap, prevYearMap, aggMap, planMap, dischargeMap)
 
 		var cid int64
 		var cname string
@@ -134,7 +150,7 @@ func (s *Service) BuildDailyReport(ctx context.Context, date string, cascadeOrgI
 	cascades := make([]model.CascadeReport, 0, len(cascadeOrder))
 	for _, key := range cascadeOrder {
 		stations := cascadeStations[key]
-		summary := computeSummary(stations)
+		summary := s.computeSummary(ctx, key.id, stations)
 		cascades = append(cascades, model.CascadeReport{
 			CascadeID:   key.id,
 			CascadeName: key.name,
@@ -157,7 +173,7 @@ func (s *Service) BuildDailyReport(ctx context.Context, date string, cascadeOrgI
 	}
 
 	// 8. Grand total (computed over the possibly-filtered cascade slice).
-	grandTotal := computeGrandTotal(cascades)
+	grandTotal := s.computeGrandTotal(ctx, cascades)
 
 	return &model.DailyReport{
 		Date:       date,
@@ -168,6 +184,7 @@ func (s *Service) BuildDailyReport(ctx context.Context, date string, cascadeOrgI
 
 // computeStation builds a StationReport from a single today row and lookup maps.
 func (s *Service) computeStation(
+	ctx context.Context,
 	row model.RawDailyRow,
 	yesterdayMap map[int64]model.RawDailyRow,
 	prevYearMap map[int64]model.RawDailyRow,
@@ -185,17 +202,36 @@ func (s *Service) computeStation(
 		idleM3s = &v
 	}
 
+	// Reserve = total - working - repair - modernization, clamped at zero.
+	// The DB trigger normally enforces working+repair+mod <= total, but data
+	// inserted before the trigger or a shrunk config can leave us with a
+	// negative reserve — clamp and warn so the data is visible but obvious.
+	reserveRaw := row.TotalAggregates - row.WorkingAggregates - row.RepairAggregates - row.ModernizationAggregates
+	if reserveRaw < 0 {
+		s.log.WarnContext(ctx, "aggregates exceed total — clamping station reserve to 0",
+			slog.Int64("organization_id", row.OrganizationID),
+			slog.Int("total", row.TotalAggregates),
+			slog.Int("working", row.WorkingAggregates),
+			slog.Int("repair", row.RepairAggregates),
+			slog.Int("modernization", row.ModernizationAggregates),
+		)
+	}
+	reserve := clampNonNeg(reserveRaw)
+
 	current := model.CurrentData{
-		DailyProductionMlnKWh: row.DailyProductionMlnKWh,
-		PowerMWt:              power,
-		WorkingAggregates:     row.WorkingAggregates,
-		WaterLevelM:           row.WaterLevelM,
-		WaterVolumeMlnM3:      row.WaterVolumeMlnM3,
-		WaterHeadM:            row.WaterHeadM,
-		ReservoirIncomeM3s:    row.ReservoirIncomeM3s,
-		TotalOutflowM3s:       row.TotalOutflowM3s,
-		GESFlowM3s:            row.GESFlowM3s,
-		IdleDischargeM3s:      idleM3s,
+		DailyProductionMlnKWh:   row.DailyProductionMlnKWh,
+		PowerMWt:                power,
+		WorkingAggregates:       row.WorkingAggregates,
+		RepairAggregates:        row.RepairAggregates,
+		ModernizationAggregates: row.ModernizationAggregates,
+		ReserveAggregates:       reserve,
+		WaterLevelM:             row.WaterLevelM,
+		WaterVolumeMlnM3:        row.WaterVolumeMlnM3,
+		WaterHeadM:              row.WaterHeadM,
+		ReservoirIncomeM3s:      row.ReservoirIncomeM3s,
+		TotalOutflowM3s:         row.TotalOutflowM3s,
+		GESFlowM3s:              row.GESFlowM3s,
+		IdleDischargeM3s:        idleM3s,
 	}
 
 	// Diffs vs yesterday.
@@ -291,12 +327,15 @@ func (s *Service) computeStation(
 }
 
 // computeSummary sums the relevant fields across stations in a cascade.
-func computeSummary(stations []model.StationReport) *model.SummaryBlock {
+// The cascadeID is used only for log context when reserve is clamped.
+func (s *Service) computeSummary(ctx context.Context, cascadeID int64, stations []model.StationReport) *model.SummaryBlock {
 	sb := &model.SummaryBlock{}
 	for _, st := range stations {
 		sb.InstalledCapacityMWt += st.Config.InstalledCapacityMWt
 		sb.TotalAggregates += st.Config.TotalAggregates
 		sb.WorkingAggregates += st.Current.WorkingAggregates
+		sb.RepairAggregates += st.Current.RepairAggregates
+		sb.ModernizationAggregates += st.Current.ModernizationAggregates
 		sb.PowerMWt += st.Current.PowerMWt
 		sb.DailyProductionMlnKWh += st.Current.DailyProductionMlnKWh
 		if st.Diffs.ProductionChange != nil {
@@ -317,6 +356,19 @@ func computeSummary(stations []model.StationReport) *model.SummaryBlock {
 		}
 	}
 
+	// Reserve at cascade level, recomputed from cascade totals (not summed).
+	reserveRaw := sb.TotalAggregates - sb.WorkingAggregates - sb.RepairAggregates - sb.ModernizationAggregates
+	if reserveRaw < 0 {
+		s.log.WarnContext(ctx, "aggregates exceed total — clamping cascade summary reserve to 0",
+			slog.Int64("cascade_id", cascadeID),
+			slog.Int("total", sb.TotalAggregates),
+			slog.Int("working", sb.WorkingAggregates),
+			slog.Int("repair", sb.RepairAggregates),
+			slog.Int("modernization", sb.ModernizationAggregates),
+		)
+	}
+	sb.ReserveAggregates = clampNonNeg(reserveRaw)
+
 	// Derived fields.
 	sb.FulfillmentPct = model.SafeDiv(sb.YTDProductionMlnKWh, sb.QuarterlyPlanMlnKWh)
 	sb.DifferenceMlnKWh = sb.YTDProductionMlnKWh - sb.QuarterlyPlanMlnKWh
@@ -333,26 +385,40 @@ func computeSummary(stations []model.StationReport) *model.SummaryBlock {
 }
 
 // computeGrandTotal sums cascade summaries and computes derived fields.
-func computeGrandTotal(cascades []model.CascadeReport) *model.SummaryBlock {
+func (s *Service) computeGrandTotal(ctx context.Context, cascades []model.CascadeReport) *model.SummaryBlock {
 	gt := &model.SummaryBlock{}
 	for _, c := range cascades {
 		if c.Summary == nil {
 			continue
 		}
-		s := c.Summary
-		gt.InstalledCapacityMWt += s.InstalledCapacityMWt
-		gt.TotalAggregates += s.TotalAggregates
-		gt.WorkingAggregates += s.WorkingAggregates
-		gt.PowerMWt += s.PowerMWt
-		gt.DailyProductionMlnKWh += s.DailyProductionMlnKWh
-		gt.ProductionChange += s.ProductionChange
-		gt.MTDProductionMlnKWh += s.MTDProductionMlnKWh
-		gt.YTDProductionMlnKWh += s.YTDProductionMlnKWh
-		gt.MonthlyPlanMlnKWh += s.MonthlyPlanMlnKWh
-		gt.QuarterlyPlanMlnKWh += s.QuarterlyPlanMlnKWh
-		gt.PrevYearYTD += s.PrevYearYTD
-		gt.IdleDischargeM3s += s.IdleDischargeM3s
+		cs := c.Summary
+		gt.InstalledCapacityMWt += cs.InstalledCapacityMWt
+		gt.TotalAggregates += cs.TotalAggregates
+		gt.WorkingAggregates += cs.WorkingAggregates
+		gt.RepairAggregates += cs.RepairAggregates
+		gt.ModernizationAggregates += cs.ModernizationAggregates
+		gt.PowerMWt += cs.PowerMWt
+		gt.DailyProductionMlnKWh += cs.DailyProductionMlnKWh
+		gt.ProductionChange += cs.ProductionChange
+		gt.MTDProductionMlnKWh += cs.MTDProductionMlnKWh
+		gt.YTDProductionMlnKWh += cs.YTDProductionMlnKWh
+		gt.MonthlyPlanMlnKWh += cs.MonthlyPlanMlnKWh
+		gt.QuarterlyPlanMlnKWh += cs.QuarterlyPlanMlnKWh
+		gt.PrevYearYTD += cs.PrevYearYTD
+		gt.IdleDischargeM3s += cs.IdleDischargeM3s
 	}
+
+	// Reserve at grand-total level, recomputed from totals (not summed).
+	reserveRaw := gt.TotalAggregates - gt.WorkingAggregates - gt.RepairAggregates - gt.ModernizationAggregates
+	if reserveRaw < 0 {
+		s.log.WarnContext(ctx, "aggregates exceed total — clamping grand total reserve to 0",
+			slog.Int("total", gt.TotalAggregates),
+			slog.Int("working", gt.WorkingAggregates),
+			slog.Int("repair", gt.RepairAggregates),
+			slog.Int("modernization", gt.ModernizationAggregates),
+		)
+	}
+	gt.ReserveAggregates = clampNonNeg(reserveRaw)
 
 	// Derived fields.
 	gt.FulfillmentPct = model.SafeDiv(gt.YTDProductionMlnKWh, gt.QuarterlyPlanMlnKWh)
