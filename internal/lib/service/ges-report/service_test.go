@@ -893,6 +893,224 @@ func TestComputeSummary_AggregatesSumAcrossStations(t *testing.T) {
 	}
 }
 
+// TestBuildReport_PreviousDaySnapshot verifies that when yesterday data is
+// present in the batch, the station's PreviousDay pointer is populated with a
+// full snapshot symmetric to CurrentData: daily production, derived power
+// (production * 1000 / 24), aggregate counts with reserve recomputed, the
+// water/flow scalars, and the derived idle discharge (outflow - ges_flow).
+func TestBuildReport_PreviousDaySnapshot(t *testing.T) {
+	cascadeID := int64(11)
+	cascadeName := "Cascade P"
+	orgID := int64(1100)
+
+	// Yesterday: production=18, working=2, repair=1, mod=1, total=5 → reserve=1.
+	// Power_yest = 18 * 1000 / 24 = 750.
+	// Idle yest = totalOutflow(100) - gesFlow(80) = 20.
+	repo := &mockRepo{
+		todayDate:     "2026-03-13",
+		yesterdayDate: "2026-03-12",
+		prevYearDate:  "2025-03-13",
+		todayData: []model.RawDailyRow{
+			{
+				OrganizationID:        orgID,
+				OrganizationName:      "Station P",
+				CascadeID:             &cascadeID,
+				CascadeName:           &cascadeName,
+				Date:                  "2026-03-13",
+				DailyProductionMlnKWh: 24.0,
+				WorkingAggregates:     3,
+				InstalledCapacityMWt:  500.0,
+				TotalAggregates:       5,
+			},
+		},
+		yesterdayData: []model.RawDailyRow{
+			{
+				OrganizationID:          orgID,
+				OrganizationName:        "Station P",
+				CascadeID:               &cascadeID,
+				CascadeName:             &cascadeName,
+				Date:                    "2026-03-12",
+				DailyProductionMlnKWh:   18.0,
+				WorkingAggregates:       2,
+				RepairAggregates:        1,
+				ModernizationAggregates: 1,
+				WaterLevelM:             ptr(99.5),
+				WaterVolumeMlnM3:        ptr(500.0),
+				WaterHeadM:              ptr(40.0),
+				ReservoirIncomeM3s:      ptr(120.0),
+				TotalOutflowM3s:         ptr(100.0),
+				GESFlowM3s:              ptr(80.0),
+				InstalledCapacityMWt:    500.0,
+				TotalAggregates:         5,
+			},
+		},
+	}
+
+	loc := mustLoc("Asia/Tashkent")
+	svc := NewService(repo, loc, discardLogger())
+
+	report, err := svc.BuildDailyReport(context.Background(), "2026-03-13", nil)
+	if err != nil {
+		t.Fatalf("BuildDailyReport returned error: %v", err)
+	}
+	if len(report.Cascades) == 0 || len(report.Cascades[0].Stations) == 0 {
+		t.Fatal("expected at least one station in report")
+	}
+
+	st := report.Cascades[0].Stations[0]
+	if st.PreviousDay == nil {
+		t.Fatal("expected non-nil PreviousDay when yesterday row exists")
+	}
+	pd := st.PreviousDay
+	if !approxEqual(pd.DailyProductionMlnKWh, 18.0) {
+		t.Errorf("PreviousDay.DailyProductionMlnKWh: got %.4f, want 18.0", pd.DailyProductionMlnKWh)
+	}
+	if !approxEqual(pd.PowerMWt, 18.0*1000.0/24.0) {
+		t.Errorf("PreviousDay.PowerMWt: got %.4f, want %.4f", pd.PowerMWt, 18.0*1000.0/24.0)
+	}
+	if pd.WorkingAggregates != 2 {
+		t.Errorf("PreviousDay.WorkingAggregates: got %d, want 2", pd.WorkingAggregates)
+	}
+	if pd.RepairAggregates != 1 {
+		t.Errorf("PreviousDay.RepairAggregates: got %d, want 1", pd.RepairAggregates)
+	}
+	if pd.ModernizationAggregates != 1 {
+		t.Errorf("PreviousDay.ModernizationAggregates: got %d, want 1", pd.ModernizationAggregates)
+	}
+	if pd.ReserveAggregates != 1 {
+		t.Errorf("PreviousDay.ReserveAggregates: got %d, want 1 (5-2-1-1)", pd.ReserveAggregates)
+	}
+	if pd.WaterLevelM == nil || !approxEqual(*pd.WaterLevelM, 99.5) {
+		t.Errorf("PreviousDay.WaterLevelM: got %v, want 99.5", pd.WaterLevelM)
+	}
+	if pd.WaterVolumeMlnM3 == nil || !approxEqual(*pd.WaterVolumeMlnM3, 500.0) {
+		t.Errorf("PreviousDay.WaterVolumeMlnM3: got %v, want 500.0", pd.WaterVolumeMlnM3)
+	}
+	if pd.WaterHeadM == nil || !approxEqual(*pd.WaterHeadM, 40.0) {
+		t.Errorf("PreviousDay.WaterHeadM: got %v, want 40.0", pd.WaterHeadM)
+	}
+	if pd.ReservoirIncomeM3s == nil || !approxEqual(*pd.ReservoirIncomeM3s, 120.0) {
+		t.Errorf("PreviousDay.ReservoirIncomeM3s: got %v, want 120.0", pd.ReservoirIncomeM3s)
+	}
+	if pd.TotalOutflowM3s == nil || !approxEqual(*pd.TotalOutflowM3s, 100.0) {
+		t.Errorf("PreviousDay.TotalOutflowM3s: got %v, want 100.0", pd.TotalOutflowM3s)
+	}
+	if pd.GESFlowM3s == nil || !approxEqual(*pd.GESFlowM3s, 80.0) {
+		t.Errorf("PreviousDay.GESFlowM3s: got %v, want 80.0", pd.GESFlowM3s)
+	}
+	if pd.IdleDischargeM3s == nil || !approxEqual(*pd.IdleDischargeM3s, 20.0) {
+		t.Errorf("PreviousDay.IdleDischargeM3s: got %v, want 20.0 (100-80)", pd.IdleDischargeM3s)
+	}
+}
+
+// TestBuildReport_PreviousDayNilWhenNoYesterdayRow verifies that when no
+// yesterday row exists for a station, the PreviousDay pointer stays nil.
+func TestBuildReport_PreviousDayNilWhenNoYesterdayRow(t *testing.T) {
+	cascadeID := int64(12)
+	cascadeName := "Cascade Q"
+	orgID := int64(1200)
+
+	repo := &mockRepo{
+		todayDate:     "2026-03-13",
+		yesterdayDate: "2026-03-12",
+		prevYearDate:  "2025-03-13",
+		todayData: []model.RawDailyRow{
+			{
+				OrganizationID:        orgID,
+				OrganizationName:      "Station Q",
+				CascadeID:             &cascadeID,
+				CascadeName:           &cascadeName,
+				Date:                  "2026-03-13",
+				DailyProductionMlnKWh: 10.0,
+				WorkingAggregates:     1,
+				InstalledCapacityMWt:  100.0,
+				TotalAggregates:       2,
+			},
+		},
+		yesterdayData: nil,
+	}
+
+	loc := mustLoc("Asia/Tashkent")
+	svc := NewService(repo, loc, discardLogger())
+
+	report, err := svc.BuildDailyReport(context.Background(), "2026-03-13", nil)
+	if err != nil {
+		t.Fatalf("BuildDailyReport returned error: %v", err)
+	}
+	if len(report.Cascades) == 0 || len(report.Cascades[0].Stations) == 0 {
+		t.Fatal("expected at least one station in report")
+	}
+
+	st := report.Cascades[0].Stations[0]
+	if st.PreviousDay != nil {
+		t.Errorf("expected nil PreviousDay when no yesterday row, got %+v", st.PreviousDay)
+	}
+}
+
+// TestBuildReport_PreviousDayReserveClamp verifies that when the yesterday row
+// has working+repair+modernization > total (a "sick" state), the reserve
+// computed for the PreviousDay snapshot is clamped to zero (same rule as
+// CurrentData).
+func TestBuildReport_PreviousDayReserveClamp(t *testing.T) {
+	cascadeID := int64(13)
+	cascadeName := "Cascade Z"
+	orgID := int64(1300)
+
+	// Yesterday: total=3, working=2, repair=2, mod=1 → 2+2+1=5 > 3 → clamp to 0.
+	repo := &mockRepo{
+		todayDate:     "2026-03-13",
+		yesterdayDate: "2026-03-12",
+		prevYearDate:  "2025-03-13",
+		todayData: []model.RawDailyRow{
+			{
+				OrganizationID:        orgID,
+				OrganizationName:      "Station Z",
+				CascadeID:             &cascadeID,
+				CascadeName:           &cascadeName,
+				Date:                  "2026-03-13",
+				DailyProductionMlnKWh: 12.0,
+				WorkingAggregates:     1,
+				InstalledCapacityMWt:  100.0,
+				TotalAggregates:       3,
+			},
+		},
+		yesterdayData: []model.RawDailyRow{
+			{
+				OrganizationID:          orgID,
+				OrganizationName:        "Station Z",
+				CascadeID:               &cascadeID,
+				CascadeName:             &cascadeName,
+				Date:                    "2026-03-12",
+				DailyProductionMlnKWh:   10.0,
+				WorkingAggregates:       2,
+				RepairAggregates:        2,
+				ModernizationAggregates: 1,
+				InstalledCapacityMWt:    100.0,
+				TotalAggregates:         3,
+			},
+		},
+	}
+
+	loc := mustLoc("Asia/Tashkent")
+	svc := NewService(repo, loc, discardLogger())
+
+	report, err := svc.BuildDailyReport(context.Background(), "2026-03-13", nil)
+	if err != nil {
+		t.Fatalf("BuildDailyReport returned error: %v", err)
+	}
+	if len(report.Cascades) == 0 || len(report.Cascades[0].Stations) == 0 {
+		t.Fatal("expected at least one station in report")
+	}
+
+	st := report.Cascades[0].Stations[0]
+	if st.PreviousDay == nil {
+		t.Fatal("expected non-nil PreviousDay when yesterday row exists")
+	}
+	if st.PreviousDay.ReserveAggregates != 0 {
+		t.Errorf("PreviousDay.ReserveAggregates: got %d, want 0 (clamped)", st.PreviousDay.ReserveAggregates)
+	}
+}
+
 // TestBuildDailyReport_FilterNonExistent verifies that passing an unknown
 // cascade ID returns an empty cascades slice and a zeroed GrandTotal.
 func TestBuildDailyReport_FilterNonExistent(t *testing.T) {

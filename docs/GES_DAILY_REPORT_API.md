@@ -472,6 +472,21 @@ Returns all production plans for the given year.
             "fulfillment_pct": 0.8485,
             "difference_mln_kwh": -50.0
           },
+          "previous_day": {
+            "daily_production_mln_kwh": 3.2,
+            "power_mwt": 133.3,
+            "working_aggregates": 3,
+            "repair_aggregates": 1,
+            "modernization_aggregates": 0,
+            "reserve_aggregates": 2,
+            "water_level_m": 845.9,
+            "water_volume_mln_m3": 632.5,
+            "water_head_m": 103.8,
+            "reservoir_income_m3s": 83.0,
+            "total_outflow_m3s": 92.0,
+            "ges_flow_m3s": 82.0,
+            "idle_discharge_m3s": 10.0
+          },
           "previous_year": {
             "water_level_m": 840.2,
             "water_volume_mln_m3": 580.0,
@@ -561,6 +576,56 @@ reserve_aggregates = total_aggregates - working_aggregates - repair_aggregates -
 ```
 
 Present in `stations[].current`, `cascades[].summary`, and `grand_total`. The frontend never sends this field — it is recomputed on every `GET /ges-report`. Clamped to `0` if the operator's inputs make it negative (service logs a warning with `organization_id`). The `working + repair + modernization <= total_aggregates` invariant is enforced at write time (see [POST /daily-data](#4-post-ges-reportdaily-data--upsert-daily-data-bulk) + [ges-aggregates.md](ges-aggregates.md)).
+
+### Previous day snapshot
+
+`stations[].previous_day` — **полный слепок** данных за `date − 1` (день ранее),
+симметричный `current`. Добавлен для того, чтобы фронт мог показывать виджеты
+«сегодня vs вчера» и сам считать любые дельты, не ограничиваясь фиксированным
+набором из `diffs`.
+
+Содержит те же поля, что и `current`:
+
+| Поле | Тип | Nullable | Описание |
+| --- | --- | --- | --- |
+| `daily_production_mln_kwh` | float64 | No | Производство за вчерашний день (млн.кВт.ч) |
+| `power_mwt` | float64 | No | Средняя мощность = `daily_production * 1000 / 24` |
+| `working_aggregates` | int | No | Работавших агрегатов |
+| `repair_aggregates` | int | No | Агрегатов в ремонте |
+| `modernization_aggregates` | int | No | Агрегатов в модернизации |
+| `reserve_aggregates` | int | No | Резерв = `total - working - repair - modernization`, clamp к 0 |
+| `water_level_m` | float64 | Yes | Уровень воды в верхнем бьефе (м) |
+| `water_volume_mln_m3` | float64 | Yes | Объём воды в водохранилище (млн.м³) |
+| `water_head_m` | float64 | Yes | Напор (м) |
+| `reservoir_income_m3s` | float64 | Yes | Приток (м³/с) |
+| `total_outflow_m3s` | float64 | Yes | Общий сброс (м³/с) |
+| `ges_flow_m3s` | float64 | Yes | Расход через турбины (м³/с) |
+| `idle_discharge_m3s` | float64 | Yes | Холостой сброс = `total_outflow - ges_flow`, `null` если одно из слагаемых отсутствует |
+
+Всё поле `previous_day` становится `null`, если в `ges_daily_data` нет строки
+за `date − 1` для этой станции. На уровне cascade summary и grand total
+`previous_day` **не добавлен** — только в `stations[]`.
+
+**Отличие от `diffs`.** Поле `diffs` содержит уже вычисленные дельты
+(`level_change_cm`, `volume_change_mln_m3`, `income_change_m3s`,
+`ges_flow_change_m3s`, `power_change_mwt`, `production_change_mln_kwh`) и
+остаётся в ответе для обратной совместимости и для генератора Excel.
+`previous_day` — сами значения за вчера; фронт может вычислять **любые**
+дельты, в том числе те, которых нет в `diffs` (например, по агрегатам
+или по холостому сбросу).
+
+Пример расчёта дельт на клиенте:
+
+```js
+const levelChangeCm = (current.water_level_m - previous_day.water_level_m) * 100;
+const productionChange = current.daily_production_mln_kwh - previous_day.daily_production_mln_kwh;
+const workingDelta = current.working_aggregates - previous_day.working_aggregates;
+```
+
+Reserve для `previous_day` вычисляется по той же формуле, что и для `current`
+— `total - working - repair - modernization` с clamp к 0 (см. [Reserve
+Aggregates](#reserve-aggregates-computed-not-stored) и
+[ges-aggregates.md](ges-aggregates.md)).
 
 ### Idle Discharge
 

@@ -146,6 +146,7 @@ type StationReport struct {
 	Name           string             `json:"name"`
 	Config         StationConfig      `json:"config"`
 	Current        CurrentData        `json:"current"`
+	PreviousDay    *PreviousDayData   `json:"previous_day"`
 	Diffs          DiffData           `json:"diffs"`
 	Aggregations   Aggregations       `json:"aggregations"`
 	Plan           PlanData           `json:"plan"`
@@ -161,6 +162,28 @@ type StationConfig struct {
 }
 
 type CurrentData struct {
+	DailyProductionMlnKWh   float64  `json:"daily_production_mln_kwh"`
+	PowerMWt                float64  `json:"power_mwt"`
+	WorkingAggregates       int      `json:"working_aggregates"`
+	RepairAggregates        int      `json:"repair_aggregates"`
+	ModernizationAggregates int      `json:"modernization_aggregates"`
+	ReserveAggregates       int      `json:"reserve_aggregates"`
+	WaterLevelM             *float64 `json:"water_level_m"`
+	WaterVolumeMlnM3        *float64 `json:"water_volume_mln_m3"`
+	WaterHeadM              *float64 `json:"water_head_m"`
+	ReservoirIncomeM3s      *float64 `json:"reservoir_income_m3s"`
+	TotalOutflowM3s         *float64 `json:"total_outflow_m3s"`
+	GESFlowM3s              *float64 `json:"ges_flow_m3s"`
+	IdleDischargeM3s        *float64 `json:"idle_discharge_m3s"`
+}
+
+// PreviousDayData is a snapshot of a station's state for the previous
+// operational day. It MUST stay structurally identical to CurrentData (same
+// fields, types, json tags, in the same order) so the service can convert
+// via PreviousDayData(currentData) cast — see service.computeDaySnapshot.
+// The distinct type keeps semantic meaning visible at field sites and
+// prevents accidental mixing.
+type PreviousDayData struct {
 	DailyProductionMlnKWh   float64  `json:"daily_production_mln_kwh"`
 	PowerMWt                float64  `json:"power_mwt"`
 	WorkingAggregates       int      `json:"working_aggregates"`
