@@ -178,9 +178,11 @@ type CurrentData struct {
 }
 
 // PreviousDayData is a snapshot of a station's state for the previous
-// operational day. It is structurally identical to CurrentData so the same
-// helper can build both; the distinct type keeps the semantic meaning visible
-// at field sites and prevents accidental mixing.
+// operational day. It MUST stay structurally identical to CurrentData (same
+// fields, types, json tags, in the same order) so the service can convert
+// via PreviousDayData(currentData) cast — see service.computeDaySnapshot.
+// The distinct type keeps semantic meaning visible at field sites and
+// prevents accidental mixing.
 type PreviousDayData struct {
 	DailyProductionMlnKWh   float64  `json:"daily_production_mln_kwh"`
 	PowerMWt                float64  `json:"power_mwt"`
