@@ -28,8 +28,6 @@ type ExcelParams struct {
 	AnnualPlans      map[int64]float64
 	MonthlyPlans     map[int64]float64
 	OrgTypeCounts    OrgTypeCounts
-	Modernization    int
-	Repair           int
 	Date             time.Time
 	Loc              *time.Location
 	WeatherIconsPath string // directory with {code}.png files
@@ -491,7 +489,6 @@ func fillForecasts(f *excelize.File, sheet string, row int, grandRow int, params
 
 func fillAggregates(f *excelize.File, sheet string, row int, grandRow int, params ExcelParams) {
 	counts := params.OrgTypeCounts
-	r := func(n int) string { return fmt.Sprintf("%d", row+n) }
 
 	// Row 0: Умумий ГЭСлар сони (total GES count — value)
 	setCellInt(f, sheet, cell("E", row), counts.Total)
@@ -502,14 +499,22 @@ func fillAggregates(f *excelize.File, sheet string, row int, grandRow int, param
 	// Row 2: Ишлаётган агрегатлар сони = +Q{grandRow} (formula)
 	_ = f.SetCellFormula(sheet, cell("E", row+2), fmt.Sprintf("+Q%d", grandRow))
 
-	// Row 3: Заҳирадаги = E{row+1}-E{row+2}-E{row+4}-E{row+5} (formula)
-	_ = f.SetCellFormula(sheet, cell("E", row+3),
-		fmt.Sprintf("+E%s-E%s-E%s-E%s", r(1), r(2), r(4), r(5)))
+	// Rows 3-5 read from report.GrandTotal aggregates (clamped in service).
+	// DB trigger guarantees working+repair+mod ≤ total, so reserve ≥ 0.
+	var repair, modernization, reserve int
+	if gt := params.Report.GrandTotal; gt != nil {
+		repair = gt.RepairAggregates
+		modernization = gt.ModernizationAggregates
+		reserve = gt.ReserveAggregates
+	}
 
-	// Row 4: Таъмирдаги (repair — value from handler)
-	setCellInt(f, sheet, cell("E", row+4), params.Repair)
+	// Row 3: Заҳирадаги (reserve — from grand total)
+	setCellInt(f, sheet, cell("E", row+3), reserve)
 
-	// Row 5: Модернизацияда (modernization — value from handler)
-	setCellInt(f, sheet, cell("E", row+5), params.Modernization)
+	// Row 4: Таъмирдаги (repair — from grand total)
+	setCellInt(f, sheet, cell("E", row+4), repair)
+
+	// Row 5: Модернизацияда (modernization — from grand total)
+	setCellInt(f, sheet, cell("E", row+5), modernization)
 }
 

@@ -11,7 +11,7 @@
 ## Запрос
 
 ```http
-GET /ges-report/export?date=YYYY-MM-DD&format=excel&modernization=N&repair=N
+GET /ges-report/export?date=YYYY-MM-DD&format=excel
 Authorization: Bearer <token>
 ```
 
@@ -21,8 +21,17 @@ Authorization: Bearer <token>
 | --- | --- | --- | --- | --- |
 | `date` | `string` | да | — | Дата отчёта в формате `YYYY-MM-DD` |
 | `format` | `string` | нет | `excel` | `excel` или `pdf` |
-| `modernization` | `int` | нет | `0` | Количество агрегатов в модернизации |
-| `repair` | `int` | нет | `0` | Количество агрегатов в ремонте |
+
+## Breaking change (миграция 000071)
+
+Query params `modernization` и `repair` **удалены**. Сервер их **игнорирует** — не возвращает ошибку, но и не применяет. Значения для ячеек *Таъмирдаги* и *Модернизацияда* берутся из `ges_daily_data` (см. [ges-aggregates.md](ges-aggregates.md)).
+
+Что должен сделать фронт:
+
+- Убрать `?modernization=…&repair=…` из URL `GET /ges-report/export`.
+- Если нужно изменить эти значения — отправлять `POST /ges-report/daily-data` с полями `repair_aggregates` и `modernization_aggregates` на соответствующие станции.
+
+Проверка «резерв >= 0» на уровне handler тоже удалена: резерв вычисляется сервисом и клампится к `0`, инвариант `working + repair + modernization <= total` гарантирован триггером БД + early-валидацией в POST /daily-data.
 
 ## Что попадает в файл
 
@@ -43,13 +52,15 @@ Authorization: Bearer <token>
 ```text
 reserve = grand_total.total_aggregates
         - grand_total.working_aggregates
-        - modernization
-        - repair
+        - grand_total.repair_aggregates
+        - grand_total.modernization_aggregates
 ```
 
-Если `reserve < 0` — запрос отклоняется с **400 Bad Request**:
-`reserve aggregates cannot be negative`. Проверьте параметры
-`modernization` и `repair`.
+Значения всех четырёх слагаемых берутся из `report.GrandTotal.*`,
+которое сервис считает по `ges_daily_data` и `ges_config`. Реально
+в Excel подставляется уже посчитанное `grand_total.reserve_aggregates`
+(сервис клампит его к `0`, если данные операторов некорректны).
+Query params на это не влияют — см. блок **Breaking change** выше.
 
 ## Примеры
 
@@ -61,19 +72,11 @@ curl -H "Authorization: Bearer $TOKEN" \
   -o GES-2026-04-13.xlsx
 ```
 
-### С учётом модернизации/ремонта
-
-```bash
-curl -H "Authorization: Bearer $TOKEN" \
-  "http://api.example.com/ges-report/export?date=2026-04-13&modernization=4&repair=14" \
-  -o GES-2026-04-13.xlsx
-```
-
 ### PDF
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
-  "http://api.example.com/ges-report/export?date=2026-04-13&format=pdf&modernization=4&repair=14" \
+  "http://api.example.com/ges-report/export?date=2026-04-13&format=pdf" \
   -o GES-2026-04-13.pdf
 ```
 
@@ -99,7 +102,7 @@ Error**.
 
 | HTTP | Причина |
 | --- | --- |
-| `400 Bad Request` | Отсутствует `date`, неверный формат даты, неверный `format`, `reserve < 0` |
+| `400 Bad Request` | Отсутствует `date`, неверный формат даты, неверный `format` |
 | `401 Unauthorized` | Нет/невалидный токен |
 | `403 Forbidden` | Роль не `sc` и не `rais` |
 | `500 Internal Server Error` | Ошибка БД, ошибка генерации Excel, ошибка LibreOffice (для PDF) |
@@ -122,6 +125,8 @@ Error**.
 
 ## Связанное
 
+- [ges-aggregates.md](ges-aggregates.md) — агрегаты working /
+  repair / modernization / reserve: правила и 400-ка
 - [ges-cascade-role.md](ges-cascade-role.md) — роль cascade,
   scope доступа
 - [ges-daily-data-partial-update.md](ges-daily-data-partial-update.md) —

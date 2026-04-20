@@ -99,19 +99,22 @@ func buildTestParams() ExcelParams {
 	}
 
 	grandTotal := &model.SummaryBlock{
-		InstalledCapacityMWt:  1000,
-		TotalAggregates:       20,
-		WorkingAggregates:     17,
-		PowerMWt:              770,
-		DailyProductionMlnKWh: 18.0,
-		ProductionChange:      0.1,
-		MTDProductionMlnKWh:   250.0,
-		YTDProductionMlnKWh:   1500.0,
-		FulfillmentPct:        floatPtr(96.5),
-		DifferenceMlnKWh:      -3.0,
-		PrevYearYTD:           1430.0,
-		YoYGrowthRate:         floatPtr(104.9),
-		YoYDifference:         70.0,
+		InstalledCapacityMWt:    1000,
+		TotalAggregates:         20,
+		WorkingAggregates:       17,
+		RepairAggregates:        2,
+		ModernizationAggregates: 1,
+		ReserveAggregates:       0,
+		PowerMWt:                770,
+		DailyProductionMlnKWh:   18.0,
+		ProductionChange:        0.1,
+		MTDProductionMlnKWh:     250.0,
+		YTDProductionMlnKWh:     1500.0,
+		FulfillmentPct:          floatPtr(96.5),
+		DifferenceMlnKWh:        -3.0,
+		PrevYearYTD:             1430.0,
+		YoYGrowthRate:           floatPtr(104.9),
+		YoYDifference:           70.0,
 	}
 
 	return ExcelParams{
@@ -129,10 +132,8 @@ func buildTestParams() ExcelParams {
 			Micro: 3,
 			Total: 18,
 		},
-		Modernization: 4,
-		Repair:        14,
-		Date:          date,
-		Loc:           loc,
+		Date: date,
+		Loc:  loc,
 	}
 }
 
@@ -363,6 +364,52 @@ func TestGenerateExcel_AggregatesFilled(t *testing.T) {
 	if !found {
 		t.Error("no aggregate values found")
 	}
+}
+
+func TestGenerateExcel_AggregatesFromReport(t *testing.T) {
+	gen := New(templatePath(t))
+	params := buildTestParams()
+	// Override grand total aggregates to deterministic values we can locate.
+	params.Report.GrandTotal.RepairAggregates = 2
+	params.Report.GrandTotal.ModernizationAggregates = 1
+	params.Report.GrandTotal.ReserveAggregates = 3
+
+	f, err := gen.GenerateExcel(params)
+	if err != nil {
+		t.Fatalf("GenerateExcel returned error: %v", err)
+	}
+	defer f.Close()
+
+	sheet := f.GetSheetList()[0]
+
+	// Aggregate block layout (relative to first aggregate row, "row"):
+	//   row+3 = Заҳирадаги  (reserve)
+	//   row+4 = Таъмирдаги  (repair)
+	//   row+5 = Модернизацияда (modernization)
+	// Grand total row is row 14 (7 + 7 data rows). Forecast rows start at row 15
+	// and span 5 rows (row+0..row+4). Aggregate rows start at forecastRow+4 = row 19.
+	const aggRow = 19
+
+	wantRepair := strconv.Itoa(params.Report.GrandTotal.RepairAggregates)
+	wantMod := strconv.Itoa(params.Report.GrandTotal.ModernizationAggregates)
+	wantReserve := strconv.Itoa(params.Report.GrandTotal.ReserveAggregates)
+
+	gotReserve, _ := f.GetCellValue(sheet, fmt.Sprintf("E%d", aggRow+3))
+	gotRepair, _ := f.GetCellValue(sheet, fmt.Sprintf("E%d", aggRow+4))
+	gotMod, _ := f.GetCellValue(sheet, fmt.Sprintf("E%d", aggRow+5))
+
+	// Template applies a "<n> та" custom format to these cells, so the displayed
+	// value can be either the raw int or "<n> та". Accept both shapes.
+	check := func(label, got, want string) {
+		t.Helper()
+		if got == want || got == want+" та" {
+			return
+		}
+		t.Errorf("%s cell E%d: got %q, want %q (or %q)", label, aggRow, got, want, want+" та")
+	}
+	check("Заҳирадаги", gotReserve, wantReserve)
+	check("Таъмирдаги", gotRepair, wantRepair)
+	check("Модернизацияда", gotMod, wantMod)
 }
 
 func TestGenerateExcel_ColumnMapping(t *testing.T) {

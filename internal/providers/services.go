@@ -189,8 +189,8 @@ func ProvideDayRotationService(pgRepo *repo.Repo, weatherFetcher *weather.Fetche
 }
 
 // ProvideGESReportService creates the GES daily report service
-func ProvideGESReportService(pgRepo *repo.Repo, loc *time.Location) *gesreportsvc.Service {
-	return gesreportsvc.NewService(pgRepo, loc)
+func ProvideGESReportService(pgRepo *repo.Repo, loc *time.Location, log *slog.Logger) *gesreportsvc.Service {
+	return gesreportsvc.NewService(pgRepo, loc, log)
 }
 
 // ProvideDischargeService creates the discharge service for ongoing discharge validation

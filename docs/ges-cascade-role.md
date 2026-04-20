@@ -59,6 +59,12 @@ SELECT 42, id FROM roles WHERE name = 'cascade';
 
 Если хоть одна станция чужая — весь запрос отклоняется с **403**.
 
+Cascade user может вводить по своим станциям все поля ввода, включая
+`working_aggregates`, `repair_aggregates` и `modernization_aggregates`
+(правила и 400-ка `aggregates sum exceeds total` — см.
+[ges-aggregates.md](ges-aggregates.md)). Попытка записать чужую
+станцию по-прежнему приводит к **403**, независимо от набора полей.
+
 ### POST /ges-report/cascade-daily-data
 
 Каждый `item.organization_id` должен быть равен

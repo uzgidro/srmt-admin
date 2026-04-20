@@ -15,6 +15,7 @@ Module automates daily GES (hydroelectric station) operational reporting. Operat
 
 - [ges-cascade-role.md](ges-cascade-role.md) — `cascade` role, access scope per endpoint
 - [ges-daily-data-partial-update.md](ges-daily-data-partial-update.md) — `Optional[T]` partial updates and bulk array body for `POST /daily-data`
+- [ges-aggregates.md](ges-aggregates.md) — working / repair / modernization / reserve aggregates (rules, validation, 400 errors)
 - [ges-cascade-weather.md](ges-cascade-weather.md) — automatic weather collection (background ticker)
 - [ges-cascade-daily-weather.md](ges-cascade-daily-weather.md) — manual weather correction endpoint
 - [ges-export.md](ges-export.md) — Excel/PDF export endpoint
@@ -45,6 +46,8 @@ Module automates daily GES (hydroelectric station) operational reporting. Operat
 | `date` | DATE | NOT NULL | Report date (YYYY-MM-DD) |
 | `daily_production_mln_kwh` | NUMERIC | NOT NULL, default 0 | Daily electricity production (million kWh) |
 | `working_aggregates` | INT | NOT NULL, default 0 | Currently operating units |
+| `repair_aggregates` | INT | NOT NULL, default 0 | Units currently under repair. `CHECK (>= 0)` + trigger `working + repair + modernization <= ges_config.total_aggregates` |
+| `modernization_aggregates` | INT | NOT NULL, default 0 | Units currently under modernization. Same CHECK + sum trigger |
 | `water_level_m` | NUMERIC | YES | Upper pool water level (m above sea level) |
 | `water_volume_mln_m3` | NUMERIC | YES | Reservoir water volume (million m³) |
 | `water_head_m` | NUMERIC | YES | Net hydraulic head (m) |
@@ -154,10 +157,10 @@ See [ges-cascade-daily-weather.md](ges-cascade-daily-weather.md).
 ### 6. Excel/PDF Export
 
 ```text
-GET /ges-report/export?date=2026-03-13&modernization=4&repair=14
+GET /ges-report/export?date=2026-03-13
 ```
 
-`sc`/`rais` only. See [ges-export.md](ges-export.md).
+`sc`/`rais` only. Repair/modernization values come from `ges_daily_data` — see [ges-export.md](ges-export.md) for the breaking change and [ges-aggregates.md](ges-aggregates.md) for the data model.
 
 ---
 
@@ -260,6 +263,8 @@ Enter or update daily operational data for **multiple GES stations** (body is an
     "date": "2026-03-13",
     "daily_production_mln_kwh": 3.389,
     "working_aggregates": 3,
+    "repair_aggregates": 1,
+    "modernization_aggregates": 0,
     "water_level_m": 846.05,
     "water_volume_mln_m3": 634.0,
     "water_head_m": 104.0,
@@ -275,7 +280,9 @@ Enter or update daily operational data for **multiple GES stations** (body is an
 | `organization_id` | int64 | Yes | GES ID (must belong to user's cascade if role is `cascade`) |
 | `date` | string | Yes | YYYY-MM-DD |
 | `daily_production_mln_kwh` | `Optional[float64]` | No | Daily production (million kWh). NOT NULL in DB — `null` writes 0 |
-| `working_aggregates` | `Optional[int]` | No | Operating units. NOT NULL in DB — `null` writes 0 |
+| `working_aggregates` | `Optional[int]` | No | Operating units. `gte=0`. NOT NULL in DB — `null` writes 0 |
+| `repair_aggregates` | `Optional[int]` | No | Units under repair. `gte=0`. NOT NULL in DB — `null` writes 0. See [ges-aggregates.md](ges-aggregates.md) |
+| `modernization_aggregates` | `Optional[int]` | No | Units under modernization. `gte=0`. NOT NULL in DB — `null` writes 0. See [ges-aggregates.md](ges-aggregates.md) |
 | `water_level_m` | `Optional[float64]` | No | Reservoir level (m), nullable |
 | `water_volume_mln_m3` | `Optional[float64]` | No | Reservoir volume, nullable |
 | `water_head_m` | `Optional[float64]` | No | Hydraulic head, nullable |
@@ -291,11 +298,24 @@ Enter or update daily operational data for **multiple GES stations** (body is an
 |--------|------|
 | 200 | All items saved (atomic transaction) |
 | 400 | Empty array, invalid JSON, validation failure, invalid date, or `item_index` error |
+| 400 | Aggregate field `< 0` — `"{field} must be >= 0 for organization_id=N, got X"` |
+| 400 | Effective `working + repair + modernization > ges_config.total_aggregates` — `"aggregates sum exceeds total for organization_id=N: W+R+M=S > T"` |
 | 401 | Not authenticated |
 | 403 | `cascade` user tried to write a station outside their cascade |
 | 500 | Database error |
 
 **Behavior:** Atomic bulk upsert on `(organization_id, date)`. Partial updates per the `Optional[T]` contract.
+
+**Aggregate sum validation.** Handler checks `working + repair + modernization <= ges_config.total_aggregates` per `(organization_id, date)` tuple before writing, using current DB values for fields not present in the request. Missing `ges_config` row → check skipped (matches the DB trigger). A DB-level trigger re-runs the same check inside the transaction as a race-safety net. Example 400 body:
+
+```json
+{
+  "status": "Error",
+  "error": "aggregates sum exceeds total for organization_id=10: 4+2+1=7 > 6"
+}
+```
+
+See [ges-aggregates.md](ges-aggregates.md) for the full rules.
 
 ---
 
@@ -319,6 +339,8 @@ Returns raw daily data for a single GES on a specific date.
   "date": "2026-03-13",
   "daily_production_mln_kwh": 3.389,
   "working_aggregates": 3,
+  "repair_aggregates": 1,
+  "modernization_aggregates": 0,
   "water_level_m": 846.05,
   "water_volume_mln_m3": 634.0,
   "water_head_m": 104.0,
@@ -327,6 +349,8 @@ Returns raw daily data for a single GES on a specific date.
   "ges_flow_m3s": 85.0
 }
 ```
+
+`reserve_aggregates` is **not** returned here — it is computed by the report service, see [GET /ges-report](#8-get-ges-reportdateyyyy-mm-dd--full-daily-report).
 
 **Note:** weather fields removed — see [GET /ges-report response](#7-get-ges-reportdateyyyy-mm-dd--full-daily-report) where weather is on `cascades[].weather`.
 
@@ -419,6 +443,9 @@ Returns all production plans for the given year.
             "daily_production_mln_kwh": 3.389,
             "power_mwt": 141.208,
             "working_aggregates": 3,
+            "repair_aggregates": 1,
+            "modernization_aggregates": 0,
+            "reserve_aggregates": 0,
             "water_level_m": 846.05,
             "water_volume_mln_m3": 634.0,
             "water_head_m": 104.0,
@@ -474,6 +501,9 @@ Returns all production plans for the given year.
     "installed_capacity_mwt": 2413.362,
     "total_aggregates": 180,
     "working_aggregates": 120,
+    "repair_aggregates": 8,
+    "modernization_aggregates": 3,
+    "reserve_aggregates": 49,
     "power_mwt": 712.0,
     "daily_production_mln_kwh": 17.087,
     "production_change_mln_kwh": 0.5,
@@ -520,9 +550,17 @@ All computations happen in the service layer (Go code), not in the database.
 
 ### Cascade & Grand Total
 
-**SUM** across all stations for: `installed_capacity_mwt`, `total_aggregates`, `working_aggregates`, `power_mwt`, `daily_production`, `production_change`, `mtd`, `ytd`, `monthly_plan`, `quarterly_plan`, `prev_year_ytd`, `idle_discharge_m3s`.
+**SUM** across all stations for: `installed_capacity_mwt`, `total_aggregates`, `working_aggregates`, `repair_aggregates`, `modernization_aggregates`, `power_mwt`, `daily_production`, `production_change`, `mtd`, `ytd`, `monthly_plan`, `quarterly_plan`, `prev_year_ytd`, `idle_discharge_m3s`.
 
-Then derived fields computed from the sums: `fulfillment_pct`, `difference`, `yoy_growth_rate`, `yoy_difference`.
+Then derived fields computed from the sums: `fulfillment_pct`, `difference`, `yoy_growth_rate`, `yoy_difference`, `reserve_aggregates`.
+
+### Reserve Aggregates (computed, not stored)
+
+```text
+reserve_aggregates = total_aggregates - working_aggregates - repair_aggregates - modernization_aggregates
+```
+
+Present in `stations[].current`, `cascades[].summary`, and `grand_total`. The frontend never sends this field — it is recomputed on every `GET /ges-report`. Clamped to `0` if the operator's inputs make it negative (service logs a warning with `organization_id`). The `working + repair + modernization <= total_aggregates` invariant is enforced at write time (see [POST /daily-data](#4-post-ges-reportdaily-data--upsert-daily-data-bulk) + [ges-aggregates.md](ges-aggregates.md)).
 
 ### Idle Discharge
 
@@ -690,9 +728,11 @@ The Excel template has 37 columns (A–AK). Cell AH3 holds the report date **+1 
 - Умумий ГЭСлар сони — count of stations by type (`ges`/`mini`/`micro`)
 - Умумий агрегатлар = `=+P{grandRow}` (formula)
 - Ишлаётган = `=+Q{grandRow}` (formula)
-- Заҳирадаги = `=E{total}-E{working}-E{repair}-E{modernization}` (formula)
-- Таъмирдаги = query param `repair`
-- Модернизацияда = query param `modernization`
+- Заҳирадаги = `grand_total.reserve_aggregates`
+- Таъмирдаги = `grand_total.repair_aggregates`
+- Модернизацияда = `grand_total.modernization_aggregates`
+
+Values come from the aggregated report (service layer, from `ges_daily_data`). The legacy `repair` / `modernization` query params on `GET /ges-report/export` were removed — see [ges-export.md](ges-export.md).
 
 ---
 
@@ -738,5 +778,6 @@ migrations/postgres/
 ├── 000065_cascade_config.up.sql
 ├── 000067_ges_daily_nullable_user.up.sql
 ├── 000068_cascade_daily_data.up.sql
-└── 000069_role_cascade.up.sql
+├── 000069_role_cascade.up.sql
+└── 000071_ges_daily_aggregates.up.sql
 ```

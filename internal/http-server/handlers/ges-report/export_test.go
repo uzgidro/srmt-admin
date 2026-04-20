@@ -223,30 +223,20 @@ func TestExport_InvalidFormat(t *testing.T) {
 	}
 }
 
-func TestExport_NegativeReserve(t *testing.T) {
+// Reserve validation now lives in the service layer (clamp ≥ 0) and the DB
+// CHECK constraint on ges_daily_data, so the handler no longer rejects
+// "negative reserve" requests. modernization/repair query params have been
+// removed entirely — the values come from report.GrandTotal.*Aggregates.
+func TestExport_IgnoresLegacyAggregateQueryParams(t *testing.T) {
 	h := setupExportRouter(t,
 		&mockReportBuilder{report: testDailyReport()},
 		&mockPlanGetter{plans: testPlans()},
 		&mockOrgTypesGetter{types: testOrgTypes()},
 	)
 
-	// GrandTotal: TotalAggregates=10, WorkingAggregates=5
-	// reserve = 10 - 5 - 4 - 3 = -2 → should be 400
+	// Legacy "modernization=4&repair=3" params, which once would have caused
+	// a 400 because reserve = 10-5-4-3 = -2, must now be silently ignored.
 	rr := doExportGET(t, h, "date=2026-04-16&modernization=4&repair=3")
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("status: got %d, want 400. body=%s", rr.Code, rr.Body.String())
-	}
-}
-
-func TestExport_DefaultParams(t *testing.T) {
-	h := setupExportRouter(t,
-		&mockReportBuilder{report: testDailyReport()},
-		&mockPlanGetter{plans: testPlans()},
-		&mockOrgTypesGetter{types: testOrgTypes()},
-	)
-
-	// No modernization/repair params → defaults to 0, should succeed
-	rr := doExportGET(t, h, "date=2026-04-16")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status: got %d, want 200. body=%s", rr.Code, rr.Body.String())
 	}

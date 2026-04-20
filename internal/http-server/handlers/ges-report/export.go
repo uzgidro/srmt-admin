@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"time"
 
 	resp "srmt-admin/internal/lib/api/response"
@@ -75,12 +74,13 @@ func Export(
 			return
 		}
 
-		modernization := parseIntQueryParam(r, "modernization", 0)
-		repair := parseIntQueryParam(r, "repair", 0)
-
 		// --- build report ---
 
 		// Export is restricted to sc/rais by route middleware, so no cascade filter is applied.
+		// Repair / Modernization / Reserve aggregate counts come from the report itself
+		// (report.GrandTotal.*Aggregates), populated by the service from ges_daily_data
+		// and clamped to ≥0. The DB CHECK constraint guarantees working+repair+mod ≤ total,
+		// so no separate "reserve >= 0" handler-level validation is required.
 		report, err := reportSvc.BuildDailyReport(r.Context(), dateStr, nil)
 		if err != nil {
 			log.Error("failed to build daily report", sl.Err(err))
@@ -145,29 +145,16 @@ func Export(
 		}
 		orgTypes.Total = orgTypes.GES + orgTypes.Mini + orgTypes.Micro
 
-		// --- validate reserve aggregates ---
-
-		if report.GrandTotal != nil {
-			reserve := report.GrandTotal.TotalAggregates - report.GrandTotal.WorkingAggregates - modernization - repair
-			if reserve < 0 {
-				render.Status(r, http.StatusBadRequest)
-				render.JSON(w, r, resp.BadRequest("reserve aggregates cannot be negative"))
-				return
-			}
-		}
-
 		// --- generate Excel ---
 
 		excelFile, err := generator.GenerateExcel(gesgen.ExcelParams{
-			Report:        report,
-			Date:          parsedDate,
-			Loc:           loc,
-			YTDPlans:      ytdPlans,
-			AnnualPlans:   annualPlans,
-			MonthlyPlans:  monthlyPlans,
+			Report:           report,
+			Date:             parsedDate,
+			Loc:              loc,
+			YTDPlans:         ytdPlans,
+			AnnualPlans:      annualPlans,
+			MonthlyPlans:     monthlyPlans,
 			OrgTypeCounts:    orgTypes,
-			Modernization:    modernization,
-			Repair:           repair,
 			WeatherIconsPath: weatherIconsPath,
 		})
 		if err != nil {
@@ -190,19 +177,6 @@ func Export(
 			}
 		}
 	}
-}
-
-// parseIntQueryParam parses an integer query parameter with a default value.
-func parseIntQueryParam(r *http.Request, name string, defaultVal int) int {
-	s := r.URL.Query().Get(name)
-	if s == "" {
-		return defaultVal
-	}
-	v, err := strconv.Atoi(s)
-	if err != nil {
-		return defaultVal
-	}
-	return v
 }
 
 // exportExcel writes the Excel file to the HTTP response.

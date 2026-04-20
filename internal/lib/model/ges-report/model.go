@@ -47,30 +47,34 @@ type UpsertCascadeConfigRequest struct {
 // --- Daily Data ---
 
 type DailyData struct {
-	ID                    int64    `json:"id"`
-	OrganizationID        int64    `json:"organization_id"`
-	Date                  string   `json:"date"`
-	DailyProductionMlnKWh float64  `json:"daily_production_mln_kwh"`
-	WorkingAggregates     int      `json:"working_aggregates"`
-	WaterLevelM           *float64 `json:"water_level_m"`
-	WaterVolumeMlnM3      *float64 `json:"water_volume_mln_m3"`
-	WaterHeadM            *float64 `json:"water_head_m"`
-	ReservoirIncomeM3s    *float64 `json:"reservoir_income_m3s"`
-	TotalOutflowM3s       *float64 `json:"total_outflow_m3s"`
-	GESFlowM3s            *float64 `json:"ges_flow_m3s"`
+	ID                      int64    `json:"id"`
+	OrganizationID          int64    `json:"organization_id"`
+	Date                    string   `json:"date"`
+	DailyProductionMlnKWh   float64  `json:"daily_production_mln_kwh"`
+	WorkingAggregates       int      `json:"working_aggregates"`
+	RepairAggregates        int      `json:"repair_aggregates"`
+	ModernizationAggregates int      `json:"modernization_aggregates"`
+	WaterLevelM             *float64 `json:"water_level_m"`
+	WaterVolumeMlnM3        *float64 `json:"water_volume_mln_m3"`
+	WaterHeadM              *float64 `json:"water_head_m"`
+	ReservoirIncomeM3s      *float64 `json:"reservoir_income_m3s"`
+	TotalOutflowM3s         *float64 `json:"total_outflow_m3s"`
+	GESFlowM3s              *float64 `json:"ges_flow_m3s"`
 }
 
 type UpsertDailyDataRequest struct {
-	OrganizationID        int64                      `json:"organization_id" validate:"required"`
-	Date                  string                     `json:"date" validate:"required"`
-	DailyProductionMlnKWh optional.Optional[float64] `json:"daily_production_mln_kwh"`
-	WorkingAggregates     optional.Optional[int]     `json:"working_aggregates"`
-	WaterLevelM           optional.Optional[float64] `json:"water_level_m"`
-	WaterVolumeMlnM3      optional.Optional[float64] `json:"water_volume_mln_m3"`
-	WaterHeadM            optional.Optional[float64] `json:"water_head_m"`
-	ReservoirIncomeM3s    optional.Optional[float64] `json:"reservoir_income_m3s"`
-	TotalOutflowM3s       optional.Optional[float64] `json:"total_outflow_m3s"`
-	GESFlowM3s            optional.Optional[float64] `json:"ges_flow_m3s"`
+	OrganizationID          int64                      `json:"organization_id" validate:"required"`
+	Date                    string                     `json:"date" validate:"required"`
+	DailyProductionMlnKWh   optional.Optional[float64] `json:"daily_production_mln_kwh"`
+	WorkingAggregates       optional.Optional[int]     `json:"working_aggregates"`
+	RepairAggregates        optional.Optional[int]     `json:"repair_aggregates"`
+	ModernizationAggregates optional.Optional[int]     `json:"modernization_aggregates"`
+	WaterLevelM             optional.Optional[float64] `json:"water_level_m"`
+	WaterVolumeMlnM3        optional.Optional[float64] `json:"water_volume_mln_m3"`
+	WaterHeadM              optional.Optional[float64] `json:"water_head_m"`
+	ReservoirIncomeM3s      optional.Optional[float64] `json:"reservoir_income_m3s"`
+	TotalOutflowM3s         optional.Optional[float64] `json:"total_outflow_m3s"`
+	GESFlowM3s              optional.Optional[float64] `json:"ges_flow_m3s"`
 }
 
 // UpsertCascadeDailyWeatherRequest is the body item for manual weather corrections
@@ -91,14 +95,14 @@ type ProductionPlan struct {
 	OrganizationID int64   `json:"organization_id"`
 	Year           int     `json:"year"`
 	Month          int     `json:"month"`
-	PlanMlnKWh    float64 `json:"plan_mln_kwh"`
+	PlanMlnKWh     float64 `json:"plan_mln_kwh"`
 }
 
 type UpsertPlanRequest struct {
 	OrganizationID int64   `json:"organization_id" validate:"required"`
 	Year           int     `json:"year" validate:"required,gte=2020,lte=2100"`
 	Month          int     `json:"month" validate:"required,gte=1,lte=12"`
-	PlanMlnKWh    float64 `json:"plan_mln_kwh" validate:"gte=0"`
+	PlanMlnKWh     float64 `json:"plan_mln_kwh" validate:"gte=0"`
 }
 
 type BulkUpsertPlanRequest struct {
@@ -157,25 +161,28 @@ type StationConfig struct {
 }
 
 type CurrentData struct {
-	DailyProductionMlnKWh float64  `json:"daily_production_mln_kwh"`
-	PowerMWt              float64  `json:"power_mwt"`
-	WorkingAggregates     int      `json:"working_aggregates"`
-	WaterLevelM           *float64 `json:"water_level_m"`
-	WaterVolumeMlnM3      *float64 `json:"water_volume_mln_m3"`
-	WaterHeadM            *float64 `json:"water_head_m"`
-	ReservoirIncomeM3s    *float64 `json:"reservoir_income_m3s"`
-	TotalOutflowM3s       *float64 `json:"total_outflow_m3s"`
-	GESFlowM3s            *float64 `json:"ges_flow_m3s"`
-	IdleDischargeM3s      *float64 `json:"idle_discharge_m3s"`
+	DailyProductionMlnKWh   float64  `json:"daily_production_mln_kwh"`
+	PowerMWt                float64  `json:"power_mwt"`
+	WorkingAggregates       int      `json:"working_aggregates"`
+	RepairAggregates        int      `json:"repair_aggregates"`
+	ModernizationAggregates int      `json:"modernization_aggregates"`
+	ReserveAggregates       int      `json:"reserve_aggregates"`
+	WaterLevelM             *float64 `json:"water_level_m"`
+	WaterVolumeMlnM3        *float64 `json:"water_volume_mln_m3"`
+	WaterHeadM              *float64 `json:"water_head_m"`
+	ReservoirIncomeM3s      *float64 `json:"reservoir_income_m3s"`
+	TotalOutflowM3s         *float64 `json:"total_outflow_m3s"`
+	GESFlowM3s              *float64 `json:"ges_flow_m3s"`
+	IdleDischargeM3s        *float64 `json:"idle_discharge_m3s"`
 }
 
 type DiffData struct {
-	LevelChangeCm    *float64 `json:"level_change_cm"`
+	LevelChangeCm     *float64 `json:"level_change_cm"`
 	VolumeChangeMlnM3 *float64 `json:"volume_change_mln_m3"`
-	IncomeChangeM3s  *float64 `json:"income_change_m3s"`
-	GESFlowChangeM3s *float64 `json:"ges_flow_change_m3s"`
-	PowerChangeMWt   *float64 `json:"power_change_mwt"`
-	ProductionChange *float64 `json:"production_change_mln_kwh"`
+	IncomeChangeM3s   *float64 `json:"income_change_m3s"`
+	GESFlowChangeM3s  *float64 `json:"ges_flow_change_m3s"`
+	PowerChangeMWt    *float64 `json:"power_change_mwt"`
+	ProductionChange  *float64 `json:"production_change_mln_kwh"`
 }
 
 type Aggregations struct {
@@ -208,52 +215,57 @@ type YoYData struct {
 }
 
 type IdleDischargeData struct {
-	FlowRateM3s  float64 `json:"flow_rate_m3s"`
-	VolumeMlnM3  float64 `json:"volume_mln_m3"`
-	Reason       *string `json:"reason"`
-	IsOngoing    bool    `json:"is_ongoing"`
+	FlowRateM3s float64 `json:"flow_rate_m3s"`
+	VolumeMlnM3 float64 `json:"volume_mln_m3"`
+	Reason      *string `json:"reason"`
+	IsOngoing   bool    `json:"is_ongoing"`
 }
 
 // SummaryBlock is used for cascade totals and grand total.
 type SummaryBlock struct {
-	InstalledCapacityMWt  float64  `json:"installed_capacity_mwt"`
-	TotalAggregates       int      `json:"total_aggregates"`
-	WorkingAggregates     int      `json:"working_aggregates"`
-	PowerMWt              float64  `json:"power_mwt"`
-	DailyProductionMlnKWh float64  `json:"daily_production_mln_kwh"`
-	ProductionChange      float64  `json:"production_change_mln_kwh"`
-	MTDProductionMlnKWh   float64  `json:"mtd_production_mln_kwh"`
-	YTDProductionMlnKWh   float64  `json:"ytd_production_mln_kwh"`
-	MonthlyPlanMlnKWh     float64  `json:"monthly_plan_mln_kwh"`
-	QuarterlyPlanMlnKWh   float64  `json:"quarterly_plan_mln_kwh"`
-	FulfillmentPct        *float64 `json:"fulfillment_pct"`
-	DifferenceMlnKWh      float64  `json:"difference_mln_kwh"`
-	PrevYearYTD           float64  `json:"prev_year_ytd_mln_kwh"`
-	YoYGrowthRate         *float64 `json:"yoy_growth_rate"`
-	YoYDifference         float64  `json:"yoy_difference_mln_kwh"`
-	IdleDischargeM3s      float64  `json:"idle_discharge_total_m3s"`
+	InstalledCapacityMWt    float64  `json:"installed_capacity_mwt"`
+	TotalAggregates         int      `json:"total_aggregates"`
+	WorkingAggregates       int      `json:"working_aggregates"`
+	RepairAggregates        int      `json:"repair_aggregates"`
+	ModernizationAggregates int      `json:"modernization_aggregates"`
+	ReserveAggregates       int      `json:"reserve_aggregates"`
+	PowerMWt                float64  `json:"power_mwt"`
+	DailyProductionMlnKWh   float64  `json:"daily_production_mln_kwh"`
+	ProductionChange        float64  `json:"production_change_mln_kwh"`
+	MTDProductionMlnKWh     float64  `json:"mtd_production_mln_kwh"`
+	YTDProductionMlnKWh     float64  `json:"ytd_production_mln_kwh"`
+	MonthlyPlanMlnKWh       float64  `json:"monthly_plan_mln_kwh"`
+	QuarterlyPlanMlnKWh     float64  `json:"quarterly_plan_mln_kwh"`
+	FulfillmentPct          *float64 `json:"fulfillment_pct"`
+	DifferenceMlnKWh        float64  `json:"difference_mln_kwh"`
+	PrevYearYTD             float64  `json:"prev_year_ytd_mln_kwh"`
+	YoYGrowthRate           *float64 `json:"yoy_growth_rate"`
+	YoYDifference           float64  `json:"yoy_difference_mln_kwh"`
+	IdleDischargeM3s        float64  `json:"idle_discharge_total_m3s"`
 }
 
 // --- Internal query structs (used by repo) ---
 
 type RawDailyRow struct {
-	OrganizationID        int64
-	OrganizationName      string
-	CascadeID             *int64
-	CascadeName           *string
-	Date                  string
-	DailyProductionMlnKWh float64
-	WorkingAggregates     int
-	WaterLevelM           *float64
-	WaterVolumeMlnM3      *float64
-	WaterHeadM            *float64
-	ReservoirIncomeM3s    *float64
-	TotalOutflowM3s       *float64
-	GESFlowM3s            *float64
-	InstalledCapacityMWt  float64
-	TotalAggregates       int
-	HasReservoir          bool
-	SortOrder             int
+	OrganizationID          int64
+	OrganizationName        string
+	CascadeID               *int64
+	CascadeName             *string
+	Date                    string
+	DailyProductionMlnKWh   float64
+	WorkingAggregates       int
+	RepairAggregates        int
+	ModernizationAggregates int
+	WaterLevelM             *float64
+	WaterVolumeMlnM3        *float64
+	WaterHeadM              *float64
+	ReservoirIncomeM3s      *float64
+	TotalOutflowM3s         *float64
+	GESFlowM3s              *float64
+	InstalledCapacityMWt    float64
+	TotalAggregates         int
+	HasReservoir            bool
+	SortOrder               int
 }
 
 type ProductionAggregation struct {
@@ -268,15 +280,24 @@ type PlanRow struct {
 	OrganizationID int64   `json:"organization_id"`
 	Year           int     `json:"year"`
 	Month          int     `json:"month"`
-	PlanMlnKWh    float64 `json:"plan_mln_kwh"`
+	PlanMlnKWh     float64 `json:"plan_mln_kwh"`
 }
 
 type IdleDischargeRow struct {
 	OrganizationID int64
 	FlowRateM3s    float64
-	VolumeMlnM3   float64
+	VolumeMlnM3    float64
 	Reason         *string
 	IsOngoing      bool
+}
+
+// AggregateCounts is a tuple of the three persisted aggregate counters used by
+// handler-level validation to fold the request onto the current DB row before
+// checking sum ≤ ges_config.total_aggregates.
+type AggregateCounts struct {
+	Working       int
+	Repair        int
+	Modernization int
 }
 
 // --- Helper functions ---
