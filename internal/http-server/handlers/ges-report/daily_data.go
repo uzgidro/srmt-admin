@@ -3,6 +3,7 @@ package gesreport
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -10,6 +11,7 @@ import (
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
 	model "srmt-admin/internal/lib/model/ges-report"
+	"srmt-admin/internal/lib/optional"
 	"srmt-admin/internal/lib/service/auth"
 	"srmt-admin/internal/storage"
 
@@ -21,6 +23,8 @@ import (
 type DailyDataUpserter interface {
 	UpsertGESDailyData(ctx context.Context, items []model.UpsertDailyDataRequest, userID int64) error
 	GetOrganizationParentID(ctx context.Context, orgID int64) (*int64, error)
+	GetGESConfigsTotalAggregates(ctx context.Context, orgIDs []int64) (map[int64]int, error)
+	GetGESDailyAggregatesBatch(ctx context.Context, orgIDs []int64, date string) (map[int64]model.AggregateCounts, error)
 }
 
 type DailyDataGetter interface {
@@ -101,6 +105,23 @@ func UpsertDailyData(log *slog.Logger, repo DailyDataUpserter) http.HandlerFunc 
 			return
 		}
 
+		// Aggregate validation: per-field non-negative + sum ≤ ges_config.total.
+		// Run after auth so foreign-org probes can't inspect cap values via 400s.
+		if status, msg, err := validateAggregates(r.Context(), data, repo); status != 0 {
+			if err != nil {
+				log.Error("aggregate validation lookup failed", sl.Err(err))
+			} else {
+				log.Warn("aggregate validation rejected request", slog.String("reason", msg))
+			}
+			render.Status(r, status)
+			if status == http.StatusInternalServerError {
+				render.JSON(w, r, resp.InternalServerError(msg))
+			} else {
+				render.JSON(w, r, resp.BadRequest(msg))
+			}
+			return
+		}
+
 		if err := repo.UpsertGESDailyData(r.Context(), data, userID); err != nil {
 			log.Error("failed to upsert ges daily data", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)
@@ -165,4 +186,139 @@ func GetDailyData(log *slog.Logger, repo DailyDataGetter) http.HandlerFunc {
 		render.Status(r, http.StatusOK)
 		render.JSON(w, r, data)
 	}
+}
+
+// validateAggregates enforces two rules on UpsertDailyData payloads:
+//   1. each provided working/repair/modernization value is non-negative
+//      (Set==true && Value!=nil && *Value < 0 → 400);
+//   2. for every (organization_id, date) tuple, the effective aggregate sum
+//      after applying the request onto the existing DB row does not exceed
+//      ges_config.total_aggregates (when configured).
+//
+// Returns a (status, message, err) triple where status==0 means OK. status
+// http.StatusBadRequest carries the user-facing message; status
+// http.StatusInternalServerError carries a generic message and a non-nil err
+// for logging.
+func validateAggregates(
+	ctx context.Context,
+	data []model.UpsertDailyDataRequest,
+	repo DailyDataUpserter,
+) (int, string, error) {
+	// 1. Per-field non-negative check on what was actually provided.
+	for _, item := range data {
+		if msg, ok := checkNonNegative("working_aggregates", item.OrganizationID, item.WorkingAggregates); !ok {
+			return http.StatusBadRequest, msg, nil
+		}
+		if msg, ok := checkNonNegative("repair_aggregates", item.OrganizationID, item.RepairAggregates); !ok {
+			return http.StatusBadRequest, msg, nil
+		}
+		if msg, ok := checkNonNegative("modernization_aggregates", item.OrganizationID, item.ModernizationAggregates); !ok {
+			return http.StatusBadRequest, msg, nil
+		}
+	}
+
+	// 2. Sum check requires totals from ges_config and current DB values for
+	// any field the request omitted. Skip work entirely when no item touches
+	// any aggregate field — nothing can change, so the sum cannot grow.
+	uniqueOrgIDs := uniqueOrgs(data)
+	totals, err := repo.GetGESConfigsTotalAggregates(ctx, uniqueOrgIDs)
+	if err != nil {
+		return http.StatusInternalServerError, "failed to load aggregate caps", err
+	}
+
+	// Group orgIDs by date so we issue one current-values query per distinct
+	// date in the request (typically just one).
+	byDate := groupOrgsByDate(data)
+	currents := make(map[string]map[int64]model.AggregateCounts, len(byDate))
+	for date, orgs := range byDate {
+		cur, err := repo.GetGESDailyAggregatesBatch(ctx, orgs, date)
+		if err != nil {
+			return http.StatusInternalServerError, "failed to load current aggregates", err
+		}
+		currents[date] = cur
+	}
+
+	for _, item := range data {
+		total, hasCap := totals[item.OrganizationID]
+		if !hasCap {
+			// No ges_config row → trigger also skips, so we skip too.
+			continue
+		}
+		cur := currents[item.Date][item.OrganizationID] // zero-value when missing
+		w := effective(item.WorkingAggregates, cur.Working)
+		rep := effective(item.RepairAggregates, cur.Repair)
+		mod := effective(item.ModernizationAggregates, cur.Modernization)
+		sum := w + rep + mod
+		if sum > total {
+			return http.StatusBadRequest, fmt.Sprintf(
+				"aggregates sum exceeds total for organization_id=%d: %d+%d+%d=%d > %d",
+				item.OrganizationID, w, rep, mod, sum, total,
+			), nil
+		}
+	}
+	return 0, "", nil
+}
+
+// effective returns the value the upsert will actually write for an aggregate
+// column, mirroring the SQL semantics of UpsertGESDailyData:
+//   - field absent (Set=false)            → preserve current DB value
+//   - field present with non-nil number   → use that number
+//   - field present but null (Set=true,
+//     Value=nil) → COALESCE($N,0) writes 0
+func effective(o optional.Optional[int], current int) int {
+	if !o.Set {
+		return current
+	}
+	if o.Value == nil {
+		return 0
+	}
+	return *o.Value
+}
+
+// checkNonNegative returns (msg, false) when the field carries an explicit
+// negative number; otherwise (empty, true). Absent fields and explicit nulls
+// pass — they cannot represent a negative value.
+func checkNonNegative(field string, orgID int64, o optional.Optional[int]) (string, bool) {
+	if !o.Set || o.Value == nil {
+		return "", true
+	}
+	if *o.Value < 0 {
+		return fmt.Sprintf("%s must be >= 0 for organization_id=%d, got %d", field, orgID, *o.Value), false
+	}
+	return "", true
+}
+
+// uniqueOrgs returns the distinct organization IDs across the request,
+// preserving insertion order for deterministic logs and queries.
+func uniqueOrgs(data []model.UpsertDailyDataRequest) []int64 {
+	seen := make(map[int64]struct{}, len(data))
+	out := make([]int64, 0, len(data))
+	for _, item := range data {
+		if _, ok := seen[item.OrganizationID]; ok {
+			continue
+		}
+		seen[item.OrganizationID] = struct{}{}
+		out = append(out, item.OrganizationID)
+	}
+	return out
+}
+
+// groupOrgsByDate clusters distinct organization IDs by their request date so
+// we can issue one batch query per date for current aggregate values.
+func groupOrgsByDate(data []model.UpsertDailyDataRequest) map[string][]int64 {
+	out := make(map[string][]int64)
+	seen := make(map[string]map[int64]struct{})
+	for _, item := range data {
+		s, ok := seen[item.Date]
+		if !ok {
+			s = make(map[int64]struct{})
+			seen[item.Date] = s
+		}
+		if _, dup := s[item.OrganizationID]; dup {
+			continue
+		}
+		s[item.OrganizationID] = struct{}{}
+		out[item.Date] = append(out[item.Date], item.OrganizationID)
+	}
+	return out
 }

@@ -291,6 +291,15 @@ type IdleDischargeRow struct {
 	IsOngoing      bool
 }
 
+// AggregateCounts is a tuple of the three persisted aggregate counters used by
+// handler-level validation to fold the request onto the current DB row before
+// checking sum ≤ ges_config.total_aggregates.
+type AggregateCounts struct {
+	Working       int
+	Repair        int
+	Modernization int
+}
+
 // --- Helper functions ---
 
 // QuarterMonths returns the 3 months of the quarter containing the given month.

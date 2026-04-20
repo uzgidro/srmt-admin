@@ -3,10 +3,12 @@ package gesreport
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
@@ -238,5 +240,153 @@ func (c *cascadeGetterCallTracker) GetGESDailyData(ctx context.Context, orgID in
 
 func (c *cascadeGetterCallTracker) GetOrganizationParentID(ctx context.Context, orgID int64) (*int64, error) {
 	return c.inner.GetOrganizationParentID(ctx, orgID)
+}
+
+// decodeError parses {"error": "..."} from a JSON response body. Centralised
+// because go-chi's render.JSON HTML-escapes >, <, & in the wire form, so a
+// raw substring search would miss the literal ">" the spec requires.
+func decodeError(t *testing.T, body []byte) string {
+	t.Helper()
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("response is not valid JSON: %v; body=%s", err, body)
+	}
+	v, ok := payload["error"]
+	if !ok {
+		t.Fatalf("response has no 'error' field: %s", body)
+	}
+	s, ok := v.(string)
+	if !ok {
+		t.Fatalf("'error' is not a string: %v", v)
+	}
+	return s
+}
+
+// --- Aggregate validation tests (Task 4) ---
+
+// Sum check uses values from the request overlaid on current DB values for
+// any field the request did not include. With total=6 and current working=3,
+// a request that bumps working to 4 while also setting repair=2 and mod=1
+// makes 4+2+1=7 > 6 — the handler must reject with the documented format.
+func TestUpsertDailyData_RejectsAggregatesExceedingTotal(t *testing.T) {
+	const stationOrgID int64 = 10
+
+	upserter := &captureGESUpserter{
+		totals: map[int64]int{stationOrgID: 6},
+		current: map[aggKey]model.AggregateCounts{
+			{OrgID: stationOrgID, Date: "2026-04-13"}: {Working: 3, Repair: 0, Modernization: 0},
+		},
+	}
+	claims := &token.Claims{
+		UserID:         1,
+		OrganizationID: 1,
+		Roles:          []string{"sc"},
+	}
+	body := `[{
+		"organization_id": 10,
+		"date": "2026-04-13",
+		"working_aggregates": 4,
+		"repair_aggregates": 2,
+		"modernization_aggregates": 1
+	}]`
+	rr := doGESUpsertWithClaims(upserter, claims, body)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status: want 400, got %d; body: %s", rr.Code, rr.Body.String())
+	}
+	want := "aggregates sum exceeds total for organization_id=10: 4+2+1=7 > 6"
+	if got := decodeError(t, rr.Body.Bytes()); got != want {
+		t.Errorf("error message mismatch:\nwant: %q\ngot:  %q", want, got)
+	}
+	if len(upserter.last) != 0 {
+		t.Errorf("upserter must NOT be called when validation fails; got %d items", len(upserter.last))
+	}
+}
+
+// Partial update — request only sends repair_aggregates=2; working stays at
+// the current DB value (3) and modernization defaults to 0. Effective sum is
+// 3+2+0=5 ≤ 6 so the upsert must succeed.
+func TestUpsertDailyData_AllowsPartialUpdateWithinTotal(t *testing.T) {
+	const stationOrgID int64 = 10
+
+	upserter := &captureGESUpserter{
+		totals: map[int64]int{stationOrgID: 6},
+		current: map[aggKey]model.AggregateCounts{
+			{OrgID: stationOrgID, Date: "2026-04-13"}: {Working: 3, Repair: 0, Modernization: 0},
+		},
+	}
+	claims := &token.Claims{
+		UserID:         1,
+		OrganizationID: 1,
+		Roles:          []string{"sc"},
+	}
+	body := `[{
+		"organization_id": 10,
+		"date": "2026-04-13",
+		"repair_aggregates": 2
+	}]`
+	rr := doGESUpsertWithClaims(upserter, claims, body)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d; body: %s", rr.Code, rr.Body.String())
+	}
+	if len(upserter.last) != 1 {
+		t.Fatalf("upserter should have been called once; got %d items", len(upserter.last))
+	}
+}
+
+// Negative scalar values are rejected per-field with a clear 400 message
+// regardless of total_aggregates capacity.
+func TestUpsertDailyData_RejectsNegativeAggregate(t *testing.T) {
+	upserter := &captureGESUpserter{
+		totals: map[int64]int{10: 6},
+	}
+	claims := &token.Claims{
+		UserID:         1,
+		OrganizationID: 1,
+		Roles:          []string{"sc"},
+	}
+	body := `[{
+		"organization_id": 10,
+		"date": "2026-04-13",
+		"repair_aggregates": -1
+	}]`
+	rr := doGESUpsertWithClaims(upserter, claims, body)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status: want 400, got %d; body: %s", rr.Code, rr.Body.String())
+	}
+	bodyStr := rr.Body.String()
+	if !strings.Contains(bodyStr, "repair_aggregates") || !strings.Contains(bodyStr, "organization_id=10") {
+		t.Errorf("body should mention field and organization_id; got %s", bodyStr)
+	}
+	if len(upserter.last) != 0 {
+		t.Errorf("upserter must NOT be called when validation fails; got %d items", len(upserter.last))
+	}
+}
+
+// When ges_config has no row for the organization, GetGESConfigsTotalAggregates
+// returns no entry — the handler must skip the sum check (matching the trigger).
+func TestUpsertDailyData_SkipsSumCheckWhenNoConfig(t *testing.T) {
+	upserter := &captureGESUpserter{
+		totals: map[int64]int{}, // no config for any org
+	}
+	claims := &token.Claims{
+		UserID:         1,
+		OrganizationID: 1,
+		Roles:          []string{"sc"},
+	}
+	// Even huge values pass when no cap is configured.
+	body := `[{
+		"organization_id": 10,
+		"date": "2026-04-13",
+		"working_aggregates": 100,
+		"repair_aggregates": 100,
+		"modernization_aggregates": 100
+	}]`
+	rr := doGESUpsertWithClaims(upserter, claims, body)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d; body: %s", rr.Code, rr.Body.String())
+	}
 }
 

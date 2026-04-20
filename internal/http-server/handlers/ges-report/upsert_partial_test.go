@@ -37,6 +37,22 @@ type captureGESUpserter struct {
 	last    []model.UpsertDailyDataRequest
 	err     error
 	parents map[int64]*int64 // optional: per-org parent overrides for cascade tests
+
+	// totals controls the response of GetGESConfigsTotalAggregates. When nil,
+	// the lookup returns an empty map (no caps configured) — which the handler
+	// treats as "skip sum check", matching the trigger's behaviour.
+	totals map[int64]int
+
+	// current controls the response of GetGESDailyAggregatesBatch. When nil,
+	// the lookup returns an empty map (no existing rows) — effective values
+	// fall back to 0 for absent fields.
+	current map[aggKey]model.AggregateCounts
+}
+
+// aggKey indexes existing aggregate rows by organization+date.
+type aggKey struct {
+	OrgID int64
+	Date  string
 }
 
 func (c *captureGESUpserter) UpsertGESDailyData(_ context.Context, items []model.UpsertDailyDataRequest, _ int64) error {
@@ -57,6 +73,33 @@ func (c *captureGESUpserter) GetOrganizationParentID(_ context.Context, orgID in
 		return nil, nil
 	}
 	return c.parents[orgID], nil
+}
+
+// GetGESConfigsTotalAggregates returns the totals map (or empty when unset).
+func (c *captureGESUpserter) GetGESConfigsTotalAggregates(_ context.Context, orgIDs []int64) (map[int64]int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make(map[int64]int, len(orgIDs))
+	for _, id := range orgIDs {
+		if v, ok := c.totals[id]; ok {
+			out[id] = v
+		}
+	}
+	return out, nil
+}
+
+// GetGESDailyAggregatesBatch returns current per-org aggregate counts for the
+// given date, restricted to the requested orgIDs. Mirrors the repo signature.
+func (c *captureGESUpserter) GetGESDailyAggregatesBatch(_ context.Context, orgIDs []int64, date string) (map[int64]model.AggregateCounts, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make(map[int64]model.AggregateCounts, len(orgIDs))
+	for _, id := range orgIDs {
+		if v, ok := c.current[aggKey{OrgID: id, Date: date}]; ok {
+			out[id] = v
+		}
+	}
+	return out, nil
 }
 
 func newGESTestRouter(upserter *captureGESUpserter) http.Handler {

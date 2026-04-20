@@ -385,6 +385,46 @@ func (r *Repo) UpsertGESDailyData(ctx context.Context, items []gesreport.UpsertD
 	return nil
 }
 
+// GetGESDailyAggregatesBatch returns persisted (working, repair, modernization)
+// counts for the given organizations on a single date in one query. Missing
+// rows simply do not appear in the result map; callers must treat absence as
+// all-zero (no row yet).
+func (r *Repo) GetGESDailyAggregatesBatch(ctx context.Context, orgIDs []int64, date string) (map[int64]gesreport.AggregateCounts, error) {
+	const op = "storage.repo.GESReport.GetGESDailyAggregatesBatch"
+
+	if len(orgIDs) == 0 {
+		return map[int64]gesreport.AggregateCounts{}, nil
+	}
+
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT organization_id,
+		        COALESCE(working_aggregates, 0),
+		        COALESCE(repair_aggregates, 0),
+		        COALESCE(modernization_aggregates, 0)
+		   FROM ges_daily_data
+		  WHERE organization_id = ANY($1) AND date = $2::date`,
+		pq.Array(orgIDs), date,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("%s: query: %w", op, err)
+	}
+	defer rows.Close()
+
+	result := make(map[int64]gesreport.AggregateCounts, len(orgIDs))
+	for rows.Next() {
+		var orgID int64
+		var ac gesreport.AggregateCounts
+		if err := rows.Scan(&orgID, &ac.Working, &ac.Repair, &ac.Modernization); err != nil {
+			return nil, fmt.Errorf("%s: scan: %w", op, err)
+		}
+		result[orgID] = ac
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: rows: %w", op, err)
+	}
+	return result, nil
+}
+
 // GetGESDailyData retrieves daily data for a single GES on a given date.
 func (r *Repo) GetGESDailyData(ctx context.Context, organizationID int64, date string) (*gesreport.DailyData, error) {
 	const op = "storage.repo.GESReport.GetGESDailyData"
