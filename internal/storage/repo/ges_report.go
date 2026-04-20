@@ -124,6 +124,43 @@ func (r *Repo) DeleteGESConfig(ctx context.Context, organizationID int64) error 
 	return nil
 }
 
+// GetGESConfigsTotalAggregates returns total_aggregates per organization_id
+// for the requested set in a single query (no N+1). Organizations without a
+// matching ges_config row are simply absent from the returned map; callers
+// must treat that as "no cap configured" and decide policy themselves.
+func (r *Repo) GetGESConfigsTotalAggregates(ctx context.Context, orgIDs []int64) (map[int64]int, error) {
+	const op = "storage.repo.GESReport.GetGESConfigsTotalAggregates"
+
+	if len(orgIDs) == 0 {
+		return map[int64]int{}, nil
+	}
+
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT organization_id, total_aggregates
+		   FROM ges_config
+		  WHERE organization_id = ANY($1)`,
+		pq.Array(orgIDs),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("%s: query: %w", op, err)
+	}
+	defer rows.Close()
+
+	result := make(map[int64]int, len(orgIDs))
+	for rows.Next() {
+		var orgID int64
+		var total int
+		if err := rows.Scan(&orgID, &total); err != nil {
+			return nil, fmt.Errorf("%s: scan: %w", op, err)
+		}
+		result[orgID] = total
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: rows: %w", op, err)
+	}
+	return result, nil
+}
+
 // --- Cascade Config CRUD ---
 
 // UpsertCascadeConfig inserts or updates a cascade config record.
@@ -233,11 +270,17 @@ func (r *Repo) DeleteCascadeConfig(ctx context.Context, organizationID int64) er
 // guards: a column is only written when the corresponding Optional[T].Set flag
 // is true, otherwise the existing value is preserved on conflict.
 //
-// The two NOT NULL columns (daily_production_mln_kwh, working_aggregates) use
-// COALESCE($N, 0) in VALUES and COALESCE(EXCLUDED.col, 0) in DO UPDATE — null
-// is indistinguishable from 0 for those by design. The 6 nullable columns pass
-// NULL through verbatim via Optional[T].Value, which is a *T that database/sql
-// encodes as SQL NULL when nil.
+// The four NOT NULL columns (daily_production_mln_kwh, working_aggregates,
+// repair_aggregates, modernization_aggregates) use COALESCE($N, 0) in VALUES
+// and COALESCE(EXCLUDED.col, 0) in DO UPDATE — null is indistinguishable from
+// 0 for those by design. The 6 nullable columns pass NULL through verbatim
+// via Optional[T].Value, which is a *T that database/sql encodes as SQL NULL
+// when nil.
+//
+// A BEFORE INSERT/UPDATE trigger on ges_daily_data enforces
+// working+repair+modernization <= ges_config.total_aggregates and surfaces
+// a Postgres exception on violation; handlers should pre-validate to return
+// a clean 400, but the trigger is the last line of defence against races.
 func (r *Repo) UpsertGESDailyData(ctx context.Context, items []gesreport.UpsertDailyDataRequest, userID int64) error {
 	const op = "storage.repo.GESReport.UpsertGESDailyData"
 
@@ -255,39 +298,47 @@ func (r *Repo) UpsertGESDailyData(ctx context.Context, items []gesreport.UpsertD
 		INSERT INTO ges_daily_data (
 			organization_id, date,
 			daily_production_mln_kwh, working_aggregates,
+			repair_aggregates, modernization_aggregates,
 			water_level_m, water_volume_mln_m3, water_head_m,
 			reservoir_income_m3s, total_outflow_m3s, ges_flow_m3s,
 			created_by_user_id, updated_by_user_id, created_at, updated_at
 		) VALUES (
 			$1, $2::date,
 			COALESCE($3, 0), COALESCE($4, 0),
-			$5, $6, $7,
-			$8, $9, $10,
-			$11, $11, NOW(), NOW()
+			COALESCE($5, 0), COALESCE($6, 0),
+			$7, $8, $9,
+			$10, $11, $12,
+			$13, $13, NOW(), NOW()
 		)
 		ON CONFLICT (organization_id, date) DO UPDATE SET
-			daily_production_mln_kwh = CASE WHEN $12::boolean
+			daily_production_mln_kwh = CASE WHEN $14::boolean
 				THEN COALESCE(EXCLUDED.daily_production_mln_kwh, 0)
 				ELSE ges_daily_data.daily_production_mln_kwh END,
-			working_aggregates = CASE WHEN $13::boolean
+			working_aggregates = CASE WHEN $15::boolean
 				THEN COALESCE(EXCLUDED.working_aggregates, 0)
 				ELSE ges_daily_data.working_aggregates END,
-			water_level_m = CASE WHEN $14::boolean
+			repair_aggregates = CASE WHEN $16::boolean
+				THEN COALESCE(EXCLUDED.repair_aggregates, 0)
+				ELSE ges_daily_data.repair_aggregates END,
+			modernization_aggregates = CASE WHEN $17::boolean
+				THEN COALESCE(EXCLUDED.modernization_aggregates, 0)
+				ELSE ges_daily_data.modernization_aggregates END,
+			water_level_m = CASE WHEN $18::boolean
 				THEN EXCLUDED.water_level_m
 				ELSE ges_daily_data.water_level_m END,
-			water_volume_mln_m3 = CASE WHEN $15::boolean
+			water_volume_mln_m3 = CASE WHEN $19::boolean
 				THEN EXCLUDED.water_volume_mln_m3
 				ELSE ges_daily_data.water_volume_mln_m3 END,
-			water_head_m = CASE WHEN $16::boolean
+			water_head_m = CASE WHEN $20::boolean
 				THEN EXCLUDED.water_head_m
 				ELSE ges_daily_data.water_head_m END,
-			reservoir_income_m3s = CASE WHEN $17::boolean
+			reservoir_income_m3s = CASE WHEN $21::boolean
 				THEN EXCLUDED.reservoir_income_m3s
 				ELSE ges_daily_data.reservoir_income_m3s END,
-			total_outflow_m3s = CASE WHEN $18::boolean
+			total_outflow_m3s = CASE WHEN $22::boolean
 				THEN EXCLUDED.total_outflow_m3s
 				ELSE ges_daily_data.total_outflow_m3s END,
-			ges_flow_m3s = CASE WHEN $19::boolean
+			ges_flow_m3s = CASE WHEN $23::boolean
 				THEN EXCLUDED.ges_flow_m3s
 				ELSE ges_daily_data.ges_flow_m3s END,
 			updated_by_user_id = EXCLUDED.updated_by_user_id,
@@ -295,25 +346,29 @@ func (r *Repo) UpsertGESDailyData(ctx context.Context, items []gesreport.UpsertD
 
 	for _, item := range items {
 		_, err := tx.ExecContext(ctx, query,
-			item.OrganizationID,               // $1
-			item.Date,                         // $2
-			item.DailyProductionMlnKWh.Value,  // $3
-			item.WorkingAggregates.Value,      // $4
-			item.WaterLevelM.Value,            // $5
-			item.WaterVolumeMlnM3.Value,       // $6
-			item.WaterHeadM.Value,             // $7
-			item.ReservoirIncomeM3s.Value,     // $8
-			item.TotalOutflowM3s.Value,        // $9
-			item.GESFlowM3s.Value,             // $10
-			userID,                            // $11
-			item.DailyProductionMlnKWh.Set,    // $12
-			item.WorkingAggregates.Set,        // $13
-			item.WaterLevelM.Set,              // $14
-			item.WaterVolumeMlnM3.Set,         // $15
-			item.WaterHeadM.Set,               // $16
-			item.ReservoirIncomeM3s.Set,       // $17
-			item.TotalOutflowM3s.Set,          // $18
-			item.GESFlowM3s.Set,               // $19
+			item.OrganizationID,                // $1
+			item.Date,                          // $2
+			item.DailyProductionMlnKWh.Value,   // $3
+			item.WorkingAggregates.Value,       // $4
+			item.RepairAggregates.Value,        // $5
+			item.ModernizationAggregates.Value, // $6
+			item.WaterLevelM.Value,             // $7
+			item.WaterVolumeMlnM3.Value,        // $8
+			item.WaterHeadM.Value,              // $9
+			item.ReservoirIncomeM3s.Value,      // $10
+			item.TotalOutflowM3s.Value,         // $11
+			item.GESFlowM3s.Value,              // $12
+			userID,                             // $13
+			item.DailyProductionMlnKWh.Set,     // $14
+			item.WorkingAggregates.Set,         // $15
+			item.RepairAggregates.Set,          // $16
+			item.ModernizationAggregates.Set,   // $17
+			item.WaterLevelM.Set,               // $18
+			item.WaterVolumeMlnM3.Set,          // $19
+			item.WaterHeadM.Set,                // $20
+			item.ReservoirIncomeM3s.Set,        // $21
+			item.TotalOutflowM3s.Set,           // $22
+			item.GESFlowM3s.Set,                // $23
 		)
 		if err != nil {
 			if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
@@ -338,6 +393,7 @@ func (r *Repo) GetGESDailyData(ctx context.Context, organizationID int64, date s
 		SELECT
 			id, organization_id, date::text,
 			daily_production_mln_kwh, working_aggregates,
+			COALESCE(repair_aggregates, 0), COALESCE(modernization_aggregates, 0),
 			water_level_m, water_volume_mln_m3, water_head_m,
 			reservoir_income_m3s, total_outflow_m3s, ges_flow_m3s
 		FROM ges_daily_data
@@ -350,6 +406,8 @@ func (r *Repo) GetGESDailyData(ctx context.Context, organizationID int64, date s
 		&d.Date,
 		&d.DailyProductionMlnKWh,
 		&d.WorkingAggregates,
+		&d.RepairAggregates,
+		&d.ModernizationAggregates,
 		&d.WaterLevelM,
 		&d.WaterVolumeMlnM3,
 		&d.WaterHeadM,
@@ -447,6 +505,8 @@ func (r *Repo) GetGESDailyDataBatch(ctx context.Context, date string) ([]gesrepo
 			COALESCE(d.date::text, $1::text),
 			COALESCE(d.daily_production_mln_kwh, 0),
 			COALESCE(d.working_aggregates, 0),
+			COALESCE(d.repair_aggregates, 0),
+			COALESCE(d.modernization_aggregates, 0),
 			d.water_level_m, d.water_volume_mln_m3, d.water_head_m,
 			d.reservoir_income_m3s, d.total_outflow_m3s, d.ges_flow_m3s,
 			c.installed_capacity_mwt, c.total_aggregates, c.has_reservoir, c.sort_order
@@ -476,6 +536,8 @@ func (r *Repo) GetGESDailyDataBatch(ctx context.Context, date string) ([]gesrepo
 			&row.Date,
 			&row.DailyProductionMlnKWh,
 			&row.WorkingAggregates,
+			&row.RepairAggregates,
+			&row.ModernizationAggregates,
 			&row.WaterLevelM,
 			&row.WaterVolumeMlnM3,
 			&row.WaterHeadM,

@@ -95,19 +95,35 @@ func TestGetCascadeDailyWeatherBatch_QueryStructure(t *testing.T) {
 }
 
 // TestUpsertGESDailyData_BulkContract documents the SQL contract for the bulk
-// partial-update upsert: transactional, CASE WHEN guards on all 8 numeric
-// fields, COALESCE-to-zero on the 2 NOT NULL columns
-// (daily_production_mln_kwh, working_aggregates).
+// partial-update upsert: transactional, CASE WHEN guards on all 10 numeric
+// fields, COALESCE-to-zero on the 4 NOT NULL columns
+// (daily_production_mln_kwh, working_aggregates, repair_aggregates,
+// modernization_aggregates).
 func TestUpsertGESDailyData_BulkContract(t *testing.T) {
 	// Contract:
 	//   - Signature: UpsertGESDailyData(ctx, items []gesreport.UpsertDailyDataRequest, userID int64) error
 	//   - Wraps all INSERTs in a single transaction (BeginTx, defer Rollback, Commit)
 	//   - For each item: one INSERT INTO ges_daily_data ... ON CONFLICT (organization_id, date) DO UPDATE SET ...
-	//   - Each of the 8 numeric columns gets a CASE WHEN $N::boolean THEN EXCLUDED.col ELSE ges_daily_data.col END guard
-	//   - daily_production_mln_kwh and working_aggregates additionally wrap EXCLUDED.col in COALESCE(..., 0) because the columns are NOT NULL
-	//   - VALUES: COALESCE($N, 0) for the 2 NOT NULL columns; bare $N for the 6 nullable columns
-	//   - 19 placeholders total (orgID + date + 8 values + userID + 8 set flags)
-	t.Log("UpsertGESDailyData: bulk + Optional partial-update contract")
+	//   - Each of the 10 numeric columns gets a CASE WHEN $N::boolean THEN EXCLUDED.col ELSE ges_daily_data.col END guard
+	//   - daily_production_mln_kwh, working_aggregates, repair_aggregates, modernization_aggregates additionally wrap EXCLUDED.col in COALESCE(..., 0) because the columns are NOT NULL
+	//   - VALUES: COALESCE($N, 0) for the 4 NOT NULL columns; bare $N for the 6 nullable columns
+	//   - 23 placeholders total (orgID + date + 10 values + userID + 10 set flags)
+	//   - The BEFORE INSERT/UPDATE trigger on ges_daily_data enforces working+repair+modernization <= ges_config.total_aggregates
+	t.Log("UpsertGESDailyData: bulk + Optional partial-update contract with repair/modernization aggregates")
+}
+
+// TestGetGESConfigsTotalAggregates_Contract documents the lookup used by
+// handlers to validate working+repair+modernization <= total_aggregates without
+// N+1 queries.
+func TestGetGESConfigsTotalAggregates_Contract(t *testing.T) {
+	// Contract:
+	//   - Signature: GetGESConfigsTotalAggregates(ctx, orgIDs []int64) (map[int64]int, error)
+	//   - Empty input slice short-circuits to empty map, no DB roundtrip.
+	//   - SELECT organization_id, total_aggregates FROM ges_config WHERE organization_id = ANY($1).
+	//   - Uses pq.Array(orgIDs) for the int64[] parameter (lib/pq does not auto-convert []int64).
+	//   - Organizations without a matching ges_config row are absent from the map; the caller
+	//     decides whether that is an error or "no cap" (see handlers/ges-report/daily_data.go).
+	t.Log("GetGESConfigsTotalAggregates: batched ges_config.total_aggregates lookup, ANY($1) over orgIDs")
 }
 
 // TestUpsertCascadeDailyWeatherBulk_Contract documents the SQL contract for the
