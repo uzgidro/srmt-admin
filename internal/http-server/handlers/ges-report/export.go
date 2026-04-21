@@ -3,6 +3,7 @@ package gesreport
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -297,9 +298,23 @@ func exportPDFGes(w http.ResponseWriter, f *excelize.File, date time.Time, log *
 }
 
 // setPDFPrintTitles marks rows 1-6 (the report header block) as repeating on
-// every printed page. Without this, LibreOffice's PDF conversion shows the
-// header only on page 1 and leaves the second page without column labels.
+// every printed page.
+//
+// The template carries its own Print_Titles, Print_Area, and _FilterDatabase
+// scoped to the original sheet. GenerateExcel renames that sheet to the
+// report date; excelize rewrites each defined name's Scope but leaves
+// RefersTo pointing at the old sheet name, so LibreOffice silently drops
+// them — and the narrow template Print_Area clips the PDF to page 1. This
+// function strips those stale entries before installing a fresh
+// Print_Titles. Print_Area is deliberately not re-created: without it
+// LibreOffice paginates the whole data block.
 func setPDFPrintTitles(f *excelize.File, sheet string) error {
+	for _, name := range []string{"_xlnm._FilterDatabase", "_xlnm.Print_Titles", "_xlnm.Print_Area"} {
+		err := f.DeleteDefinedName(&excelize.DefinedName{Name: name, Scope: sheet})
+		if err != nil && !errors.Is(err, excelize.ErrDefinedNameScope) {
+			return fmt.Errorf("delete %s: %w", name, err)
+		}
+	}
 	return f.SetDefinedName(&excelize.DefinedName{
 		Name:     "_xlnm.Print_Titles",
 		RefersTo: fmt.Sprintf("'%s'!$1:$6", sheet),

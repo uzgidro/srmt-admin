@@ -370,3 +370,56 @@ func TestSetPDFPrintTitles_RepeatsRows1To6(t *testing.T) {
 		t.Errorf("RefersTo = %q, want %q", found.RefersTo, want)
 	}
 }
+
+// Simulates the real template pipeline: the template has defined names
+// scoped to the original sheet, then GenerateExcel renames the sheet via
+// SetSheetName. excelize updates each defined name's Scope but leaves its
+// RefersTo pointing at the old sheet, and the narrow Print_Area clips the
+// PDF to the first page. setPDFPrintTitles must drop the stale names and
+// install a fresh Print_Titles.
+func TestSetPDFPrintTitles_DropsStaleDefinedNames(t *testing.T) {
+	f := excelize.NewFile()
+	oldSheet := f.GetSheetName(0)
+	newSheet := "21.04.26"
+	if err := f.SetSheetName(oldSheet, newSheet); err != nil {
+		t.Fatalf("SetSheetName: %v", err)
+	}
+
+	// Stale entries mimicking template/ges-prod.xlsx post-rename:
+	// Scope already == newSheet (excelize rewrites scope), RefersTo still old.
+	stale := []excelize.DefinedName{
+		{Name: "_xlnm._FilterDatabase", RefersTo: "'" + oldSheet + "'!$A$6:$AK$19", Scope: newSheet},
+		{Name: "_xlnm.Print_Titles", RefersTo: "'" + oldSheet + "'!$4:$6", Scope: newSheet},
+		{Name: "_xlnm.Print_Area", RefersTo: "'" + oldSheet + "'!$A$3:$AK$19", Scope: newSheet},
+	}
+	for _, n := range stale {
+		if err := f.SetDefinedName(&n); err != nil {
+			t.Fatalf("seed %s: %v", n.Name, err)
+		}
+	}
+
+	if err := setPDFPrintTitles(f, newSheet); err != nil {
+		t.Fatalf("setPDFPrintTitles: %v", err)
+	}
+
+	var printTitles *excelize.DefinedName
+	for _, n := range f.GetDefinedName() {
+		if n.Scope != newSheet {
+			continue
+		}
+		switch n.Name {
+		case "_xlnm.Print_Area", "_xlnm._FilterDatabase":
+			t.Errorf("stale %s survived with RefersTo=%q", n.Name, n.RefersTo)
+		case "_xlnm.Print_Titles":
+			nn := n
+			printTitles = &nn
+		}
+	}
+	if printTitles == nil {
+		t.Fatalf("_xlnm.Print_Titles missing after setPDFPrintTitles")
+	}
+	want := "'" + newSheet + "'!$1:$6"
+	if printTitles.RefersTo != want {
+		t.Errorf("Print_Titles RefersTo = %q, want %q", printTitles.RefersTo, want)
+	}
+}
