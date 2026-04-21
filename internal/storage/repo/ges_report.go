@@ -304,7 +304,7 @@ func (r *Repo) UpsertGESDailyData(ctx context.Context, items []gesreport.UpsertD
 			created_by_user_id, updated_by_user_id, created_at, updated_at
 		) VALUES (
 			$1, $2::date,
-			COALESCE($3, 0), COALESCE($4, 0),
+			COALESCE($3, 0::numeric), COALESCE($4, 0),
 			COALESCE($5, 0), COALESCE($6, 0),
 			$7, $8, $9,
 			$10, $11, $12,
@@ -312,7 +312,7 @@ func (r *Repo) UpsertGESDailyData(ctx context.Context, items []gesreport.UpsertD
 		)
 		ON CONFLICT (organization_id, date) DO UPDATE SET
 			daily_production_mln_kwh = CASE WHEN $14::boolean
-				THEN COALESCE(EXCLUDED.daily_production_mln_kwh, 0)
+				THEN COALESCE(EXCLUDED.daily_production_mln_kwh, 0::numeric)
 				ELSE ges_daily_data.daily_production_mln_kwh END,
 			working_aggregates = CASE WHEN $15::boolean
 				THEN COALESCE(EXCLUDED.working_aggregates, 0)
