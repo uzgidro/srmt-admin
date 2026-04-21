@@ -244,6 +244,10 @@ func exportPDFGes(w http.ResponseWriter, f *excelize.File, date time.Time, log *
 		return fmt.Errorf("failed to set page margins: %w", err)
 	}
 
+	if err := setPDFPrintTitles(f, sheet); err != nil {
+		return fmt.Errorf("failed to set print titles: %w", err)
+	}
+
 	excelPath := filepath.Join(tempDir, "ges.xlsx")
 	if err := f.SaveAs(excelPath); err != nil {
 		return fmt.Errorf("failed to save Excel file: %w", err)
@@ -290,4 +294,15 @@ func exportPDFGes(w http.ResponseWriter, f *excelize.File, date time.Time, log *
 	)
 
 	return nil
+}
+
+// setPDFPrintTitles marks rows 1-6 (the report header block) as repeating on
+// every printed page. Without this, LibreOffice's PDF conversion shows the
+// header only on page 1 and leaves the second page without column labels.
+func setPDFPrintTitles(f *excelize.File, sheet string) error {
+	return f.SetDefinedName(&excelize.DefinedName{
+		Name:     "_xlnm.Print_Titles",
+		RefersTo: fmt.Sprintf("'%s'!$1:$6", sheet),
+		Scope:    sheet,
+	})
 }
