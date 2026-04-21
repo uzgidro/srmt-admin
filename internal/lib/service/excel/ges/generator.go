@@ -202,13 +202,21 @@ func (g *Generator) GenerateExcel(params ExcelParams) (*excelize.File, error) {
 			row++
 		}
 
-		// Weather: merge station cells in D and Z, split into temp + icon
-		if w := cascade.Weather; w != nil && len(cascade.Stations) > 0 {
+		// Weather: merge station cells in D and Z, split into temp + icon.
+		// Merges happen unconditionally so the template layout stays consistent
+		// even when weather data is missing for this cascade.
+		if len(cascade.Stations) > 0 {
+			var temp, prevTemp *float64
+			var cond, prevCond *string
+			if w := cascade.Weather; w != nil {
+				temp, cond = w.Temperature, w.Condition
+				prevTemp, prevCond = w.PrevYearTemperature, w.PrevYearCondition
+			}
 			fillWeatherCells(ctx, f, newSheet, stationStart, len(cascade.Stations),
-				w.Temperature, w.Condition, "D",
+				temp, cond, "D",
 				fetcher, params.Log, cascade.CascadeID)
 			fillWeatherCells(ctx, f, newSheet, stationStart, len(cascade.Stations),
-				w.PrevYearTemperature, w.PrevYearCondition, "Z",
+				prevTemp, prevCond, "Z",
 				fetcher, params.Log, cascade.CascadeID)
 		}
 	}
@@ -240,9 +248,6 @@ func (g *Generator) GenerateExcel(params ExcelParams) (*excelize.File, error) {
 func fillWeatherCells(ctx context.Context, f *excelize.File, sheet string, startRow, stationCount int,
 	temperature *float64, conditionCode *string, col string,
 	fetcher *iconFetcher, log *slog.Logger, cascadeID int64) {
-	if temperature == nil && conditionCode == nil {
-		return
-	}
 	if stationCount <= 0 {
 		return
 	}
@@ -255,22 +260,24 @@ func fillWeatherCells(ctx context.Context, f *excelize.File, sheet string, start
 		return
 	}
 
-	// Split: smaller half on top (temperature), larger on bottom (icon)
+	// Split: smaller half on top (temperature), larger on bottom (icon).
+	// Merges and the dashed separator happen unconditionally — the layout
+	// stays uniform across cascades even when temperature/condition is nil.
 	tempRows := stationCount / 2
 	iconRows := stationCount - tempRows
 
-	// Upper block: temperature
-	if temperature != nil {
-		topStart := cell(col, startRow)
+	// Upper block: temperature (merge always, set value if present)
+	topStart := cell(col, startRow)
+	if tempRows > 1 {
 		topEnd := cell(col, startRow+tempRows-1)
-		if tempRows > 1 {
-			_ = f.MergeCell(sheet, topStart, topEnd)
-		}
+		_ = f.MergeCell(sheet, topStart, topEnd)
+	}
+	if temperature != nil {
 		_ = f.SetCellValue(sheet, topStart, fmt.Sprintf("%.0f°С", math.Round(*temperature)))
 	}
 
-	// Lower block: embedded PNG icon, centered in merge area
-	if conditionCode != nil && iconRows > 0 && fetcher != nil {
+	// Lower block: merge always, add dashed separator always, fetch+embed icon when code present.
+	if iconRows > 0 {
 		iconStart := startRow + tempRows
 		botStart := cell(col, iconStart)
 		botEnd := cell(col, iconStart+iconRows-1)
@@ -279,7 +286,7 @@ func fillWeatherCells(ctx context.Context, f *excelize.File, sheet string, start
 		}
 
 		// Dashed top border on icon block = separator between temp and icon
-		if temperature != nil {
+		{
 			styleID, _ := f.GetCellStyle(sheet, botStart)
 			existing, _ := f.GetStyle(styleID)
 			dashedTop := excelize.Border{Type: "top", Color: "000000", Style: 3}
@@ -326,23 +333,25 @@ func fillWeatherCells(ctx context.Context, f *excelize.File, sheet string, start
 			offsetY = 0
 		}
 
-		iconBytes, err := fetcher.Get(ctx, *conditionCode)
-		if err != nil {
-			weatherIconLog(log, "weather icon fetch failed",
-				"code", *conditionCode, "cascade_id", cascadeID, "cell", botStart, "err", err)
-		} else if err := f.AddPictureFromBytes(sheet, botStart, &excelize.Picture{
-			Extension: ".png",
-			File:      iconBytes,
-			Format: &excelize.GraphicOptions{
-				ScaleX:      0.5,
-				ScaleY:      0.5,
-				OffsetX:     offsetX,
-				OffsetY:     offsetY,
-				Positioning: "oneCell",
-			},
-		}); err != nil {
-			weatherIconLog(log, "weather icon AddPictureFromBytes failed",
-				"code", *conditionCode, "cascade_id", cascadeID, "cell", botStart, "err", err)
+		if conditionCode != nil && fetcher != nil {
+			iconBytes, err := fetcher.Get(ctx, *conditionCode)
+			if err != nil {
+				weatherIconLog(log, "weather icon fetch failed",
+					"code", *conditionCode, "cascade_id", cascadeID, "cell", botStart, "err", err)
+			} else if err := f.AddPictureFromBytes(sheet, botStart, &excelize.Picture{
+				Extension: ".png",
+				File:      iconBytes,
+				Format: &excelize.GraphicOptions{
+					ScaleX:      0.5,
+					ScaleY:      0.5,
+					OffsetX:     offsetX,
+					OffsetY:     offsetY,
+					Positioning: "oneCell",
+				},
+			}); err != nil {
+				weatherIconLog(log, "weather icon AddPictureFromBytes failed",
+					"code", *conditionCode, "cascade_id", cascadeID, "cell", botStart, "err", err)
+			}
 		}
 	}
 }
