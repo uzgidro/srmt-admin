@@ -270,6 +270,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			filterExcelGen.New(),
 			loc,
 		))
+		r.Get("/ges-report/export", gesreporthandler.Export(deps.Log, deps.GESReportService, deps.PgRepo, deps.PgRepo, gesgen.New(deps.GESExcelTemplatePath), loc))
 	})
 
 	router.Route("/api/v3", func(r chi.Router) {
