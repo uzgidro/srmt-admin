@@ -21,10 +21,14 @@ FROM alpine:3.23
 RUN apk upgrade --no-cache && \
     apk --no-cache add ca-certificates tzdata libreoffice \
     font-dejavu font-liberation font-noto \
-    msttcorefonts-installer fontconfig && \
+    msttcorefonts-installer fontconfig \
+    musl-locales musl-locales-lang && \
     apk add --no-cache --repository=https://dl-cdn.alpinelinux.org/alpine/edge/main libpq && \
     update-ms-fonts && \
     fc-cache -f
+
+ENV LANG=ru_RU.UTF-8
+ENV LC_ALL=ru_RU.UTF-8
 
 RUN addgroup -g 1000 appuser && \
     adduser -D -u 1000 -G appuser appuser

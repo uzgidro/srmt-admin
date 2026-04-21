@@ -243,9 +243,14 @@ func exportPDFGes(w http.ResponseWriter, f *excelize.File, date time.Time, log *
 	cmd := exec.Command(
 		"soffice",
 		"--headless",
+		"--language=ru-RU",
 		"--convert-to", "pdf",
 		"--outdir", tempDir,
 		excelPath,
+	)
+	cmd.Env = append(os.Environ(),
+		"LANG=ru_RU.UTF-8",
+		"LC_ALL=ru_RU.UTF-8",
 	)
 
 	output, err := cmd.CombinedOutput()
