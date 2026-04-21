@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	resp "srmt-admin/internal/lib/api/response"
@@ -20,6 +21,32 @@ import (
 	"github.com/go-chi/render"
 	"github.com/xuri/excelize/v2"
 )
+
+// countOrgTypes aggregates station counts by organization type across all
+// cascades. Stations whose Name contains commas count as multiple units of
+// their type: n = 1 + strings.Count(name, ","). For example
+// "Зомин микроГЭС-1,2" counts as 2 units, "ГЭС-1,2,3" as 3. Total is the
+// sum GES+Mini+Micro.
+func countOrgTypes(cascades []model.CascadeReport, typesMap map[int64][]string) gesgen.OrgTypeCounts {
+	var c gesgen.OrgTypeCounts
+	for _, cascade := range cascades {
+		for _, station := range cascade.Stations {
+			n := 1 + strings.Count(station.Name, ",")
+			for _, t := range typesMap[station.OrganizationID] {
+				switch t {
+				case "ges":
+					c.GES += n
+				case "mini":
+					c.Mini += n
+				case "micro":
+					c.Micro += n
+				}
+			}
+		}
+	}
+	c.Total = c.GES + c.Mini + c.Micro
+	return c
+}
 
 // ExportPlanGetter fetches production plans for a given year and set of months.
 type ExportPlanGetter interface {
@@ -126,23 +153,7 @@ func Export(
 			return
 		}
 
-		var orgTypes gesgen.OrgTypeCounts
-		for _, cascade := range report.Cascades {
-			for _, station := range cascade.Stations {
-				types := typesMap[station.OrganizationID]
-				for _, t := range types {
-					switch t {
-					case "ges":
-						orgTypes.GES++
-					case "mini":
-						orgTypes.Mini++
-					case "micro":
-						orgTypes.Micro++
-					}
-				}
-			}
-		}
-		orgTypes.Total = orgTypes.GES + orgTypes.Mini + orgTypes.Micro
+		orgTypes := countOrgTypes(report.Cascades, typesMap)
 
 		// --- generate Excel ---
 

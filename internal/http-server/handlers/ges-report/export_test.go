@@ -223,6 +223,57 @@ func TestExport_InvalidFormat(t *testing.T) {
 	}
 }
 
+func TestCountOrgTypes_CommaInMicroName(t *testing.T) {
+	cascades := []model.CascadeReport{{
+		Stations: []model.StationReport{
+			{OrganizationID: 1, Name: "Зомин микроГЭС-1,2"},
+			{OrganizationID: 2, Name: "Чирчик ГЭС-7"},
+		},
+	}}
+	typesMap := map[int64][]string{
+		1: {"micro"},
+		2: {"ges"},
+	}
+	got := countOrgTypes(cascades, typesMap)
+	want := gesgen.OrgTypeCounts{GES: 1, Mini: 0, Micro: 2, Total: 3}
+	if got != want {
+		t.Errorf("got %+v, want %+v", got, want)
+	}
+}
+
+func TestCountOrgTypes_NoCommaInName(t *testing.T) {
+	cascades := []model.CascadeReport{{
+		Stations: []model.StationReport{{OrganizationID: 1, Name: "Туполанг ГЭС"}},
+	}}
+	got := countOrgTypes(cascades, map[int64][]string{1: {"ges"}})
+	want := gesgen.OrgTypeCounts{GES: 1, Total: 1}
+	if got != want {
+		t.Errorf("got %+v, want %+v", got, want)
+	}
+}
+
+func TestCountOrgTypes_MultipleCommasInName(t *testing.T) {
+	cascades := []model.CascadeReport{{
+		Stations: []model.StationReport{{OrganizationID: 1, Name: "ГЭС-1,2,3"}},
+	}}
+	got := countOrgTypes(cascades, map[int64][]string{1: {"ges"}})
+	want := gesgen.OrgTypeCounts{GES: 3, Total: 3}
+	if got != want {
+		t.Errorf("got %+v, want %+v", got, want)
+	}
+}
+
+func TestCountOrgTypes_EmptyName(t *testing.T) {
+	cascades := []model.CascadeReport{{
+		Stations: []model.StationReport{{OrganizationID: 1, Name: ""}},
+	}}
+	got := countOrgTypes(cascades, map[int64][]string{1: {"micro"}})
+	want := gesgen.OrgTypeCounts{Micro: 1, Total: 1}
+	if got != want {
+		t.Errorf("got %+v, want %+v", got, want)
+	}
+}
+
 // Reserve validation now lives in the service layer (clamp ≥ 0) and the DB
 // CHECK constraint on ges_daily_data, so the handler no longer rejects
 // "negative reserve" requests. modernization/repair query params have been
