@@ -109,10 +109,15 @@ Error**.
 
 ## Иконки погоды
 
-Иконки OpenWeatherMap встроены в Excel как изображения (PNG).
-Файлы лежат в `template/weather-icons/{code}.png`, где `code` —
-стандартный код OWM (`01d`, `01n`, `02d` …, `50n` — всего 18
-иконок). Источник: <https://openweathermap.org/weather-conditions>.
+Иконки погоды загружаются с openweathermap.org в runtime по URL
+`https://openweathermap.org/payload/api/media/file/{code}.png` —
+локальное хранилище больше не используется. Если openweathermap.org
+недоступен (нет сети, CDN-ошибка), отчёт всё равно генерируется,
+но иконок в xlsx/pdf не будет. Сообщения об ошибках попадают в
+логи приложения с `op=handlers.ges-report.Export` и сообщением
+`weather icon fetch failed`. Кэш на уровне одного запроса —
+для одного отчёта каждый уникальный код иконки скачивается один
+раз. Timeout HTTP-запроса — 5 секунд.
 
 В каждой ячейке погоды (колонка D и Z в шаблоне):
 
