@@ -274,6 +274,58 @@ func TestCountOrgTypes_EmptyName(t *testing.T) {
 	}
 }
 
+func TestCountOrgTypes_MultipleCascades(t *testing.T) {
+	cascades := []model.CascadeReport{
+		{Stations: []model.StationReport{
+			{OrganizationID: 1, Name: "ГЭС-1,2"},
+			{OrganizationID: 2, Name: "ГЭС-3"},
+		}},
+		{Stations: []model.StationReport{
+			{OrganizationID: 3, Name: "микроГЭС"},
+		}},
+	}
+	typesMap := map[int64][]string{
+		1: {"ges"},
+		2: {"ges"},
+		3: {"micro"},
+	}
+	got := countOrgTypes(cascades, typesMap)
+	want := gesgen.OrgTypeCounts{GES: 3, Micro: 1, Total: 4}
+	if got != want {
+		t.Errorf("got %+v, want %+v", got, want)
+	}
+}
+
+func TestCountOrgTypes_MultipleTypesPerStation(t *testing.T) {
+	cascades := []model.CascadeReport{{
+		Stations: []model.StationReport{{OrganizationID: 1, Name: "ГЭС-1,2"}},
+	}}
+	typesMap := map[int64][]string{1: {"ges", "mini"}}
+	got := countOrgTypes(cascades, typesMap)
+	want := gesgen.OrgTypeCounts{GES: 2, Mini: 2, Total: 4}
+	if got != want {
+		t.Errorf("got %+v, want %+v", got, want)
+	}
+}
+
+func TestCountOrgTypes_UnknownTypeIgnored(t *testing.T) {
+	cascades := []model.CascadeReport{{
+		Stations: []model.StationReport{
+			{OrganizationID: 1, Name: "strange"},
+			{OrganizationID: 2, Name: "ГЭС"},
+		},
+	}}
+	typesMap := map[int64][]string{
+		1: {"virtual"},
+		2: {"ges"},
+	}
+	got := countOrgTypes(cascades, typesMap)
+	want := gesgen.OrgTypeCounts{GES: 1, Total: 1}
+	if got != want {
+		t.Errorf("got %+v, want %+v", got, want)
+	}
+}
+
 // Reserve validation now lives in the service layer (clamp ≥ 0) and the DB
 // CHECK constraint on ges_daily_data, so the handler no longer rejects
 // "negative reserve" requests. modernization/repair query params have been
