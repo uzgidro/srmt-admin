@@ -64,12 +64,12 @@ func TestIconFetcher_PropagatesError(t *testing.T) {
 
 func TestIconFetcher_RespectsTimeout(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(2 * time.Second)
+		time.Sleep(500 * time.Millisecond)
 		_, _ = w.Write([]byte("too-late"))
 	}))
 	defer ts.Close()
 
-	f := newIconFetcher(200*time.Millisecond, func(code string) string {
+	f := newIconFetcher(50*time.Millisecond, func(code string) string {
 		return ts.URL + "/" + code + ".png"
 	})
 
@@ -84,7 +84,7 @@ func TestIconFetcher_RespectsTimeout(t *testing.T) {
 	if !strings.Contains(msg, "deadline") && !strings.Contains(msg, "timeout") {
 		t.Errorf("error = %q, want to contain 'deadline' or 'timeout'", err.Error())
 	}
-	if elapsed > 1500*time.Millisecond {
-		t.Errorf("Get took %v, expected to fail near 200ms timeout", elapsed)
+	if elapsed > 400*time.Millisecond {
+		t.Errorf("Get took %v, expected to fail near 50ms timeout", elapsed)
 	}
 }

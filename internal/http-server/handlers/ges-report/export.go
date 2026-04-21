@@ -155,6 +155,7 @@ func Export(
 			MonthlyPlans:  monthlyPlans,
 			OrgTypeCounts: orgTypes,
 			Log:           log,
+			Ctx:           r.Context(),
 		})
 		if err != nil {
 			log.Error("failed to generate Excel file", sl.Err(err))
