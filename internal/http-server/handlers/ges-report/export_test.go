@@ -344,3 +344,29 @@ func TestExport_IgnoresLegacyAggregateQueryParams(t *testing.T) {
 		t.Fatalf("status: got %d, want 200. body=%s", rr.Code, rr.Body.String())
 	}
 }
+
+func TestSetPDFPrintTitles_RepeatsRows1To6(t *testing.T) {
+	f := excelize.NewFile()
+	sheet := f.GetSheetName(0)
+
+	if err := setPDFPrintTitles(f, sheet); err != nil {
+		t.Fatalf("setPDFPrintTitles: %v", err)
+	}
+
+	names := f.GetDefinedName()
+	var found *excelize.DefinedName
+	for i := range names {
+		if names[i].Name == "_xlnm.Print_Titles" && names[i].Scope == sheet {
+			found = &names[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("_xlnm.Print_Titles not set on sheet %q. names=%+v", sheet, names)
+	}
+
+	want := "'" + sheet + "'!$1:$6"
+	if found.RefersTo != want {
+		t.Errorf("RefersTo = %q, want %q", found.RefersTo, want)
+	}
+}
