@@ -830,13 +830,12 @@ internal/
 │   ├── report.go                 # GetReport (filters by cascade)
 │   └── export.go                 # Excel/PDF export
 ├── providers/
-│   └── http.go                   # GESExcelTemplatePath, WeatherIconsPath
+│   └── http.go                   # GESExcelTemplatePath
 └── http-server/router/
     └── router.go                 # /ges-report tier 1 (sc/rais/cascade) + tier 2 (sc/rais)
 
 template/
-├── ges-prod.xlsx                 # Excel template
-└── weather-icons/{01d,01n,...,50n}.png  # 18 OWM weather icons
+└── ges-prod.xlsx                 # Excel template (icons fetched from OWM at runtime)
 
 migrations/postgres/
 ├── 000063_ges_daily_report.up.sql

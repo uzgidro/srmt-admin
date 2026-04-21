@@ -210,7 +210,6 @@ func ProvideRouter(
 		HourlyExcelTemplatePath:    cfg.TemplatePath + "/res-summary-hourly.xlsx",
 		FilterExcelTemplatePath:    cfg.TemplatePath + "/res-summary-filter.xlsx",
 		GESExcelTemplatePath:       cfg.TemplatePath + "/ges-prod.xlsx",
-		WeatherIconsPath:           cfg.TemplatePath + "/weather-icons",
 		AlarmProcessor:             alarmProcessor,
 		HRMPersonnelService:        hrmPersonnelSvc,
 		HRMVacationService:         hrmVacationSvc,

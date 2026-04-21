@@ -1,10 +1,14 @@
 package ges
 
 import (
+	"context"
 	"fmt"
 	_ "image/png"
+	"io"
+	"log/slog"
 	"math"
-	"path/filepath"
+	"net/http"
+	"os"
 	"time"
 
 	model "srmt-admin/internal/lib/model/ges-report"
@@ -23,14 +27,18 @@ func New(templatePath string) *Generator {
 
 // ExcelParams holds all data needed to generate the Excel report.
 type ExcelParams struct {
-	Report           *model.DailyReport
-	YTDPlans         map[int64]float64
-	AnnualPlans      map[int64]float64
-	MonthlyPlans     map[int64]float64
-	OrgTypeCounts    OrgTypeCounts
-	Date             time.Time
-	Loc              *time.Location
-	WeatherIconsPath string // directory with {code}.png files
+	Report        *model.DailyReport
+	YTDPlans      map[int64]float64
+	AnnualPlans   map[int64]float64
+	MonthlyPlans  map[int64]float64
+	OrgTypeCounts OrgTypeCounts
+	Date          time.Time
+	Loc           *time.Location
+	Log           *slog.Logger
+	// Ctx is the request-scoped context used for outbound HTTP (icon fetch).
+	// If nil, context.Background() is used. Pass r.Context() so client
+	// disconnects abort in-flight icon downloads.
+	Ctx context.Context
 }
 
 // OrgTypeCounts holds station counts by type.
@@ -45,11 +53,85 @@ const (
 	templateGrandRow   = 9 // grand total row in template
 )
 
+// iconFetcher downloads weather icon PNGs at runtime and caches the bytes
+// for the lifetime of the fetcher (per-request scope). It is not safe for
+// concurrent use; reports are generated sequentially in a single goroutine.
+type iconFetcher struct {
+	httpClient *http.Client
+	cache      map[string][]byte
+	urlFn      func(code string) string
+}
+
+// newIconFetcher constructs a fetcher with the given HTTP timeout and URL
+// builder. The urlFn lets tests redirect requests to httptest.NewServer.
+func newIconFetcher(timeout time.Duration, urlFn func(code string) string) *iconFetcher {
+	return &iconFetcher{
+		httpClient: &http.Client{Timeout: timeout},
+		cache:      make(map[string][]byte, 4),
+		urlFn:      urlFn,
+	}
+}
+
+// newDefaultIconFetcher returns a fetcher pointed at openweathermap.org with
+// a 5s per-request timeout. Used in production by GenerateExcel.
+func newDefaultIconFetcher() *iconFetcher {
+	return newIconFetcher(5*time.Second, func(code string) string {
+		return "https://openweathermap.org/payload/api/media/file/" + code + ".png"
+	})
+}
+
+// maxIconBytes caps the response body to defend against a misbehaving CDN
+// streaming gigabytes of data. Real OWM icons are ~2 KB.
+const maxIconBytes = 1 << 20 // 1 MB
+
+// Get returns the icon bytes for the given OpenWeatherMap condition code.
+// Subsequent calls for the same code are served from the in-memory cache.
+func (f *iconFetcher) Get(ctx context.Context, code string) ([]byte, error) {
+	if b, ok := f.cache[code]; ok {
+		return b, nil
+	}
+	url := f.urlFn(code)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build icon request: %w", err)
+	}
+	resp, err := f.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch icon: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("fetch icon %q: status %d", code, resp.StatusCode)
+	}
+	b, err := io.ReadAll(io.LimitReader(resp.Body, maxIconBytes))
+	if err != nil {
+		return nil, fmt.Errorf("read icon body: %w", err)
+	}
+	f.cache[code] = b
+	return b, nil
+}
+
+// weatherIconLog emits a warning about an icon problem. Falls back to stderr
+// when no logger is wired (e.g. in unit tests).
+func weatherIconLog(log *slog.Logger, msg string, kvs ...any) {
+	if log != nil {
+		log.Warn(msg, kvs...)
+		return
+	}
+	fmt.Fprintf(os.Stderr, "%s %v\n", msg, kvs)
+}
+
 // GenerateExcel produces an Excel file from the template and params.
 func (g *Generator) GenerateExcel(params ExcelParams) (*excelize.File, error) {
 	f, err := excelize.OpenFile(g.templatePath)
 	if err != nil {
 		return nil, fmt.Errorf("open template: %w", err)
+	}
+
+	fetcher := newDefaultIconFetcher()
+	ctx := params.Ctx
+	if ctx == nil {
+		ctx = context.Background()
 	}
 
 	oldSheet := f.GetSheetList()[0]
@@ -122,8 +204,12 @@ func (g *Generator) GenerateExcel(params ExcelParams) (*excelize.File, error) {
 
 		// Weather: merge station cells in D and Z, split into temp + icon
 		if w := cascade.Weather; w != nil && len(cascade.Stations) > 0 {
-			fillWeatherCells(f, newSheet, stationStart, len(cascade.Stations), w.Temperature, w.Condition, "D", params.WeatherIconsPath)
-			fillWeatherCells(f, newSheet, stationStart, len(cascade.Stations), w.PrevYearTemperature, w.PrevYearCondition, "Z", params.WeatherIconsPath)
+			fillWeatherCells(ctx, f, newSheet, stationStart, len(cascade.Stations),
+				w.Temperature, w.Condition, "D",
+				fetcher, params.Log, cascade.CascadeID)
+			fillWeatherCells(ctx, f, newSheet, stationStart, len(cascade.Stations),
+				w.PrevYearTemperature, w.PrevYearCondition, "Z",
+				fetcher, params.Log, cascade.CascadeID)
 		}
 	}
 
@@ -149,7 +235,11 @@ func (g *Generator) GenerateExcel(params ExcelParams) (*excelize.File, error) {
 // fillWeatherCells merges station rows in a column and splits them into
 // temperature (upper half) and embedded PNG icon (lower half).
 // If odd station count, the smaller half goes to temperature (top).
-func fillWeatherCells(f *excelize.File, sheet string, startRow, stationCount int, temperature *float64, conditionCode *string, col string, iconsPath string) {
+// The icon bytes are fetched at runtime via the supplied fetcher; failures
+// are logged as warnings and the icon is skipped without aborting export.
+func fillWeatherCells(ctx context.Context, f *excelize.File, sheet string, startRow, stationCount int,
+	temperature *float64, conditionCode *string, col string,
+	fetcher *iconFetcher, log *slog.Logger, cascadeID int64) {
 	if temperature == nil && conditionCode == nil {
 		return
 	}
@@ -180,7 +270,7 @@ func fillWeatherCells(f *excelize.File, sheet string, startRow, stationCount int
 	}
 
 	// Lower block: embedded PNG icon, centered in merge area
-	if conditionCode != nil && iconRows > 0 && iconsPath != "" {
+	if conditionCode != nil && iconRows > 0 && fetcher != nil {
 		iconStart := startRow + tempRows
 		botStart := cell(col, iconStart)
 		botEnd := cell(col, iconStart+iconRows-1)
@@ -236,15 +326,23 @@ func fillWeatherCells(f *excelize.File, sheet string, startRow, stationCount int
 			offsetY = 0
 		}
 
-		iconFile := filepath.Join(iconsPath, *conditionCode+".png")
-		if err := f.AddPicture(sheet, botStart, iconFile, &excelize.GraphicOptions{
-			ScaleX:      0.5,
-			ScaleY:      0.5,
-			OffsetX:     offsetX,
-			OffsetY:     offsetY,
-			Positioning: "oneCell",
+		iconBytes, err := fetcher.Get(ctx, *conditionCode)
+		if err != nil {
+			weatherIconLog(log, "weather icon fetch failed",
+				"code", *conditionCode, "cascade_id", cascadeID, "cell", botStart, "err", err)
+		} else if err := f.AddPictureFromBytes(sheet, botStart, &excelize.Picture{
+			Extension: ".png",
+			File:      iconBytes,
+			Format: &excelize.GraphicOptions{
+				ScaleX:      0.5,
+				ScaleY:      0.5,
+				OffsetX:     offsetX,
+				OffsetY:     offsetY,
+				Positioning: "oneCell",
+			},
 		}); err != nil {
-			fmt.Printf("weather icon error: cell=%s file=%s err=%v\n", botStart, iconFile, err)
+			weatherIconLog(log, "weather icon AddPictureFromBytes failed",
+				"code", *conditionCode, "cascade_id", cascadeID, "cell", botStart, "err", err)
 		}
 	}
 }

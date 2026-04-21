@@ -215,7 +215,6 @@ type AppDependencies struct {
 	HourlyExcelTemplatePath    string
 	FilterExcelTemplatePath    string
 	GESExcelTemplatePath       string
-	WeatherIconsPath           string
 	AlarmProcessor             *alarm.Processor
 	HRMPersonnelService        *hrmpersonnel.Service
 	HRMVacationService         *hrmvacation.Service
@@ -565,7 +564,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			// Tier 2: sc/rais only — config write, plans write, export
 			r.Group(func(r chi.Router) {
 				r.Use(mwauth.RequireAnyRole("sc", "rais"))
-				r.Get("/export", gesreporthandler.Export(deps.Log, deps.GESReportService, deps.PgRepo, deps.PgRepo, gesgen.New(deps.GESExcelTemplatePath), deps.WeatherIconsPath, loc))
+				r.Get("/export", gesreporthandler.Export(deps.Log, deps.GESReportService, deps.PgRepo, deps.PgRepo, gesgen.New(deps.GESExcelTemplatePath), loc))
 				r.Post("/config", gesreporthandler.UpsertConfig(deps.Log, deps.PgRepo))
 				r.Delete("/config", gesreporthandler.DeleteConfig(deps.Log, deps.PgRepo))
 				r.Post("/plans", gesreporthandler.BulkUpsertPlan(deps.Log, deps.PgRepo))

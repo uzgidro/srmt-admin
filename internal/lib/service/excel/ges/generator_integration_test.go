@@ -336,9 +336,8 @@ func buildRealisticParams(t *testing.T) ExcelParams {
 			Micro: 6,
 			Total: 38,
 		},
-		Date:             date,
-		Loc:              loc,
-		WeatherIconsPath: filepath.Join(resolveRepoRoot(t), "template", "weather-icons"),
+		Date: date,
+		Loc:  loc,
 	}
 }
 
