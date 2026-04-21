@@ -338,9 +338,6 @@ func buildRealisticParams(t *testing.T) ExcelParams {
 		},
 		Date: date,
 		Loc:  loc,
-		// TODO(agent-B/Task-4.2): WeatherIconsPath was removed from ExcelParams
-		// in the runtime-icon-fetch refactor; keep this stub until the integration
-		// fixture is updated by the parallel Wave 2 agent.
 	}
 }
 

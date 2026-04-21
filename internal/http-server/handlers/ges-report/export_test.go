@@ -141,7 +141,7 @@ func setupExportRouter(
 
 	r := chi.NewRouter()
 	r.Use(mwauth.Authenticator(verifier))
-	r.Get("/export", Export(logger, builder, planGetter, orgTypes, gen, "", loc))
+	r.Get("/export", Export(logger, builder, planGetter, orgTypes, gen, loc))
 	return r
 }
 
