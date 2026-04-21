@@ -439,3 +439,63 @@ func TestGenerateExcel_ColumnMapping(t *testing.T) {
 	}
 	t.Error("Station A1 row not found")
 }
+
+func TestSetCellFloatNonZero_Nil(t *testing.T) {
+	f := excelize.NewFile()
+	sheet := f.GetSheetName(0)
+
+	setCellFloatNonZero(f, sheet, "A1", nil)
+
+	got, err := f.GetCellValue(sheet, "A1")
+	if err != nil {
+		t.Fatalf("GetCellValue: %v", err)
+	}
+	if got != "" {
+		t.Errorf("want empty cell for nil, got %q", got)
+	}
+}
+
+func TestSetCellFloatNonZero_Zero(t *testing.T) {
+	f := excelize.NewFile()
+	sheet := f.GetSheetName(0)
+
+	setCellFloatNonZero(f, sheet, "A1", floatPtr(0))
+
+	got, err := f.GetCellValue(sheet, "A1")
+	if err != nil {
+		t.Fatalf("GetCellValue: %v", err)
+	}
+	if got != "" {
+		t.Errorf("want empty cell for zero, got %q", got)
+	}
+}
+
+func TestSetCellFloatNonZero_Positive(t *testing.T) {
+	f := excelize.NewFile()
+	sheet := f.GetSheetName(0)
+
+	setCellFloatNonZero(f, sheet, "A1", floatPtr(1.5))
+
+	got, err := f.GetCellValue(sheet, "A1")
+	if err != nil {
+		t.Fatalf("GetCellValue: %v", err)
+	}
+	if got != "1.5" {
+		t.Errorf("want \"1.5\", got %q", got)
+	}
+}
+
+func TestSetCellFloatNonZero_Negative(t *testing.T) {
+	f := excelize.NewFile()
+	sheet := f.GetSheetName(0)
+
+	setCellFloatNonZero(f, sheet, "A1", floatPtr(-0.3))
+
+	got, err := f.GetCellValue(sheet, "A1")
+	if err != nil {
+		t.Fatalf("GetCellValue: %v", err)
+	}
+	if got != "-0.3" {
+		t.Errorf("want \"-0.3\", got %q", got)
+	}
+}

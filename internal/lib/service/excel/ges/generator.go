@@ -377,6 +377,16 @@ func setCellFloatVal(f *excelize.File, sheet, cell string, v float64) {
 	_ = f.SetCellValue(sheet, cell, v)
 }
 
+// setCellFloatNonZero writes a float pointer to a cell, treating both nil and
+// zero as "skip": the cell stays blank. Used for columns where 0 reads as noise
+// rather than data (e.g. idle discharge flow).
+func setCellFloatNonZero(f *excelize.File, sheet, cell string, v *float64) {
+	if v == nil || *v == 0 {
+		return
+	}
+	_ = f.SetCellValue(sheet, cell, *v)
+}
+
 func setCellInt(f *excelize.File, sheet, cell string, v int) {
 	_ = f.SetCellValue(sheet, cell, v)
 }
@@ -412,7 +422,8 @@ func fillStationRow(f *excelize.File, sheet string, row int, s model.StationRepo
 	setCellFloat(f, sheet, cell("L", row), c.TotalOutflowM3s)
 	setCellFloat(f, sheet, cell("M", row), c.GESFlowM3s)
 	setCellFloat(f, sheet, cell("N", row), d.GESFlowChangeM3s)
-	setCellFloat(f, sheet, cell("O", row), c.IdleDischargeM3s)
+	// O: idle discharge — hide zero (operators read blank as "no discharge")
+	setCellFloatNonZero(f, sheet, cell("O", row), c.IdleDischargeM3s)
 
 	// P-Q: aggregates count
 	setCellInt(f, sheet, cell("P", row), cfg.TotalAggregates)
