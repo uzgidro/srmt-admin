@@ -34,6 +34,8 @@ type shutdownEditor interface {
 	EditShutdown(ctx context.Context, id int64, req dto.EditShutdownRequest) error
 	UnlinkShutdownFiles(ctx context.Context, shutdownID int64) error
 	LinkShutdownFiles(ctx context.Context, shutdownID int64, fileIDs []int64) error
+	GetShutdownOrganizationID(ctx context.Context, id int64) (int64, error)
+	GetOrganizationParentID(ctx context.Context, orgID int64) (*int64, error)
 }
 
 func Edit(log *slog.Logger, editor shutdownEditor) http.HandlerFunc {
@@ -64,6 +66,51 @@ func Edit(log *slog.Logger, editor shutdownEditor) http.HandlerFunc {
 			render.Status(r, http.StatusBadRequest)
 			render.JSON(w, r, resp.BadRequest("Invalid request format"))
 			return
+		}
+
+		// Lookup current org to run RBAC check against it before mutating.
+		curOrgID, err := editor.GetShutdownOrganizationID(r.Context(), id)
+		if err != nil {
+			if errors.Is(err, storage.ErrNotFound) {
+				log.Warn("shutdown not found", slog.Int64("id", id))
+				render.Status(r, http.StatusNotFound)
+				render.JSON(w, r, resp.NotFound("Shutdown not found"))
+				return
+			}
+			log.Error("failed to load shutdown org", sl.Err(err))
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, resp.InternalServerError("Failed to load shutdown"))
+			return
+		}
+
+		// Access check on current org — foreign resource → 404 (enumeration defense).
+		if err := auth.CheckCascadeStationAccess(r.Context(), curOrgID, editor); err != nil {
+			if errors.Is(err, auth.ErrForbidden) || errors.Is(err, auth.ErrNoOrganization) {
+				log.Warn("cascade access denied on edit", slog.Int64("user_id", userID), slog.Int64("shutdown_id", id))
+				render.Status(r, http.StatusNotFound)
+				render.JSON(w, r, resp.NotFound("Shutdown not found"))
+				return
+			}
+			log.Error("cascade access check failed", sl.Err(err))
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, resp.InternalServerError("Failed to verify access"))
+			return
+		}
+
+		// If caller is moving the record to a different org, also check access to the new org.
+		if req.OrganizationID != nil {
+			if err := auth.CheckCascadeStationAccess(r.Context(), *req.OrganizationID, editor); err != nil {
+				if errors.Is(err, auth.ErrForbidden) || errors.Is(err, auth.ErrNoOrganization) {
+					log.Warn("cascade access denied on edit target", slog.Int64("user_id", userID), slog.Int64("target_org_id", *req.OrganizationID))
+					render.Status(r, http.StatusForbidden)
+					render.JSON(w, r, resp.Forbidden("Нет доступа к целевой организации"))
+					return
+				}
+				log.Error("cascade access check failed", sl.Err(err))
+				render.Status(r, http.StatusInternalServerError)
+				render.JSON(w, r, resp.InternalServerError("Failed to verify access"))
+				return
+			}
 		}
 
 		storageReq := dto.EditShutdownRequest{
@@ -111,7 +158,15 @@ func Edit(log *slog.Logger, editor shutdownEditor) http.HandlerFunc {
 			}
 		}
 
-		log.Info("shutdown updated successfully", slog.Int64("id", id))
+		targetOrgID := curOrgID
+		if req.OrganizationID != nil {
+			targetOrgID = *req.OrganizationID
+		}
+		log.Info("shutdown updated successfully",
+			slog.Int64("id", id),
+			slog.Int64("user_id", userID),
+			slog.Int64("target_org_id", targetOrgID),
+		)
 		render.JSON(w, r, resp.OK())
 	}
 }
