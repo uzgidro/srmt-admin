@@ -6,6 +6,7 @@ import (
 	"github.com/go-chi/render"
 	"log/slog"
 	"net/http"
+	"srmt-admin/internal/http-server/handlers/organizations/cascadefilter"
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/lib/model/organization"
@@ -34,6 +35,8 @@ func New(log *slog.Logger, getter OrganizationFlatGetter) http.HandlerFunc {
 			render.JSON(w, r, resp.InternalServerError("Failed to retrieve organizations"))
 			return
 		}
+
+		orgs = cascadefilter.Apply(r.Context(), orgs)
 
 		log.Info("successfully retrieved flat organizations", slog.Int("count", len(orgs)))
 		render.JSON(w, r, orgs)

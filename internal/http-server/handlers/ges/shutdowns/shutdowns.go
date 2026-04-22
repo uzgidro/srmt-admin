@@ -2,6 +2,7 @@ package shutdowns
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	resp "srmt-admin/internal/lib/api/response"
@@ -9,6 +10,7 @@ import (
 	"srmt-admin/internal/lib/helpers"
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/lib/model/shutdown"
+	"srmt-admin/internal/lib/service/auth"
 	"strconv"
 	"time"
 
@@ -20,8 +22,10 @@ import (
 const layout = "2006-01-02" // YYYY-MM-DD
 
 // ShutdownGetter defines the interface for getting shutdowns by organization ID
+// and resolving the parent organization (used by cascade RBAC).
 type ShutdownGetter interface {
 	GetShutdownsByOrgID(ctx context.Context, orgID int64, startDate, endDate *time.Time) ([]*shutdown.ResponseModel, error)
+	GetOrganizationParentID(ctx context.Context, orgID int64) (*int64, error)
 }
 
 // ResponseWithURLs is the API response model with presigned file URLs
@@ -55,6 +59,19 @@ func New(log *slog.Logger, getter ShutdownGetter, minioRepo helpers.MinioURLGene
 		}
 
 		log = log.With(slog.Int64("organization_id", orgID))
+
+		if err := auth.CheckCascadeStationAccess(r.Context(), orgID, getter); err != nil {
+			if errors.Is(err, auth.ErrForbidden) || errors.Is(err, auth.ErrNoOrganization) {
+				log.Warn("access denied to ges shutdowns", slog.Int64("org_id", orgID))
+				render.Status(r, http.StatusNotFound)
+				render.JSON(w, r, resp.NotFound("GES not found"))
+				return
+			}
+			log.Error("access check failed", sl.Err(err))
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, resp.InternalServerError("Failed to verify access"))
+			return
+		}
 
 		// Parse date filters
 		var startDate, endDate *time.Time
