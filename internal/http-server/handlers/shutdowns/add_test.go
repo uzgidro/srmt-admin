@@ -19,8 +19,10 @@ import (
 
 // mockShutdownAdder is a mock implementation of ShutdownAdder interface
 type mockShutdownAdder struct {
-	addFunc  func(ctx context.Context, req dto.AddShutdownRequest) (int64, error)
-	linkFunc func(ctx context.Context, shutdownID int64, fileIDs []int64) error
+	addFunc    func(ctx context.Context, req dto.AddShutdownRequest) (int64, error)
+	linkFunc   func(ctx context.Context, shutdownID int64, fileIDs []int64) error
+	parentFunc func(ctx context.Context, orgID int64) (*int64, error)
+	addCalls   int
 }
 
 func (m *mockShutdownAdder) LinkShutdownFiles(ctx context.Context, shutdownID int64, fileIDs []int64) error {
@@ -31,18 +33,40 @@ func (m *mockShutdownAdder) LinkShutdownFiles(ctx context.Context, shutdownID in
 }
 
 func (m *mockShutdownAdder) AddShutdown(ctx context.Context, req dto.AddShutdownRequest) (int64, error) {
+	m.addCalls++
 	if m.addFunc != nil {
 		return m.addFunc(ctx, req)
 	}
 	return 1, nil
 }
 
-// Helper to create context with user claims using the middleware's test helper
+// GetOrganizationParentID is required by the new CascadeChecker interface.
+func (m *mockShutdownAdder) GetOrganizationParentID(ctx context.Context, orgID int64) (*int64, error) {
+	if m.parentFunc != nil {
+		return m.parentFunc(ctx, orgID)
+	}
+	return nil, nil
+}
+
+// Helper to create context with user claims using the middleware's test helper.
+// Default role is "sc" so legacy happy-path tests continue to pass once the
+// handler starts calling CheckCascadeStationAccess (sc has full access).
 func contextWithClaims(ctx context.Context, userID int64) context.Context {
 	claims := &token.Claims{
 		UserID: userID,
 		Name:   "Test User",
-		Roles:  []string{"admin"},
+		Roles:  []string{"sc"},
+	}
+	return mwauth.ContextWithClaims(ctx, claims)
+}
+
+// contextWithRoleClaims creates a context with specified role/orgID for RBAC tests.
+func contextWithRoleClaims(ctx context.Context, userID, orgID int64, role string) context.Context {
+	claims := &token.Claims{
+		UserID:         userID,
+		OrganizationID: orgID,
+		Name:           "Test User",
+		Roles:          []string{role},
 	}
 	return mwauth.ContextWithClaims(ctx, claims)
 }
@@ -291,4 +315,187 @@ func stringPtr(s string) *string {
 
 func float64Ptr(f float64) *float64 {
 	return &f
+}
+
+func intPtr(i int64) *int64 {
+	return &i
+}
+
+// ---- Cascade RBAC tests (RED) ----
+
+// runAddWithCtx is a small helper to reduce boilerplate in cascade tests.
+func runAddWithCtx(t *testing.T, mock *mockShutdownAdder, ctx context.Context, body interface{}) *httptest.ResponseRecorder {
+	t.Helper()
+	bodyBytes, _ := json.Marshal(body)
+	req := httptest.NewRequest(http.MethodPost, "/shutdowns", bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(ctx)
+
+	rr := httptest.NewRecorder()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	handler := Add(logger, mock)
+	handler.ServeHTTP(rr, req)
+	return rr
+}
+
+func TestAdd_CascadeUser_OwnStation_OK(t *testing.T) {
+	now := time.Now()
+	later := now.Add(2 * time.Hour)
+
+	mock := &mockShutdownAdder{
+		parentFunc: func(ctx context.Context, orgID int64) (*int64, error) {
+			if orgID == 10 {
+				return intPtr(5), nil
+			}
+			return nil, nil
+		},
+	}
+
+	ctx := contextWithRoleClaims(context.Background(), 1, 5, "cascade")
+	body := addRequest{
+		OrganizationID: 10,
+		StartTime:      now,
+		EndTime:        &later,
+	}
+
+	rr := runAddWithCtx(t, mock, ctx, body)
+	if rr.Code != http.StatusCreated {
+		t.Errorf("expected 201, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestAdd_CascadeUser_OwnCascade_DirectOrg_OK(t *testing.T) {
+	now := time.Now()
+	later := now.Add(2 * time.Hour)
+
+	mock := &mockShutdownAdder{
+		// parent mock not required when orgID == claims.OrganizationID, but safe default.
+	}
+
+	ctx := contextWithRoleClaims(context.Background(), 1, 5, "cascade")
+	body := addRequest{
+		OrganizationID: 5,
+		StartTime:      now,
+		EndTime:        &later,
+	}
+
+	rr := runAddWithCtx(t, mock, ctx, body)
+	if rr.Code != http.StatusCreated {
+		t.Errorf("expected 201, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestAdd_CascadeUser_ForeignStation_Forbidden(t *testing.T) {
+	now := time.Now()
+	later := now.Add(2 * time.Hour)
+
+	mock := &mockShutdownAdder{
+		parentFunc: func(ctx context.Context, orgID int64) (*int64, error) {
+			if orgID == 20 {
+				return intPtr(7), nil
+			}
+			return nil, nil
+		},
+	}
+
+	ctx := contextWithRoleClaims(context.Background(), 1, 5, "cascade")
+	body := addRequest{
+		OrganizationID: 20,
+		StartTime:      now,
+		EndTime:        &later,
+	}
+
+	rr := runAddWithCtx(t, mock, ctx, body)
+	if rr.Code != http.StatusForbidden {
+		t.Errorf("expected 403, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if mock.addCalls != 0 {
+		t.Errorf("AddShutdown must NOT be called on forbidden, called %d times", mock.addCalls)
+	}
+}
+
+func TestAdd_CascadeUser_ForeignStation_WithForce_Forbidden(t *testing.T) {
+	now := time.Now()
+	later := now.Add(2 * time.Hour)
+
+	mock := &mockShutdownAdder{
+		parentFunc: func(ctx context.Context, orgID int64) (*int64, error) {
+			if orgID == 20 {
+				return intPtr(7), nil
+			}
+			return nil, nil
+		},
+	}
+
+	ctx := contextWithRoleClaims(context.Background(), 1, 5, "cascade")
+	body := addRequest{
+		OrganizationID:      20,
+		StartTime:           now,
+		EndTime:             &later,
+		IdleDischargeVolume: float64Ptr(5.0),
+		Force:               true,
+	}
+
+	rr := runAddWithCtx(t, mock, ctx, body)
+	if rr.Code != http.StatusForbidden {
+		t.Errorf("expected 403 even with force, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if mock.addCalls != 0 {
+		t.Errorf("AddShutdown must NOT be called on forbidden (force must not bypass RBAC), called %d times", mock.addCalls)
+	}
+}
+
+func TestAdd_CascadeUser_NoOrgID_Forbidden(t *testing.T) {
+	now := time.Now()
+	later := now.Add(2 * time.Hour)
+
+	mock := &mockShutdownAdder{
+		parentFunc: func(ctx context.Context, orgID int64) (*int64, error) {
+			return intPtr(5), nil
+		},
+	}
+
+	// cascade user with no org assigned
+	ctx := contextWithRoleClaims(context.Background(), 1, 0, "cascade")
+	body := addRequest{
+		OrganizationID: 10,
+		StartTime:      now,
+		EndTime:        &later,
+	}
+
+	rr := runAddWithCtx(t, mock, ctx, body)
+	if rr.Code != http.StatusForbidden {
+		t.Errorf("expected 403, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if mock.addCalls != 0 {
+		t.Errorf("AddShutdown must NOT be called, called %d times", mock.addCalls)
+	}
+}
+
+func TestAdd_RaisUser_AnyStation_OK(t *testing.T) {
+	now := time.Now()
+	later := now.Add(2 * time.Hour)
+
+	parentCalled := false
+	mock := &mockShutdownAdder{
+		parentFunc: func(ctx context.Context, orgID int64) (*int64, error) {
+			parentCalled = true
+			return intPtr(999), nil
+		},
+	}
+
+	ctx := contextWithRoleClaims(context.Background(), 1, 999, "rais")
+	body := addRequest{
+		OrganizationID: 123, // any org
+		StartTime:      now,
+		EndTime:        &later,
+	}
+
+	rr := runAddWithCtx(t, mock, ctx, body)
+	if rr.Code != http.StatusCreated {
+		t.Errorf("expected 201, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if parentCalled {
+		t.Error("parent lookup must NOT be called for rais role")
+	}
 }

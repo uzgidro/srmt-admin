@@ -21,9 +21,12 @@ import (
 
 // mockShutdownEditor is a mock implementation of shutdownEditor interface
 type mockShutdownEditor struct {
-	editFunc   func(ctx context.Context, id int64, req dto.EditShutdownRequest) error
-	unlinkFunc func(ctx context.Context, shutdownID int64) error
-	linkFunc   func(ctx context.Context, shutdownID int64, fileIDs []int64) error
+	editFunc    func(ctx context.Context, id int64, req dto.EditShutdownRequest) error
+	unlinkFunc  func(ctx context.Context, shutdownID int64) error
+	linkFunc    func(ctx context.Context, shutdownID int64, fileIDs []int64) error
+	getOrgFunc  func(ctx context.Context, id int64) (int64, error)
+	parentFunc  func(ctx context.Context, orgID int64) (*int64, error)
+	editCalls   int
 }
 
 func (m *mockShutdownEditor) UnlinkShutdownFiles(ctx context.Context, shutdownID int64) error {
@@ -41,18 +44,49 @@ func (m *mockShutdownEditor) LinkShutdownFiles(ctx context.Context, shutdownID i
 }
 
 func (m *mockShutdownEditor) EditShutdown(ctx context.Context, id int64, req dto.EditShutdownRequest) error {
+	m.editCalls++
 	if m.editFunc != nil {
 		return m.editFunc(ctx, id, req)
 	}
 	return nil
 }
 
-// Helper to create context with user claims (reuse from add_test.go approach)
+// GetShutdownOrganizationID is required for cascade RBAC checks.
+// Default returns (1, nil) so legacy happy-path tests don't need to set it.
+func (m *mockShutdownEditor) GetShutdownOrganizationID(ctx context.Context, id int64) (int64, error) {
+	if m.getOrgFunc != nil {
+		return m.getOrgFunc(ctx, id)
+	}
+	return 1, nil
+}
+
+// GetOrganizationParentID is required by the CascadeChecker interface.
+func (m *mockShutdownEditor) GetOrganizationParentID(ctx context.Context, orgID int64) (*int64, error) {
+	if m.parentFunc != nil {
+		return m.parentFunc(ctx, orgID)
+	}
+	return nil, nil
+}
+
+// Helper to create context with user claims (reuse from add_test.go approach).
+// Default role is "sc" so legacy happy-path tests continue to pass once the
+// handler starts calling CheckCascadeStationAccess (sc has full access).
 func contextWithUserClaims(ctx context.Context, userID int64) context.Context {
 	claims := &token.Claims{
 		UserID: userID,
 		Name:   "Test User",
-		Roles:  []string{"admin"},
+		Roles:  []string{"sc"},
+	}
+	return mwauth.ContextWithClaims(ctx, claims)
+}
+
+// contextWithEditRoleClaims creates context with arbitrary role/orgID for RBAC tests.
+func contextWithEditRoleClaims(ctx context.Context, userID, orgID int64, role string) context.Context {
+	claims := &token.Claims{
+		UserID:         userID,
+		OrganizationID: orgID,
+		Name:           "Test User",
+		Roles:          []string{role},
 	}
 	return mwauth.ContextWithClaims(ctx, claims)
 }
@@ -350,4 +384,170 @@ func int64Ptr(i int64) *int64 {
 
 func timePtr(t time.Time) *time.Time {
 	return &t
+}
+
+// ---- Cascade RBAC tests (RED) ----
+
+func runEditWithCtx(t *testing.T, mock *mockShutdownEditor, ctx context.Context, shutdownID string, body interface{}) *httptest.ResponseRecorder {
+	t.Helper()
+	bodyBytes, _ := json.Marshal(body)
+	req := httptest.NewRequest(http.MethodPatch, "/shutdowns/"+shutdownID, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", shutdownID)
+	req = req.WithContext(context.WithValue(ctx, chi.RouteCtxKey, rctx))
+
+	rr := httptest.NewRecorder()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	handler := Edit(logger, mock)
+	handler.ServeHTTP(rr, req)
+	return rr
+}
+
+func TestEdit_CascadeUser_CurrentMine_OK(t *testing.T) {
+	mock := &mockShutdownEditor{
+		getOrgFunc: func(ctx context.Context, id int64) (int64, error) {
+			return 10, nil
+		},
+		parentFunc: func(ctx context.Context, orgID int64) (*int64, error) {
+			if orgID == 10 {
+				return int64Ptr(5), nil
+			}
+			return nil, nil
+		},
+	}
+
+	ctx := contextWithEditRoleClaims(context.Background(), 1, 5, "cascade")
+	rr := runEditWithCtx(t, mock, ctx, "1", editRequest{
+		Reason: stringPtr("Just updating reason"),
+	})
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestEdit_CascadeUser_CurrentForeign_NotFound(t *testing.T) {
+	mock := &mockShutdownEditor{
+		getOrgFunc: func(ctx context.Context, id int64) (int64, error) {
+			return 20, nil
+		},
+		parentFunc: func(ctx context.Context, orgID int64) (*int64, error) {
+			return int64Ptr(7), nil
+		},
+	}
+
+	ctx := contextWithEditRoleClaims(context.Background(), 1, 5, "cascade")
+	rr := runEditWithCtx(t, mock, ctx, "2", editRequest{
+		Reason: stringPtr("Updated"),
+	})
+
+	// Enumeration защита: foreign resource is reported as 404, not 403.
+	if rr.Code != http.StatusNotFound {
+		t.Errorf("expected 404 (enumeration protection), got %d: %s", rr.Code, rr.Body.String())
+	}
+	if mock.editCalls != 0 {
+		t.Errorf("EditShutdown must NOT be called for foreign resource, called %d times", mock.editCalls)
+	}
+}
+
+func TestEdit_CascadeUser_NewOrgForeign_Forbidden(t *testing.T) {
+	mock := &mockShutdownEditor{
+		getOrgFunc: func(ctx context.Context, id int64) (int64, error) {
+			return 10, nil
+		},
+		parentFunc: func(ctx context.Context, orgID int64) (*int64, error) {
+			switch orgID {
+			case 10:
+				return int64Ptr(5), nil
+			case 20:
+				return int64Ptr(7), nil
+			}
+			return nil, nil
+		},
+	}
+
+	ctx := contextWithEditRoleClaims(context.Background(), 1, 5, "cascade")
+	rr := runEditWithCtx(t, mock, ctx, "1", editRequest{
+		OrganizationID: int64Ptr(20),
+	})
+
+	// Here 403 is appropriate because the caller OWNS the current record —
+	// we're rejecting the target move to foreign org.
+	if rr.Code != http.StatusForbidden {
+		t.Errorf("expected 403, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if mock.editCalls != 0 {
+		t.Errorf("EditShutdown must NOT be called, called %d times", mock.editCalls)
+	}
+}
+
+func TestEdit_CascadeUser_BothMine_OK(t *testing.T) {
+	mock := &mockShutdownEditor{
+		getOrgFunc: func(ctx context.Context, id int64) (int64, error) {
+			return 10, nil
+		},
+		parentFunc: func(ctx context.Context, orgID int64) (*int64, error) {
+			switch orgID {
+			case 10, 11:
+				return int64Ptr(5), nil
+			}
+			return nil, nil
+		},
+	}
+
+	ctx := contextWithEditRoleClaims(context.Background(), 1, 5, "cascade")
+	rr := runEditWithCtx(t, mock, ctx, "1", editRequest{
+		OrganizationID: int64Ptr(11),
+	})
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestEdit_ShutdownNotFound_NotFound(t *testing.T) {
+	mock := &mockShutdownEditor{
+		getOrgFunc: func(ctx context.Context, id int64) (int64, error) {
+			return 0, storage.ErrNotFound
+		},
+	}
+
+	ctx := contextWithEditRoleClaims(context.Background(), 1, 5, "cascade")
+	rr := runEditWithCtx(t, mock, ctx, "9999", editRequest{
+		Reason: stringPtr("whatever"),
+	})
+
+	if rr.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if mock.editCalls != 0 {
+		t.Errorf("EditShutdown must NOT be called when lookup fails, called %d times", mock.editCalls)
+	}
+}
+
+func TestEdit_ScUser_AnyShutdown_OK(t *testing.T) {
+	parentCalled := false
+	mock := &mockShutdownEditor{
+		getOrgFunc: func(ctx context.Context, id int64) (int64, error) {
+			return 999, nil
+		},
+		parentFunc: func(ctx context.Context, orgID int64) (*int64, error) {
+			parentCalled = true
+			return int64Ptr(777), nil
+		},
+	}
+
+	ctx := contextWithEditRoleClaims(context.Background(), 1, 5, "sc")
+	rr := runEditWithCtx(t, mock, ctx, "1", editRequest{
+		OrganizationID: int64Ptr(123),
+	})
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if parentCalled {
+		t.Error("parent lookup must NOT be called for sc role")
+	}
 }
