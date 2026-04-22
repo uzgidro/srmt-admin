@@ -37,6 +37,7 @@ type addResponse struct {
 type ShutdownAdder interface {
 	AddShutdown(ctx context.Context, req dto.AddShutdownRequest) (int64, error)
 	LinkShutdownFiles(ctx context.Context, shutdownID int64, fileIDs []int64) error
+	GetOrganizationParentID(ctx context.Context, orgID int64) (*int64, error)
 }
 
 func Add(log *slog.Logger, adder ShutdownAdder) http.HandlerFunc {
@@ -80,6 +81,19 @@ func Add(log *slog.Logger, adder ShutdownAdder) http.HandlerFunc {
 			log.Warn("validation failed: end_time must be after start_time")
 			render.Status(r, http.StatusBadRequest)
 			render.JSON(w, r, resp.BadRequest("end_time must be after start_time"))
+			return
+		}
+
+		if err := auth.CheckCascadeStationAccess(r.Context(), req.OrganizationID, adder); err != nil {
+			if errors.Is(err, auth.ErrForbidden) || errors.Is(err, auth.ErrNoOrganization) {
+				log.Warn("cascade access denied", slog.Int64("user_id", userID), slog.Int64("target_org_id", req.OrganizationID))
+				render.Status(r, http.StatusForbidden)
+				render.JSON(w, r, resp.Forbidden("Нет доступа к организации"))
+				return
+			}
+			log.Error("cascade access check failed", sl.Err(err))
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, resp.InternalServerError("Failed to verify organization access"))
 			return
 		}
 
@@ -133,6 +147,8 @@ func Add(log *slog.Logger, adder ShutdownAdder) http.HandlerFunc {
 
 		log.Info("shutdown added successfully",
 			slog.Int64("id", id),
+			slog.Int64("user_id", userID),
+			slog.Int64("target_org_id", req.OrganizationID),
 			slog.Int("files", len(req.FileIDs)),
 		)
 

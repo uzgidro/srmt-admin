@@ -473,11 +473,6 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Patch("/incidents/{id}", incidentsHandler.Edit(deps.Log, deps.PgRepo))
 			r.Delete("/incidents/{id}", incidentsHandler.Delete(deps.Log, deps.PgRepo))
 
-			r.Post("/shutdowns", shutdowns.Add(deps.Log, deps.PgRepo))
-			r.Patch("/shutdowns/{id}", shutdowns.Edit(deps.Log, deps.PgRepo))
-			r.Delete("/shutdowns/{id}", shutdowns.Delete(deps.Log, deps.PgRepo))
-			r.Patch("/shutdowns/{id}/viewed", shutdowns.MarkViewed(deps.Log, deps.PgRepo))
-
 			r.Get("/past-events", pastEventsHandler.Get(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
 			r.Get("/past-events/by-type", pastEventsHandler.GetByType(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
 
@@ -545,6 +540,16 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 				filterExcelGen.New(),
 				loc,
 			))
+		})
+
+		// Shutdowns — cascade role may manage shutdowns within its own cascade
+		// (own org or its direct children). sc/rais keep full access.
+		r.Group(func(r chi.Router) {
+			r.Use(mwauth.RequireAnyRole("sc", "rais", "cascade"))
+			r.Post("/shutdowns", shutdowns.Add(deps.Log, deps.PgRepo))
+			r.Patch("/shutdowns/{id}", shutdowns.Edit(deps.Log, deps.PgRepo))
+			r.Delete("/shutdowns/{id}", shutdowns.Delete(deps.Log, deps.PgRepo))
+			r.Patch("/shutdowns/{id}/viewed", shutdowns.MarkViewed(deps.Log, deps.PgRepo))
 		})
 
 		// GES Daily Report

@@ -16,6 +16,21 @@ import (
 	"github.com/lib/pq"
 )
 
+// GetShutdownOrganizationID returns the organization_id of a shutdown record.
+// Used by handlers to run RBAC checks before mutating/deleting the row.
+func (r *Repo) GetShutdownOrganizationID(ctx context.Context, id int64) (int64, error) {
+	const op = "storage.repo.GetShutdownOrganizationID"
+	var orgID int64
+	err := r.db.QueryRowContext(ctx, `SELECT organization_id FROM shutdowns WHERE id = $1`, id).Scan(&orgID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, storage.ErrNotFound
+		}
+		return 0, fmt.Errorf("%s: %w", op, err)
+	}
+	return orgID, nil
+}
+
 func (r *Repo) AddShutdown(ctx context.Context, req dto.AddShutdownRequest) (int64, error) {
 	const op = "storage.repo.AddShutdown"
 
