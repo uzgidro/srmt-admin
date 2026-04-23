@@ -19,13 +19,14 @@ func (r *Repo) UpsertGESConfig(ctx context.Context, req gesreport.UpsertConfigRe
 	const op = "storage.repo.GESReport.UpsertGESConfig"
 
 	const query = `
-		INSERT INTO ges_config (organization_id, installed_capacity_mwt, total_aggregates, has_reservoir, sort_order)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO ges_config (organization_id, installed_capacity_mwt, total_aggregates, has_reservoir, sort_order, max_daily_production_mln_kwh)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (organization_id) DO UPDATE SET
 			installed_capacity_mwt = EXCLUDED.installed_capacity_mwt,
 			total_aggregates = EXCLUDED.total_aggregates,
 			has_reservoir = EXCLUDED.has_reservoir,
 			sort_order = EXCLUDED.sort_order,
+			max_daily_production_mln_kwh = EXCLUDED.max_daily_production_mln_kwh,
 			updated_at = NOW()`
 
 	_, err := r.db.ExecContext(ctx, query,
@@ -34,6 +35,7 @@ func (r *Repo) UpsertGESConfig(ctx context.Context, req gesreport.UpsertConfigRe
 		req.TotalAggregates,
 		req.HasReservoir,
 		req.SortOrder,
+		req.MaxDailyProductionMlnKwh,
 	)
 	if err != nil {
 		if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
@@ -58,7 +60,8 @@ func (r *Repo) GetAllGESConfigs(ctx context.Context) ([]gesreport.Config, error)
 			gc.installed_capacity_mwt,
 			gc.total_aggregates,
 			gc.has_reservoir,
-			gc.sort_order
+			gc.sort_order,
+			gc.max_daily_production_mln_kwh
 		FROM ges_config gc
 		JOIN organizations o ON o.id = gc.organization_id
 		LEFT JOIN organizations cascade_org ON cascade_org.id = o.parent_organization_id
@@ -86,6 +89,7 @@ func (r *Repo) GetAllGESConfigs(ctx context.Context) ([]gesreport.Config, error)
 			&cfg.TotalAggregates,
 			&cfg.HasReservoir,
 			&cfg.SortOrder,
+			&cfg.MaxDailyProductionMlnKwh,
 		); err != nil {
 			return nil, fmt.Errorf("%s: scan: %w", op, err)
 		}
@@ -159,6 +163,73 @@ func (r *Repo) GetGESConfigsTotalAggregates(ctx context.Context, orgIDs []int64)
 		return nil, fmt.Errorf("%s: rows: %w", op, err)
 	}
 	return result, nil
+}
+
+// GetGESConfigsMaxDailyProduction returns a map of organization_id → max
+// daily production cap (in mln kWh) for stations that have a positive
+// cap configured. Stations with max == 0 (the default for "no cap")
+// are intentionally absent from the map so callers can use the simple
+// idiom: cap, ok := m[orgID]; if ok && value > cap { reject }.
+func (r *Repo) GetGESConfigsMaxDailyProduction(ctx context.Context) (map[int64]float64, error) {
+	const op = "storage.repo.GESReport.GetGESConfigsMaxDailyProduction"
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT organization_id, max_daily_production_mln_kwh
+		   FROM ges_config
+		  WHERE max_daily_production_mln_kwh > 0`)
+	if err != nil {
+		return nil, fmt.Errorf("%s: query: %w", op, err)
+	}
+	defer rows.Close()
+
+	out := make(map[int64]float64)
+	for rows.Next() {
+		var orgID int64
+		var maxProd float64
+		if err := rows.Scan(&orgID, &maxProd); err != nil {
+			return nil, fmt.Errorf("%s: scan: %w", op, err)
+		}
+		out[orgID] = maxProd
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: rows iter: %w", op, err)
+	}
+	return out, nil
+}
+
+// GetGESDailyProductionsBatch returns a map of organization_id → current
+// daily_production_mln_kwh stored in ges_daily_data for the given date.
+// Used by the daily_data handler to enforce the production cap when an
+// upsert payload omits the production field (preserve-DB semantics).
+// Stations with no row for the date are absent from the map.
+func (r *Repo) GetGESDailyProductionsBatch(ctx context.Context, orgIDs []int64, date string) (map[int64]float64, error) {
+	const op = "storage.repo.GESReport.GetGESDailyProductionsBatch"
+	if len(orgIDs) == 0 {
+		return map[int64]float64{}, nil
+	}
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT organization_id, daily_production_mln_kwh
+		   FROM ges_daily_data
+		  WHERE organization_id = ANY($1) AND date = $2::date`,
+		pq.Array(orgIDs), date,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("%s: query: %w", op, err)
+	}
+	defer rows.Close()
+
+	out := make(map[int64]float64, len(orgIDs))
+	for rows.Next() {
+		var orgID int64
+		var prod float64
+		if err := rows.Scan(&orgID, &prod); err != nil {
+			return nil, fmt.Errorf("%s: scan: %w", op, err)
+		}
+		out[orgID] = prod
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: rows iter: %w", op, err)
+	}
+	return out, nil
 }
 
 // --- Cascade Config CRUD ---

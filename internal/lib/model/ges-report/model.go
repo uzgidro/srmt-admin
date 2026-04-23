@@ -7,23 +7,25 @@ import (
 // --- Config ---
 
 type Config struct {
-	ID                   int64   `json:"id"`
-	OrganizationID       int64   `json:"organization_id"`
-	OrganizationName     string  `json:"organization_name,omitempty"`
-	CascadeID            *int64  `json:"cascade_id,omitempty"`
-	CascadeName          *string `json:"cascade_name,omitempty"`
-	InstalledCapacityMWt float64 `json:"installed_capacity_mwt"`
-	TotalAggregates      int     `json:"total_aggregates"`
-	HasReservoir         bool    `json:"has_reservoir"`
-	SortOrder            int     `json:"sort_order"`
+	ID                       int64   `json:"id"`
+	OrganizationID           int64   `json:"organization_id"`
+	OrganizationName         string  `json:"organization_name,omitempty"`
+	CascadeID                *int64  `json:"cascade_id,omitempty"`
+	CascadeName              *string `json:"cascade_name,omitempty"`
+	InstalledCapacityMWt     float64 `json:"installed_capacity_mwt"`
+	TotalAggregates          int     `json:"total_aggregates"`
+	HasReservoir             bool    `json:"has_reservoir"`
+	SortOrder                int     `json:"sort_order"`
+	MaxDailyProductionMlnKwh float64 `json:"max_daily_production_mln_kwh"`
 }
 
 type UpsertConfigRequest struct {
-	OrganizationID       int64   `json:"organization_id" validate:"required"`
-	InstalledCapacityMWt float64 `json:"installed_capacity_mwt" validate:"gte=0"`
-	TotalAggregates      int     `json:"total_aggregates" validate:"gte=0"`
-	HasReservoir         bool    `json:"has_reservoir"`
-	SortOrder            int     `json:"sort_order" validate:"gte=0"`
+	OrganizationID           int64   `json:"organization_id" validate:"required"`
+	InstalledCapacityMWt     float64 `json:"installed_capacity_mwt" validate:"gte=0"`
+	TotalAggregates          int     `json:"total_aggregates" validate:"gte=0"`
+	HasReservoir             bool    `json:"has_reservoir"`
+	SortOrder                int     `json:"sort_order" validate:"gte=0"`
+	MaxDailyProductionMlnKwh float64 `json:"max_daily_production_mln_kwh" validate:"gte=0"`
 }
 
 // --- Cascade Config ---

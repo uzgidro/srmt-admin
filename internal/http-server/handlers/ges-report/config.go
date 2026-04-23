@@ -53,6 +53,16 @@ func UpsertConfig(log *slog.Logger, repo ConfigUpserter) http.HandlerFunc {
 		}
 
 		if err := repo.UpsertGESConfig(r.Context(), req); err != nil {
+			// Defence-in-depth: if the validator was bypassed somehow and a
+			// negative value reaches the DB, the CHECK on
+			// max_daily_production_mln_kwh fires and we surface a 400 instead
+			// of an opaque 500.
+			if errors.Is(err, storage.ErrCheckConstraintViolation) {
+				log.Warn("ges config check constraint violation", sl.Err(err))
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest("invalid config value (CHECK constraint)"))
+				return
+			}
 			log.Error("failed to upsert ges config", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)
 			render.JSON(w, r, resp.InternalServerError("failed to save config"))

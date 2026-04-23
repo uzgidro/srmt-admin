@@ -25,6 +25,8 @@ type DailyDataUpserter interface {
 	GetOrganizationParentID(ctx context.Context, orgID int64) (*int64, error)
 	GetGESConfigsTotalAggregates(ctx context.Context, orgIDs []int64) (map[int64]int, error)
 	GetGESDailyAggregatesBatch(ctx context.Context, orgIDs []int64, date string) (map[int64]model.AggregateCounts, error)
+	GetGESConfigsMaxDailyProduction(ctx context.Context) (map[int64]float64, error)
+	GetGESDailyProductionsBatch(ctx context.Context, orgIDs []int64, date string) (map[int64]float64, error)
 }
 
 type DailyDataGetter interface {
@@ -112,6 +114,25 @@ func UpsertDailyData(log *slog.Logger, repo DailyDataUpserter) http.HandlerFunc 
 				log.Error("aggregate validation lookup failed", sl.Err(err))
 			} else {
 				log.Warn("aggregate validation rejected request", slog.String("reason", msg))
+			}
+			render.Status(r, status)
+			if status == http.StatusInternalServerError {
+				render.JSON(w, r, resp.InternalServerError(msg))
+			} else {
+				render.JSON(w, r, resp.BadRequest(msg))
+			}
+			return
+		}
+
+		// Production cap validation: effective daily_production_mln_kwh ≤
+		// ges_config.max_daily_production_mln_kwh. Stations without a positive
+		// cap (absent from the map) are unconstrained. Runs after auth for the
+		// same probe-resistance reason as validateAggregates.
+		if status, msg, err := validateProductionCap(r.Context(), data, repo); status != 0 {
+			if err != nil {
+				log.Error("production cap validation lookup failed", sl.Err(err))
+			} else {
+				log.Warn("production cap validation rejected request", slog.String("reason", msg))
 			}
 			render.Status(r, status)
 			if status == http.StatusInternalServerError {
@@ -253,6 +274,86 @@ func validateAggregates(
 			return http.StatusBadRequest, fmt.Sprintf(
 				"aggregates sum exceeds total for organization_id=%d: %d+%d+%d=%d > %d",
 				item.OrganizationID, w, rep, mod, sum, total,
+			), nil
+		}
+	}
+	return 0, "", nil
+}
+
+// validateProductionCap enforces ges_config.max_daily_production_mln_kwh on
+// the effective daily_production_mln_kwh that will land in the row after the
+// upsert. Effective semantics mirror validateAggregates:
+//   - field absent (Set=false)            → preserve current DB value
+//   - field present with non-nil number   → use that number
+//   - field present but null              → COALESCE writes 0
+//
+// A station without a positive cap (absent from the map per repo contract,
+// which already filters max==0) is unrestricted, preserving backwards
+// compatibility with previously-unconfigured stations.
+func validateProductionCap(
+	ctx context.Context,
+	data []model.UpsertDailyDataRequest,
+	repo DailyDataUpserter,
+) (int, string, error) {
+	maxMap, err := repo.GetGESConfigsMaxDailyProduction(ctx)
+	if err != nil {
+		return http.StatusInternalServerError, "failed to load production caps", err
+	}
+	if len(maxMap) == 0 {
+		return 0, "", nil // no station has a cap → nothing to check
+	}
+
+	// Group by date the orgs that omit the production field AND have a cap —
+	// only those rows need a preserve-DB lookup.
+	preserveByDate := make(map[string][]int64)
+	preserveSeen := make(map[string]map[int64]struct{})
+	for _, item := range data {
+		if _, capped := maxMap[item.OrganizationID]; !capped {
+			continue
+		}
+		if item.DailyProductionMlnKWh.Set {
+			continue
+		}
+		s, ok := preserveSeen[item.Date]
+		if !ok {
+			s = make(map[int64]struct{})
+			preserveSeen[item.Date] = s
+		}
+		if _, dup := s[item.OrganizationID]; dup {
+			continue
+		}
+		s[item.OrganizationID] = struct{}{}
+		preserveByDate[item.Date] = append(preserveByDate[item.Date], item.OrganizationID)
+	}
+
+	// Issue one batch query per distinct date.
+	currentProd := make(map[string]map[int64]float64, len(preserveByDate))
+	for date, orgs := range preserveByDate {
+		cur, err := repo.GetGESDailyProductionsBatch(ctx, orgs, date)
+		if err != nil {
+			return http.StatusInternalServerError, "failed to load current production", err
+		}
+		currentProd[date] = cur
+	}
+
+	for _, item := range data {
+		cap, capped := maxMap[item.OrganizationID]
+		if !capped {
+			continue
+		}
+		var effectiveVal float64
+		switch {
+		case !item.DailyProductionMlnKWh.Set:
+			effectiveVal = currentProd[item.Date][item.OrganizationID] // 0 if no row
+		case item.DailyProductionMlnKWh.Value == nil:
+			effectiveVal = 0
+		default:
+			effectiveVal = *item.DailyProductionMlnKWh.Value
+		}
+		if effectiveVal > cap {
+			return http.StatusBadRequest, fmt.Sprintf(
+				"daily_production_mln_kwh exceeds max for organization_id=%d: %g > %g",
+				item.OrganizationID, effectiveVal, cap,
 			), nil
 		}
 	}
