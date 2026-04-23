@@ -4,10 +4,16 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"time"
 
 	model "srmt-admin/internal/lib/model/ges-report"
 )
+
+// roundTo2 rounds to 2 decimal places using half-away-from-zero semantics.
+func roundTo2(v float64) float64 {
+	return math.Round(v*100) / 100
+}
 
 // Repository defines data-access methods required by the service.
 type Repository interface {
@@ -202,7 +208,7 @@ func (s *Service) computeDaySnapshot(
 	// Idle discharge = totalOutflow - gesFlow (both nullable).
 	var idleM3s *float64
 	if row.TotalOutflowM3s != nil && row.GESFlowM3s != nil {
-		v := *row.TotalOutflowM3s - *row.GESFlowM3s
+		v := roundTo2(*row.TotalOutflowM3s - *row.GESFlowM3s)
 		idleM3s = &v
 	}
 
@@ -398,6 +404,9 @@ func (s *Service) computeSummary(ctx context.Context, cascadeID int64, stations 
 	}
 	sb.ReserveAggregates = clampNonNeg(reserveRaw)
 
+	// Round accumulated idle discharge to 2 dp once, after summing stations.
+	sb.IdleDischargeM3s = roundTo2(sb.IdleDischargeM3s)
+
 	// Derived fields.
 	sb.FulfillmentPct = model.SafeDiv(sb.YTDProductionMlnKWh, sb.QuarterlyPlanMlnKWh)
 	sb.DifferenceMlnKWh = sb.YTDProductionMlnKWh - sb.QuarterlyPlanMlnKWh
@@ -448,6 +457,9 @@ func (s *Service) computeGrandTotal(ctx context.Context, cascades []model.Cascad
 		)
 	}
 	gt.ReserveAggregates = clampNonNeg(reserveRaw)
+
+	// Round accumulated idle discharge to 2 dp once, after summing cascades.
+	gt.IdleDischargeM3s = roundTo2(gt.IdleDischargeM3s)
 
 	// Derived fields.
 	gt.FulfillmentPct = model.SafeDiv(gt.YTDProductionMlnKWh, gt.QuarterlyPlanMlnKWh)
@@ -553,8 +565,9 @@ func buildDischargeMap(rows []model.IdleDischargeRow) map[int64]model.IdleDischa
 
 	for orgID, d := range m {
 		if d.VolumeMlnM3 != 0 {
-			d.FlowRateM3s = d.VolumeMlnM3 / volumeToFlowRate
+			d.FlowRateM3s = roundTo2(d.VolumeMlnM3 / volumeToFlowRate)
 		}
+		d.VolumeMlnM3 = roundTo2(d.VolumeMlnM3)
 		m[orgID] = d
 	}
 
