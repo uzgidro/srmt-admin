@@ -171,6 +171,57 @@ func (r *Repo) GetShutdowns(ctx context.Context, day time.Time) ([]*shutdown.Res
 	return shutdowns, nil
 }
 
+// GetShutdownsByCascade returns shutdowns for the given operational day
+// belonging to a cascade — i.e. records whose organization is the cascade
+// itself OR a direct child of it (parent_organization_id = cascadeOrgID).
+// Used by GET /shutdowns when the caller has the "cascade" role to enforce
+// "see only your own cascade" visibility (no cross-cascade leakage).
+func (r *Repo) GetShutdownsByCascade(ctx context.Context, day time.Time, cascadeOrgID int64) ([]*shutdown.ResponseModel, error) {
+	const op = "storage.repo.GetShutdownsByCascade"
+
+	startOfDay := time.Date(day.Year(), day.Month(), day.Day(), 5, 0, 0, 0, day.Location())
+	endOfDay := startOfDay.Add(24 * time.Hour)
+
+	query := selectShutdownFields + fromShutdownJoins +
+		`WHERE (s.end_time > $1 OR s.end_time IS NULL)
+		   AND s.start_time < $2
+		   AND (o.id = $3 OR o.parent_organization_id = $3)
+		 ORDER BY s.start_time ASC`
+
+	rows, err := r.db.QueryContext(ctx, query, startOfDay, endOfDay, cascadeOrgID)
+	if err != nil {
+		return nil, fmt.Errorf("%s: failed to query shutdowns: %w", op, err)
+	}
+	defer rows.Close()
+
+	var shutdowns []*shutdown.ResponseModel
+	for rows.Next() {
+		m, err := scanShutdownRow(rows)
+		if err != nil {
+			return nil, fmt.Errorf("%s: failed to scan shutdown row: %w", op, err)
+		}
+		shutdowns = append(shutdowns, m)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: rows iteration error: %w", op, err)
+	}
+	if shutdowns == nil {
+		shutdowns = make([]*shutdown.ResponseModel, 0)
+	}
+
+	// Load files for each shutdown (mirrors GetShutdowns behaviour).
+	for _, s := range shutdowns {
+		files, err := r.loadShutdownFiles(ctx, s.ID)
+		if err != nil {
+			return nil, fmt.Errorf("%s: failed to load files for shutdown %d: %w", op, s.ID, err)
+		}
+		s.Files = files
+	}
+
+	return shutdowns, nil
+}
+
 func (r *Repo) EditShutdown(ctx context.Context, id int64, req dto.EditShutdownRequest) error {
 	const op = "storage.repo.EditShutdown"
 

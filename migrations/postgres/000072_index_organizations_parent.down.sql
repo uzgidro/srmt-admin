@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS idx_organizations_parent_organization_id;
