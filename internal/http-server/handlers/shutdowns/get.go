@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	mwauth "srmt-admin/internal/http-server/middleware/auth"
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/helpers"
 	"srmt-admin/internal/lib/logger/sl"
@@ -16,10 +17,51 @@ import (
 
 type shutdownGetter interface {
 	GetShutdowns(ctx context.Context, day time.Time) ([]*shutdown.ResponseModel, error)
+	GetShutdownsByCascade(ctx context.Context, day time.Time, cascadeOrgID int64) ([]*shutdown.ResponseModel, error)
 	GetOrganizationTypesMap(ctx context.Context) (map[int64][]string, error)
 }
 
 const layout = "2006-01-02" // YYYY-MM-DD
+
+// fetchShutdownsForCaller returns shutdowns visible to the caller for the
+// given day plus an audit-log scope label. sc/rais and roles other than
+// "cascade" see everything. A "cascade" caller sees only shutdowns of
+// their own cascade and its direct stations. A cascade caller without
+// an OrganizationID sees an empty list (no leak, no error).
+func fetchShutdownsForCaller(
+	ctx context.Context,
+	getter shutdownGetter,
+	day time.Time,
+) ([]*shutdown.ResponseModel, string, int64, error) {
+	claims, ok := mwauth.ClaimsFromContext(ctx)
+	if !ok || claims == nil {
+		list, err := getter.GetShutdowns(ctx, day)
+		return list, "all", 0, err
+	}
+
+	// sc/rais — full access (early return).
+	for _, role := range claims.Roles {
+		if role == "sc" || role == "rais" {
+			list, err := getter.GetShutdowns(ctx, day)
+			return list, "all", claims.UserID, err
+		}
+	}
+
+	// cascade — restricted to own cascade.
+	for _, role := range claims.Roles {
+		if role == "cascade" {
+			if claims.OrganizationID == 0 {
+				return []*shutdown.ResponseModel{}, "empty-no-org", claims.UserID, nil
+			}
+			list, err := getter.GetShutdownsByCascade(ctx, day, claims.OrganizationID)
+			return list, "cascade", claims.UserID, err
+		}
+	}
+
+	// Other roles unchanged: see all.
+	list, err := getter.GetShutdowns(ctx, day)
+	return list, "all", claims.UserID, err
+}
 
 func Get(log *slog.Logger, getter shutdownGetter, minioRepo helpers.MinioURLGenerator, loc *time.Location) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -47,7 +89,7 @@ func Get(log *slog.Logger, getter shutdownGetter, minioRepo helpers.MinioURLGene
 			day = time.Date(t.Year(), t.Month(), t.Day(), 5, 0, 0, 0, loc)
 		}
 
-		shutdowns, err := getter.GetShutdowns(r.Context(), day)
+		shutdowns, scope, userID, err := fetchShutdownsForCaller(r.Context(), getter, day)
 		if err != nil {
 			log.Error("failed to get all shutdowns", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)
@@ -114,7 +156,11 @@ func Get(log *slog.Logger, getter shutdownGetter, minioRepo helpers.MinioURLGene
 			}
 		}
 
-		log.Info("successfully retrieved and grouped shutdowns", slog.Int("count", len(shutdowns)))
+		log.Info("retrieved shutdowns",
+			slog.Int("count", len(shutdowns)),
+			slog.String("scope", scope),
+			slog.Int64("user_id", userID),
+		)
 		render.JSON(w, r, response)
 	}
 }
