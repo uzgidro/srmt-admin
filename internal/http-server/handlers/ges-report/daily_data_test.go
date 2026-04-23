@@ -390,3 +390,166 @@ func TestUpsertDailyData_SkipsSumCheckWhenNoConfig(t *testing.T) {
 	}
 }
 
+// --- max_daily_production_mln_kwh validation tests ---
+
+// Request daily_production_mln_kwh exceeds the configured per-org cap →
+// 400 and the upsert is never invoked. Today the handler does not consult
+// the cap, so it returns 200 — RED.
+func TestUpsertDailyData_OverMaxProduction_BadRequest(t *testing.T) {
+	const stationOrgID int64 = 1
+	upserter := &captureGESUpserter{
+		maxProd: map[int64]float64{stationOrgID: 5.0},
+	}
+	claims := &token.Claims{
+		UserID:         1,
+		OrganizationID: 1,
+		Roles:          []string{"sc"},
+	}
+	body := `[{
+		"organization_id": 1,
+		"date": "2026-04-13",
+		"daily_production_mln_kwh": 10.0
+	}]`
+	rr := doGESUpsertWithClaims(upserter, claims, body)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status: want 400, got %d; body: %s", rr.Code, rr.Body.String())
+	}
+	if len(upserter.last) != 0 {
+		t.Errorf("upserter must NOT be called when validation fails; got %d items", len(upserter.last))
+	}
+}
+
+// Boundary: daily exactly equals the cap → 200 (cap is inclusive, "≤").
+func TestUpsertDailyData_AtMaxProduction_OK(t *testing.T) {
+	const stationOrgID int64 = 1
+	upserter := &captureGESUpserter{
+		maxProd: map[int64]float64{stationOrgID: 5.0},
+	}
+	claims := &token.Claims{
+		UserID:         1,
+		OrganizationID: 1,
+		Roles:          []string{"sc"},
+	}
+	body := `[{
+		"organization_id": 1,
+		"date": "2026-04-13",
+		"daily_production_mln_kwh": 5.0
+	}]`
+	rr := doGESUpsertWithClaims(upserter, claims, body)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d; body: %s", rr.Code, rr.Body.String())
+	}
+	if len(upserter.last) != 1 {
+		t.Fatalf("upserter should have been called once; got %d items", len(upserter.last))
+	}
+}
+
+// Daily strictly under cap → 200, repo invoked.
+func TestUpsertDailyData_UnderMaxProduction_OK(t *testing.T) {
+	const stationOrgID int64 = 1
+	upserter := &captureGESUpserter{
+		maxProd: map[int64]float64{stationOrgID: 5.0},
+	}
+	claims := &token.Claims{
+		UserID:         1,
+		OrganizationID: 1,
+		Roles:          []string{"sc"},
+	}
+	body := `[{
+		"organization_id": 1,
+		"date": "2026-04-13",
+		"daily_production_mln_kwh": 3.0
+	}]`
+	rr := doGESUpsertWithClaims(upserter, claims, body)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d; body: %s", rr.Code, rr.Body.String())
+	}
+	if len(upserter.last) != 1 {
+		t.Fatalf("upserter should have been called once; got %d items", len(upserter.last))
+	}
+}
+
+// Repo contract: "skip rows where max == 0" — those orgs are absent from the
+// map. Even an absurd daily value must pass when no cap is configured.
+// Critical regression test against an over-eager future GREEN that treats
+// absence as max=0.
+func TestUpsertDailyData_ZeroMaxProduction_NoCheck(t *testing.T) {
+	const stationOrgID int64 = 1
+	upserter := &captureGESUpserter{
+		maxProd: map[int64]float64{}, // zero rows skipped → absent
+	}
+	claims := &token.Claims{
+		UserID:         1,
+		OrganizationID: 1,
+		Roles:          []string{"sc"},
+	}
+	body := `[{
+		"organization_id": 1,
+		"date": "2026-04-13",
+		"daily_production_mln_kwh": 999.0
+	}]`
+	rr := doGESUpsertWithClaims(upserter, claims, body)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d; body: %s", rr.Code, rr.Body.String())
+	}
+	if len(upserter.last) != 1 {
+		t.Errorf("upserter should have been called once; got %d items", len(upserter.last))
+	}
+}
+
+// No ges_config row at all (empty map) → cap check skipped, request passes.
+// Backwards compatibility for stations without a config record.
+func TestUpsertDailyData_NoConfigRow_NoCheck(t *testing.T) {
+	upserter := &captureGESUpserter{
+		maxProd: map[int64]float64{},
+	}
+	claims := &token.Claims{
+		UserID:         1,
+		OrganizationID: 1,
+		Roles:          []string{"sc"},
+	}
+	body := `[{
+		"organization_id": 1,
+		"date": "2026-04-13",
+		"daily_production_mln_kwh": 999.0
+	}]`
+	rr := doGESUpsertWithClaims(upserter, claims, body)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d; body: %s", rr.Code, rr.Body.String())
+	}
+}
+
+// Preserve-DB semantics: payload omits daily_production_mln_kwh; the existing
+// DB value (8.0) already exceeds the cap (5.0). Per the same model used for
+// aggregate sum-check, the handler must overlay the absent field on the
+// current DB value before testing the cap → 400. Today the handler does not
+// check at all → 200 → RED.
+func TestUpsertDailyData_PreserveDBProduction_RespectsMax(t *testing.T) {
+	const stationOrgID int64 = 1
+	upserter := &captureGESUpserter{
+		maxProd: map[int64]float64{stationOrgID: 5.0},
+		currentProd: map[aggKey]float64{
+			{OrgID: stationOrgID, Date: "2026-04-13"}: 8.0,
+		},
+	}
+	claims := &token.Claims{
+		UserID:         1,
+		OrganizationID: 1,
+		Roles:          []string{"sc"},
+	}
+	// Note: daily_production_mln_kwh deliberately omitted to exercise the
+	// preserve-DB branch.
+	body := `[{
+		"organization_id": 1,
+		"date": "2026-04-13",
+		"working_aggregates": 1
+	}]`
+	rr := doGESUpsertWithClaims(upserter, claims, body)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status: want 400, got %d; body: %s", rr.Code, rr.Body.String())
+	}
+	if len(upserter.last) != 0 {
+		t.Errorf("upserter must NOT be called when validation fails; got %d items", len(upserter.last))
+	}
+}
+
