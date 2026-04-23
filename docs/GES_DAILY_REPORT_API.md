@@ -34,6 +34,7 @@ Module automates daily GES (hydroelectric station) operational reporting. Operat
 | `total_aggregates` | INT | NOT NULL, default 0 | Total turbine-generator units |
 | `has_reservoir` | BOOLEAN | NOT NULL, default false | Whether station has a reservoir |
 | `sort_order` | INT | NOT NULL, default 0 | Display order in report |
+| `max_daily_production_mln_kwh` | NUMERIC | NOT NULL, default 0 | Daily production cap in million kWh. `CHECK (>= 0)`. Value `0` means "no cap" — `daily_data` upserts unconstrained. Migration 000073. |
 | `created_at` | TIMESTAMPTZ | NOT NULL | |
 | `updated_at` | TIMESTAMPTZ | NOT NULL | |
 
@@ -178,7 +179,8 @@ Creates or updates static configuration for a GES station.
   "installed_capacity_mwt": 50.0,
   "total_aggregates": 4,
   "has_reservoir": true,
-  "sort_order": 1
+  "sort_order": 1,
+  "max_daily_production_mln_kwh": 12.5
 }
 ```
 
@@ -189,6 +191,7 @@ Creates or updates static configuration for a GES station.
 | `total_aggregates` | int | No | >= 0 | Number of turbine units |
 | `has_reservoir` | bool | No | | Whether station has reservoir |
 | `sort_order` | int | No | >= 0 | Display order |
+| `max_daily_production_mln_kwh` | float64 | No | >= 0 | Daily production cap (mln kWh). Value `0` (default) ≡ "no cap" — the daily-data validator skips the check for the station. Defence-in-depth: API validator + DB CHECK both enforce ≥ 0. |
 
 **Responses:**
 
@@ -222,12 +225,15 @@ Returns all configured GES stations with organization and cascade names.
     "installed_capacity_mwt": 50.0,
     "total_aggregates": 4,
     "has_reservoir": true,
-    "sort_order": 1
+    "sort_order": 1,
+    "max_daily_production_mln_kwh": 12.5
   }
 ]
 ```
 
 Returns empty array `[]` if no configs exist.
+
+`max_daily_production_mln_kwh` is **always** present (no `omitempty`), even when 0. Frontend should treat `0` as "no cap" — same semantics as the server-side validator.
 
 ---
 
@@ -300,6 +306,7 @@ Enter or update daily operational data for **multiple GES stations** (body is an
 | 400 | Empty array, invalid JSON, validation failure, invalid date, or `item_index` error |
 | 400 | Aggregate field `< 0` — `"{field} must be >= 0 for organization_id=N, got X"` |
 | 400 | Effective `working + repair + modernization > ges_config.total_aggregates` — `"aggregates sum exceeds total for organization_id=N: W+R+M=S > T"` |
+| 400 | Effective `daily_production_mln_kwh > ges_config.max_daily_production_mln_kwh` — `"daily_production_mln_kwh exceeds max for organization_id=N: D > M"` |
 | 401 | Not authenticated |
 | 403 | `cascade` user tried to write a station outside their cascade |
 | 500 | Database error |
@@ -316,6 +323,15 @@ Enter or update daily operational data for **multiple GES stations** (body is an
 ```
 
 See [ges-aggregates.md](ges-aggregates.md) for the full rules.
+
+**Daily production cap validation.** Symmetric to the aggregates check. Handler computes the effective `daily_production_mln_kwh` (using the same `Optional[T]` semantics: absent → preserve DB; explicit null → 0; value → use value) and rejects rows where the effective value exceeds `ges_config.max_daily_production_mln_kwh` for the station. Stations without a positive cap (column equals `0`, or no `ges_config` row at all) are unconstrained — preserves backwards compatibility for stations not yet configured. Frontend should use the cap from `GET /ges-report/config` to set `<input max="...">` on the daily-production field, treating `0` the same way as the server. Example 400 body:
+
+```json
+{
+  "status": "Error",
+  "error": "daily_production_mln_kwh exceeds max for organization_id=10: 13.0 > 12.5"
+}
+```
 
 ---
 
