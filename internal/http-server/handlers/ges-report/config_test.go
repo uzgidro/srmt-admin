@@ -190,13 +190,14 @@ func TestUpsertConfig_PositiveMaxDailyProduction_OK(t *testing.T) {
 func TestGetConfigs_IncludesMaxDailyProduction(t *testing.T) {
 	getter := &staticConfigGetter{
 		configs: []model.Config{{
-			ID:                   1,
-			OrganizationID:       1,
-			OrganizationName:     "Test GES",
-			InstalledCapacityMWt: 100.0,
-			TotalAggregates:      4,
-			HasReservoir:         true,
-			SortOrder:            0,
+			ID:                       1,
+			OrganizationID:           1,
+			OrganizationName:         "Test GES",
+			InstalledCapacityMWt:     100.0,
+			TotalAggregates:          4,
+			HasReservoir:             true,
+			SortOrder:                0,
+			MaxDailyProductionMlnKwh: 7.0,
 		}},
 	}
 	rr := doConfigGet(getter, scClaims())
