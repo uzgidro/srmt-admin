@@ -1137,3 +1137,186 @@ func TestBuildDailyReport_FilterNonExistent(t *testing.T) {
 		t.Errorf("grand total YTD: got %.4f, want 0.0", report.GrandTotal.YTDProductionMlnKWh)
 	}
 }
+
+// --- idle discharge rounding (5 fields × half-away-from-zero, 2 decimal places) ---
+
+// roundTo2 helper unit test: confirms half-away-from-zero behaviour for the
+// expected edge cases. Production code uses the same formula in service.go.
+func TestRoundTo2(t *testing.T) {
+	cases := []struct {
+		in   float64
+		want float64
+	}{
+		{0.0, 0.0},
+		{1.234, 1.23},
+		{1.235, 1.24},  // half-up (>= 0.5 rounds away from zero)
+		{1.245, 1.25},  // common pitfall — math.Round rounds half away from zero
+		{1.249, 1.25},
+		{-1.245, -1.25}, // away-from-zero on negatives too
+		{5.16667, 5.17}, // simulate TotalOutflow - GESFlow = 5.5 - 0.3333…
+		{1.005, 1.01},
+		{0.001, 0.0},
+		{99.999, 100.0},
+	}
+	for _, c := range cases {
+		got := roundTo2(c.in)
+		if !approxEqual(got, c.want) {
+			t.Errorf("roundTo2(%v) = %v, want %v", c.in, got, c.want)
+		}
+	}
+}
+
+// TestBuildReport_RoundsCurrentIdleDischarge: when TotalOutflow - GESFlow has
+// long-tail decimals, the resulting current.idle_discharge_m3s in the JSON
+// payload (and Excel input) must come back rounded to 2 dp.
+func TestBuildReport_RoundsCurrentIdleDischarge(t *testing.T) {
+	cascadeID := int64(1)
+	cascadeName := "Cascade A"
+	orgID := int64(100)
+
+	totalOutflow := 5.5
+	gesFlow := 0.3333 // produces 5.1667 raw → expect 5.17
+
+	repo := &mockRepo{
+		todayDate:     "2026-03-13",
+		yesterdayDate: "2026-03-12",
+		prevYearDate:  "2025-03-13",
+		todayData: []model.RawDailyRow{
+			{
+				OrganizationID:        orgID,
+				OrganizationName:      "Station Alpha",
+				CascadeID:             &cascadeID,
+				CascadeName:           &cascadeName,
+				Date:                  "2026-03-13",
+				DailyProductionMlnKWh: 24.0,
+				WorkingAggregates:     3,
+				InstalledCapacityMWt:  500.0,
+				TotalAggregates:       4,
+				HasReservoir:          true,
+				TotalOutflowM3s:       &totalOutflow,
+				GESFlowM3s:            &gesFlow,
+			},
+		},
+		aggregations: nil,
+		plans:        nil,
+		discharges:   nil,
+	}
+
+	svc := NewService(repo, mustLoc("Asia/Tashkent"), discardLogger())
+	report, err := svc.BuildDailyReport(context.Background(), "2026-03-13", nil)
+	if err != nil {
+		t.Fatalf("BuildDailyReport: %v", err)
+	}
+
+	st := report.Cascades[0].Stations[0]
+	if st.Current.IdleDischargeM3s == nil {
+		t.Fatal("current.idle_discharge_m3s is nil")
+	}
+	if !approxEqual(*st.Current.IdleDischargeM3s, 5.17) {
+		t.Errorf("current.idle_discharge_m3s: got %v, want 5.17 (rounded from 5.5 - 0.3333)", *st.Current.IdleDischargeM3s)
+	}
+}
+
+// TestBuildReport_RoundsPreviousDayIdleDischarge: same long-tail check but
+// for the previous-day snapshot (computeDaySnapshot path).
+func TestBuildReport_RoundsPreviousDayIdleDischarge(t *testing.T) {
+	cascadeID := int64(1)
+	cascadeName := "Cascade A"
+	orgID := int64(100)
+
+	yTotalOutflow := 7.7
+	yGesFlow := 0.6666 // 7.0334 → expect 7.03
+
+	repo := &mockRepo{
+		todayDate:     "2026-03-13",
+		yesterdayDate: "2026-03-12",
+		prevYearDate:  "2025-03-13",
+		todayData: []model.RawDailyRow{
+			{
+				OrganizationID: orgID, OrganizationName: "Station Alpha",
+				CascadeID: &cascadeID, CascadeName: &cascadeName, Date: "2026-03-13",
+				DailyProductionMlnKWh: 24.0, WorkingAggregates: 3,
+				InstalledCapacityMWt: 500.0, TotalAggregates: 4, HasReservoir: true,
+			},
+		},
+		yesterdayData: []model.RawDailyRow{
+			{
+				OrganizationID: orgID, OrganizationName: "Station Alpha",
+				CascadeID: &cascadeID, CascadeName: &cascadeName, Date: "2026-03-12",
+				DailyProductionMlnKWh: 20.0, WorkingAggregates: 3,
+				InstalledCapacityMWt: 500.0, TotalAggregates: 4, HasReservoir: true,
+				TotalOutflowM3s: &yTotalOutflow, GESFlowM3s: &yGesFlow,
+			},
+		},
+	}
+
+	svc := NewService(repo, mustLoc("Asia/Tashkent"), discardLogger())
+	report, err := svc.BuildDailyReport(context.Background(), "2026-03-13", nil)
+	if err != nil {
+		t.Fatalf("BuildDailyReport: %v", err)
+	}
+
+	st := report.Cascades[0].Stations[0]
+	if st.PreviousDay == nil {
+		t.Fatal("previous_day is nil")
+	}
+	if st.PreviousDay.IdleDischargeM3s == nil {
+		t.Fatal("previous_day.idle_discharge_m3s is nil")
+	}
+	if !approxEqual(*st.PreviousDay.IdleDischargeM3s, 7.03) {
+		t.Errorf("previous_day.idle_discharge_m3s: got %v, want 7.03", *st.PreviousDay.IdleDischargeM3s)
+	}
+}
+
+// TestBuildReport_RoundsIdleDischargeEventBlock: stations[].idle_discharge.{flow_rate_m3s,volume_mln_m3}
+// and the cascade/grand total summary.idle_discharge_total_m3s must all round.
+func TestBuildReport_RoundsIdleDischargeEventBlock(t *testing.T) {
+	cascadeID := int64(1)
+	cascadeName := "Cascade A"
+	orgID := int64(100)
+	reason := "test"
+
+	// 0.12345 mln m³ → flow = 0.12345 / 0.0864 = 1.42882… → expect 1.43
+	repo := &mockRepo{
+		todayDate:     "2026-03-13",
+		yesterdayDate: "2026-03-12",
+		prevYearDate:  "2025-03-13",
+		todayData: []model.RawDailyRow{
+			{
+				OrganizationID: orgID, OrganizationName: "Station Alpha",
+				CascadeID: &cascadeID, CascadeName: &cascadeName, Date: "2026-03-13",
+				DailyProductionMlnKWh: 24.0, WorkingAggregates: 3,
+				InstalledCapacityMWt: 500.0, TotalAggregates: 4, HasReservoir: true,
+			},
+		},
+		discharges: []model.IdleDischargeRow{
+			{OrganizationID: orgID, VolumeMlnM3: 0.12345, Reason: &reason, IsOngoing: false},
+		},
+	}
+
+	svc := NewService(repo, mustLoc("Asia/Tashkent"), discardLogger())
+	report, err := svc.BuildDailyReport(context.Background(), "2026-03-13", nil)
+	if err != nil {
+		t.Fatalf("BuildDailyReport: %v", err)
+	}
+
+	st := report.Cascades[0].Stations[0]
+	if st.IdleDischarge == nil {
+		t.Fatal("station IdleDischarge is nil")
+	}
+	if !approxEqual(st.IdleDischarge.VolumeMlnM3, 0.12) {
+		t.Errorf("station idle_discharge.volume_mln_m3: got %v, want 0.12 (rounded from 0.12345)", st.IdleDischarge.VolumeMlnM3)
+	}
+	if !approxEqual(st.IdleDischarge.FlowRateM3s, 1.43) {
+		t.Errorf("station idle_discharge.flow_rate_m3s: got %v, want 1.43 (rounded from 0.12345/0.0864)", st.IdleDischarge.FlowRateM3s)
+	}
+
+	// Cascade summary aggregates flow rates from stations — must also be rounded.
+	if !approxEqual(report.Cascades[0].Summary.IdleDischargeM3s, 1.43) {
+		t.Errorf("cascade summary idle_discharge_total_m3s: got %v, want 1.43", report.Cascades[0].Summary.IdleDischargeM3s)
+	}
+	// Grand total sums cascades — single cascade here, so same value.
+	if !approxEqual(report.GrandTotal.IdleDischargeM3s, 1.43) {
+		t.Errorf("grand total idle_discharge_total_m3s: got %v, want 1.43", report.GrandTotal.IdleDischargeM3s)
+	}
+}
