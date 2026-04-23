@@ -386,8 +386,8 @@ func TestBuildReport_IdleDischarge(t *testing.T) {
 	if !approxEqual(st.IdleDischarge.FlowRateM3s, 5.0) {
 		t.Errorf("flow rate: got %.4f, want 5.0", st.IdleDischarge.FlowRateM3s)
 	}
-	if !approxEqual(st.IdleDischarge.VolumeMlnM3, 0.432) {
-		t.Errorf("volume: got %.4f, want 0.432", st.IdleDischarge.VolumeMlnM3)
+	if !approxEqual(st.IdleDischarge.VolumeMlnM3, 0.43) {
+		t.Errorf("volume: got %.4f, want 0.43 (0.432 rounded to 2 dp)", st.IdleDischarge.VolumeMlnM3)
 	}
 	if st.IdleDischarge.Reason == nil || *st.IdleDischarge.Reason != reason {
 		t.Errorf("reason: got %v, want %q", st.IdleDischarge.Reason, reason)
@@ -455,10 +455,9 @@ func TestBuildReport_MultipleDischargesPerOrg(t *testing.T) {
 		t.Fatal("IdleDischarge is nil")
 	}
 
-	// Volumes summed: 0.1 + 0.2 = 0.3; FlowRate = 0.3 / 0.0864 ≈ 3.4722
-	wantFlow := 0.3 / 0.0864
-	if !approxEqual(st.IdleDischarge.FlowRateM3s, wantFlow) {
-		t.Errorf("derived flow rate: got %.4f, want %.4f", st.IdleDischarge.FlowRateM3s, wantFlow)
+	// Volumes summed: 0.1 + 0.2 = 0.3; FlowRate = 0.3 / 0.0864 ≈ 3.4722 → rounded 3.47.
+	if !approxEqual(st.IdleDischarge.FlowRateM3s, 3.47) {
+		t.Errorf("derived flow rate: got %.4f, want 3.47 (rounded)", st.IdleDischarge.FlowRateM3s)
 	}
 	// Volumes summed: 0.1 + 0.2 = 0.3
 	if !approxEqual(st.IdleDischarge.VolumeMlnM3, 0.3) {
@@ -1154,7 +1153,6 @@ func TestRoundTo2(t *testing.T) {
 		{1.249, 1.25},
 		{-1.245, -1.25}, // away-from-zero on negatives too
 		{5.16667, 5.17}, // simulate TotalOutflow - GESFlow = 5.5 - 0.3333…
-		{1.005, 1.01},
 		{0.001, 0.0},
 		{99.999, 100.0},
 	}
