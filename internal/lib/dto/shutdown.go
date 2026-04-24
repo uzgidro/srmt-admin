@@ -26,7 +26,12 @@ type EditShutdownRequest struct {
 
 	IdleDischargeVolumeThousandM3 *float64
 
-	// CreatedByUserID is used when creating a new idle discharge during edit
+	// CreatedByUserID stamps a NEWLY created idle_water_discharges row produced
+	// during this edit. It MUST NOT be written to shutdowns.created_by_user_id
+	// — that column is set once at INSERT time and is the authority for the
+	// cascade-owner restriction (auth.CheckShutdownOwnership). Letting an edit
+	// rewrite it would let any caller transfer ownership to themselves and
+	// bypass the check on the next request.
 	CreatedByUserID int64
 	FileIDs         []int64 `json:"file_ids,omitempty"`
 }
