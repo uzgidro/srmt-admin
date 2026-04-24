@@ -64,8 +64,8 @@ Backend возвращает следующие тексты ошибок:
 
 ## UI/UX рекомендации
 
-- **Маркер чужой записи.** В таблице/списке shutdowns рядом с записями, у которых `created_by_user.id != currentUser.id`, показывать значок «не моё» (например, серый человечек). Действует только для cascade-юзеров; для sc/rais маркер не нужен.
-- **Маркер orphan.** Для записей с `created_by_user == null` показывать значок «orphan» (например, перечёркнутый человечек). Это сигнал, что запись стала read-only для cascade-роли.
+- **Маркер чужой записи.** В таблице/списке shutdowns рядом с записями, у которых `created_by.id != currentUser.id`, показывать значок «не моё» (например, серый человечек). Действует только для cascade-юзеров; для sc/rais маркер не нужен.
+- **Маркер orphan.** Для записей с `created_by == null` показывать значок «orphan» (например, перечёркнутый человечек). Это сигнал, что запись стала read-only для cascade-роли.
 - **Кнопки edit/delete.** Два варианта:
   1. **Дизейблить** кнопки на чужих/orphan-записях для cascade-юзеров. Tooltip: «Только создатель записи может её изменить».
   2. **Оставить кликабельными**, но при 403 показать toast.
@@ -77,15 +77,17 @@ Backend возвращает следующие тексты ошибок:
 ## TS-типы + helper
 
 ```typescript
-interface User {
+// UserShortInfo — фактический shape, который backend возвращает для поля
+// shutdown.created_by (источник истины: internal/lib/model/user/short-info.go).
+interface UserShortInfo {
   id: number;
-  name: string;
+  name: string | null;  // nullable на стороне backend
 }
 
 interface Shutdown {
   id: number;
   organization_id: number;
-  created_by_user: User | null;  // null если бывший владелец удалён
+  created_by: UserShortInfo | null;  // JSON-ключ "created_by"; null если бывший владелец удалён (FK ON DELETE SET NULL)
   // ...прочие существующие поля...
 }
 
@@ -101,13 +103,13 @@ function canCurrentUserMutate(shutdown: Shutdown, currentUser: CurrentUser): boo
     return true;
   }
   if (currentUser.roles.includes("cascade")) {
-    return shutdown.created_by_user?.id === currentUser.id;
+    return shutdown.created_by?.id === currentUser.id;
   }
   return false; // другие роли не имеют write-доступа по существующему RBAC
 }
 ```
 
-Если в текущем интерфейсе `Shutdown` ещё нет поля `created_by_user` — добавить его (backend уже отдаёт). Тип `User | null` обязателен.
+В вашем текущем TS-интерфейсе поле, скорее всего, уже называется `created_by` (либо `createdBy` после camelCase-преобразования) и имеет тип `UserShortInfo | null` — backend это поле возвращает давно, ничего не переименовывалось. Если нет — добавить.
 
 ## Обработка ошибок
 
@@ -140,7 +142,7 @@ if (response.status === 403) {
 
 ### Сценарий 1 — cascade-юзер 10 редактирует свою запись
 
-1. Юзер 10 (роль `cascade`, org=42) открывает shutdown #555, у которого `created_by_user.id = 10`.
+1. Юзер 10 (роль `cascade`, org=42) открывает shutdown #555, у которого `created_by.id = 10`.
 2. Меняет описание, нажимает «Сохранить».
 3. Фронт: `PATCH /shutdowns/555` с обновлённым телом.
 4. Backend: проверка владельца проходит (10 == 10). 200 OK.
@@ -151,7 +153,7 @@ if (response.status === 403) {
 1. Юзер 11 (роль `cascade`, тот же каскад/org что и юзер 10) видит в списке shutdown #555 со значком «не моё».
 2. Кликает «Редактировать», меняет описание, нажимает «Сохранить».
 3. Фронт: `PATCH /shutdowns/555`.
-4. Backend: org-доступ есть, но `created_by_user_id (10) != claims.UserID (11)` → 403 `{"error": "only the creator can edit this record"}`.
+4. Backend: org-доступ есть, но `created_by.id (10) != claims.UserID (11)` → 403 `{"error": "only the creator can edit this record"}`.
 5. UI показывает toast «Только создатель может изменить эту запись». Локальное состояние не обновляется.
 
 ### Сценарий 3 — sc-админ редактирует ту же запись
@@ -179,9 +181,9 @@ if (response.status === 403) {
 
 ### Чек-лист готовности фронта
 
-- [ ] В TS-интерфейсе `Shutdown` есть поле `created_by_user: User | null` (если ещё не было).
+- [ ] В TS-интерфейсе `Shutdown` есть поле `created_by: UserShortInfo | null` (если ещё не было; backend отдаёт давно).
 - [ ] Реализован helper `canCurrentUserMutate(shutdown, currentUser)` (см. §5).
-- [ ] В списке/таблице shutdowns для cascade-юзеров показывается значок «не моё» на чужих записях и значок «orphan» на записях с `created_by_user == null`.
+- [ ] В списке/таблице shutdowns для cascade-юзеров показывается значок «не моё» на чужих записях и значок «orphan» на записях с `created_by == null`.
 - [ ] Обработчик ответа 403 различает текст про `creator` и существующий 403 про org-доступ; показывает разные toast'ы.
 - [ ] Кнопки edit/delete либо дизейблены через `canCurrentUserMutate` (с tooltip), либо кликабельны с обработкой 403.
 - [ ] Для sc/rais маркеры скрыты, кнопки всегда активны.
