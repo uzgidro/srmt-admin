@@ -1,6 +1,8 @@
 package gesreport
 
 import (
+	"time"
+
 	optional "srmt-admin/internal/lib/optional"
 )
 
@@ -291,6 +293,7 @@ type RawDailyRow struct {
 	TotalAggregates         int
 	HasReservoir            bool
 	SortOrder               int
+	HasRowForDate           bool
 }
 
 type ProductionAggregation struct {
@@ -357,4 +360,25 @@ func SafeDiv(a, b float64) *float64 {
 	}
 	v := a / b
 	return &v
+}
+
+// --- Frozen Defaults ---
+
+type FrozenDefault struct {
+	OrganizationID int64     `json:"organization_id"`
+	FieldName      string    `json:"field_name"`
+	FrozenValue    float64   `json:"frozen_value"`
+	FrozenAt       time.Time `json:"frozen_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+type UpsertFrozenDefaultRequest struct {
+	OrganizationID int64   `json:"organization_id" validate:"required"`
+	FieldName      string  `json:"field_name" validate:"required,oneof=daily_production_mln_kwh working_aggregates repair_aggregates modernization_aggregates water_level_m water_volume_mln_m3 water_head_m reservoir_income_m3s total_outflow_m3s ges_flow_m3s"`
+	FrozenValue    float64 `json:"frozen_value" validate:"gte=0"`
+}
+
+type DeleteFrozenDefaultRequest struct {
+	OrganizationID int64  `json:"organization_id" validate:"required"`
+	FieldName      string `json:"field_name" validate:"required,oneof=daily_production_mln_kwh working_aggregates repair_aggregates modernization_aggregates water_level_m water_volume_mln_m3 water_head_m reservoir_income_m3s total_outflow_m3s ges_flow_m3s"`
 }
