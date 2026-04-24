@@ -366,6 +366,7 @@ func SafeDiv(a, b float64) *float64 {
 
 type FrozenDefault struct {
 	OrganizationID int64     `json:"organization_id"`
+	CascadeID      *int64    `json:"cascade_id,omitempty"`
 	FieldName      string    `json:"field_name"`
 	FrozenValue    float64   `json:"frozen_value"`
 	FrozenAt       time.Time `json:"frozen_at"`

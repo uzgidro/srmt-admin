@@ -218,3 +218,63 @@ func TestListFrozenDefaults_OK(t *testing.T) {
 		t.Fatalf("len(got): want 2, got %d", len(got))
 	}
 }
+
+// TestListFrozenDefaults_CascadeUserSeesOwnCascade — cascade-юзер с
+// OrganizationID=10 видит записи для своих станций (CascadeID=10) и для
+// собственного org_id, но НЕ для чужих каскадов.
+func TestListFrozenDefaults_CascadeUserSeesOwnCascade(t *testing.T) {
+	cascadeMy := int64(10)
+	cascadeOther := int64(20)
+	repo := &captureFrozenRepo{
+		listResult: []model.FrozenDefault{
+			{OrganizationID: 100, CascadeID: &cascadeMy, FieldName: "water_head_m", FrozenValue: 45.0},     // моя станция
+			{OrganizationID: 10, CascadeID: nil, FieldName: "water_level_m", FrozenValue: 12.0},           // мой собственный org
+			{OrganizationID: 200, CascadeID: &cascadeOther, FieldName: "water_head_m", FrozenValue: 99.0}, // чужой каскад
+		},
+	}
+	cascadeClaims := &token.Claims{UserID: 5, OrganizationID: 10, Roles: []string{"cascade"}}
+	rr := doFrozen(t, repo, cascadeClaims, http.MethodGet, "")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d; body: %s", rr.Code, rr.Body.String())
+	}
+	var got []model.FrozenDefault
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("filtered list: want 2 entries (own org + own cascade), got %d: %+v", len(got), got)
+	}
+	for _, e := range got {
+		if e.OrganizationID == 200 {
+			t.Errorf("leaked entry from other cascade: %+v", e)
+		}
+	}
+}
+
+// TestListFrozenDefaults_NoClaims_DenyByDefault — defence-in-depth: если
+// middleware пропустила запрос без claims, фильтр возвращает пустой список,
+// а не утечку всего набора.
+func TestListFrozenDefaults_NoClaims_DenyByDefault(t *testing.T) {
+	repo := &captureFrozenRepo{
+		listResult: []model.FrozenDefault{
+			{OrganizationID: 100, FieldName: "water_head_m", FrozenValue: 45.0},
+		},
+	}
+	// Build a router WITHOUT the auth middleware so claims context is empty.
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	r := chi.NewRouter()
+	r.Get("/ges/frozen-defaults", ListFrozenDefaults(log, repo))
+	req := httptest.NewRequest(http.MethodGet, "/ges/frozen-defaults", nil)
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d", rr.Code)
+	}
+	var got []model.FrozenDefault
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("no-claims must yield empty list; got %d entries (leak)", len(got))
+	}
+}

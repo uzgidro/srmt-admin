@@ -1140,14 +1140,17 @@ func (r *Repo) DeleteFrozenDefault(ctx context.Context, orgID int64, field strin
 }
 
 // ListFrozenDefaults returns all frozen-default rows ordered by
-// (organization_id, field_name) for admin UIs that show the configured set.
+// (organization_id, field_name). Each row carries the station's parent
+// organization (cascade) id when present, so handlers can filter by cascade
+// the same way filterGESConfigsForCaller does for ges_config.
 func (r *Repo) ListFrozenDefaults(ctx context.Context) ([]gesreport.FrozenDefault, error) {
 	const op = "storage.repo.GESReport.ListFrozenDefaults"
 
 	const query = `
-		SELECT organization_id, field_name, frozen_value, frozen_at, updated_at
-		FROM ges_frozen_defaults
-		ORDER BY organization_id, field_name`
+		SELECT f.organization_id, o.parent_organization_id, f.field_name, f.frozen_value, f.frozen_at, f.updated_at
+		FROM ges_frozen_defaults f
+		JOIN organizations o ON o.id = f.organization_id
+		ORDER BY f.organization_id, f.field_name`
 
 	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
@@ -1158,14 +1161,20 @@ func (r *Repo) ListFrozenDefaults(ctx context.Context) ([]gesreport.FrozenDefaul
 	result := make([]gesreport.FrozenDefault, 0)
 	for rows.Next() {
 		var fd gesreport.FrozenDefault
+		var cascadeID sql.NullInt64
 		if err := rows.Scan(
 			&fd.OrganizationID,
+			&cascadeID,
 			&fd.FieldName,
 			&fd.FrozenValue,
 			&fd.FrozenAt,
 			&fd.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("%s: scan: %w", op, err)
+		}
+		if cascadeID.Valid {
+			id := cascadeID.Int64
+			fd.CascadeID = &id
 		}
 		result = append(result, fd)
 	}
