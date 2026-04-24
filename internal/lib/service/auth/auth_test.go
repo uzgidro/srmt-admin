@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"testing"
 
@@ -349,5 +350,116 @@ func TestCheckCascadeStationAccessBatch_MixedAccess(t *testing.T) {
 	// All own stations — should pass
 	if err := CheckCascadeStationAccessBatch(ctx, []int64{ownStation, cascadeOrgID}, checker); err != nil {
 		t.Fatalf("expected nil, got %v", err)
+	}
+}
+
+// ---------- mockOwnerChecker ----------
+
+// mockOwnerChecker implements auth.OwnerChecker for ownership tests.
+// `owner` is returned for any shutdown ID; `err` (if set) overrides.
+type mockOwnerChecker struct {
+	owner sql.NullInt64
+	err   error
+	calls int
+}
+
+func (m *mockOwnerChecker) GetShutdownCreatedByUserID(_ context.Context, _ int64) (sql.NullInt64, error) {
+	m.calls++
+	if m.err != nil {
+		return sql.NullInt64{}, m.err
+	}
+	return m.owner, nil
+}
+
+// ---------- CheckShutdownOwnership ----------
+
+func TestCheckShutdownOwnership_SCRoleBypasses(t *testing.T) {
+	ctx := contextWithClaims(&token.Claims{UserID: 1, Roles: []string{"sc"}})
+	checker := &mockOwnerChecker{owner: sql.NullInt64{Int64: 99, Valid: true}}
+
+	if err := CheckShutdownOwnership(ctx, 42, checker); err != nil {
+		t.Fatalf("expected nil for sc role, got %v", err)
+	}
+	if checker.calls != 0 {
+		t.Errorf("repo must NOT be called for sc role; got %d calls", checker.calls)
+	}
+}
+
+func TestCheckShutdownOwnership_RaisRoleBypasses(t *testing.T) {
+	ctx := contextWithClaims(&token.Claims{UserID: 1, Roles: []string{"rais"}})
+	checker := &mockOwnerChecker{owner: sql.NullInt64{Int64: 99, Valid: true}}
+
+	if err := CheckShutdownOwnership(ctx, 42, checker); err != nil {
+		t.Fatalf("expected nil for rais role, got %v", err)
+	}
+	if checker.calls != 0 {
+		t.Errorf("repo must NOT be called for rais role; got %d calls", checker.calls)
+	}
+}
+
+func TestCheckShutdownOwnership_CascadeOwnSuccess(t *testing.T) {
+	ctx := contextWithClaims(&token.Claims{UserID: 10, OrganizationID: 1, Roles: []string{"cascade"}})
+	checker := &mockOwnerChecker{owner: sql.NullInt64{Int64: 10, Valid: true}}
+
+	if err := CheckShutdownOwnership(ctx, 42, checker); err != nil {
+		t.Fatalf("expected nil for cascade owner, got %v", err)
+	}
+}
+
+func TestCheckShutdownOwnership_CascadeForeignForbidden(t *testing.T) {
+	ctx := contextWithClaims(&token.Claims{UserID: 10, OrganizationID: 1, Roles: []string{"cascade"}})
+	checker := &mockOwnerChecker{owner: sql.NullInt64{Int64: 11, Valid: true}}
+
+	err := CheckShutdownOwnership(ctx, 42, checker)
+	if !errors.Is(err, ErrForbidden) {
+		t.Fatalf("expected ErrForbidden for cascade non-owner, got %v", err)
+	}
+}
+
+func TestCheckShutdownOwnership_CascadeNullOwnerForbidden(t *testing.T) {
+	ctx := contextWithClaims(&token.Claims{UserID: 10, OrganizationID: 1, Roles: []string{"cascade"}})
+	checker := &mockOwnerChecker{owner: sql.NullInt64{Valid: false}}
+
+	err := CheckShutdownOwnership(ctx, 42, checker)
+	if !errors.Is(err, ErrForbidden) {
+		t.Fatalf("expected ErrForbidden for cascade on orphaned record, got %v", err)
+	}
+}
+
+func TestCheckShutdownOwnership_NotFoundPropagates(t *testing.T) {
+	ctx := contextWithClaims(&token.Claims{UserID: 10, OrganizationID: 1, Roles: []string{"cascade"}})
+	checker := &mockOwnerChecker{err: storage.ErrNotFound}
+
+	err := CheckShutdownOwnership(ctx, 42, checker)
+	if !errors.Is(err, storage.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestCheckShutdownOwnership_NoClaims(t *testing.T) {
+	ctx := context.Background()
+	checker := &mockOwnerChecker{owner: sql.NullInt64{Int64: 1, Valid: true}}
+
+	err := CheckShutdownOwnership(ctx, 42, checker)
+	if !errors.Is(err, ErrClaimsNotFound) {
+		t.Fatalf("expected ErrClaimsNotFound, got %v", err)
+	}
+	if checker.calls != 0 {
+		t.Errorf("repo must NOT be called when claims absent; got %d calls", checker.calls)
+	}
+}
+
+// Other roles (not sc/rais/cascade, e.g. reservoir) should not be subject to
+// the ownership restriction — it is a cascade-specific add-on. The existing
+// CheckOrgAccess at the route or handler level handles them.
+func TestCheckShutdownOwnership_OtherRoleSkipsCheck(t *testing.T) {
+	ctx := contextWithClaims(&token.Claims{UserID: 10, OrganizationID: 5, Roles: []string{"reservoir"}})
+	checker := &mockOwnerChecker{owner: sql.NullInt64{Int64: 99, Valid: true}}
+
+	if err := CheckShutdownOwnership(ctx, 42, checker); err != nil {
+		t.Fatalf("expected nil for non-cascade non-sc role, got %v", err)
+	}
+	if checker.calls != 0 {
+		t.Errorf("repo must NOT be called for non-cascade non-sc role; got %d calls", checker.calls)
 	}
 }

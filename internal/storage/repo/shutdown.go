@@ -31,6 +31,25 @@ func (r *Repo) GetShutdownOrganizationID(ctx context.Context, id int64) (int64, 
 	return orgID, nil
 }
 
+// GetShutdownCreatedByUserID returns the creator's user ID for a shutdown,
+// or sql.NullInt64{Valid:false} if the creator was deleted (FK ON DELETE
+// SET NULL on the users FK). Returns storage.ErrNotFound if the shutdown id
+// does not exist.
+func (r *Repo) GetShutdownCreatedByUserID(ctx context.Context, id int64) (sql.NullInt64, error) {
+	const op = "storage.repo.GetShutdownCreatedByUserID"
+	var owner sql.NullInt64
+	err := r.db.QueryRowContext(ctx,
+		`SELECT created_by_user_id FROM shutdowns WHERE id = $1`, id,
+	).Scan(&owner)
+	if errors.Is(err, sql.ErrNoRows) {
+		return sql.NullInt64{}, storage.ErrNotFound
+	}
+	if err != nil {
+		return sql.NullInt64{}, fmt.Errorf("%s: %w", op, err)
+	}
+	return owner, nil
+}
+
 func (r *Repo) AddShutdown(ctx context.Context, req dto.AddShutdownRequest) (int64, error) {
 	const op = "storage.repo.AddShutdown"
 

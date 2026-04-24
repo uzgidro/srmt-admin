@@ -3,6 +3,7 @@ package shutdowns
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"io"
@@ -21,9 +22,10 @@ import (
 // It now also implements GetShutdownOrganizationID + GetOrganizationParentID
 // required once cascade RBAC is wired into the handler.
 type mockShutdownDeleter struct {
-	deleteFunc func(ctx context.Context, id int64) error
-	getOrgFunc func(ctx context.Context, id int64) (int64, error)
-	parentFunc func(ctx context.Context, orgID int64) (*int64, error)
+	deleteFunc  func(ctx context.Context, id int64) error
+	getOrgFunc  func(ctx context.Context, id int64) (int64, error)
+	parentFunc  func(ctx context.Context, orgID int64) (*int64, error)
+	ownerFunc   func(ctx context.Context, id int64) (sql.NullInt64, error)
 	deleteCalls int
 }
 
@@ -50,6 +52,16 @@ func (m *mockShutdownDeleter) GetOrganizationParentID(ctx context.Context, orgID
 		return m.parentFunc(ctx, orgID)
 	}
 	return nil, nil
+}
+
+// GetShutdownCreatedByUserID is required for cascade-only owner restriction.
+// Default returns the test caller's UserID (1) so legacy tests pass once the
+// handler starts calling auth.CheckShutdownOwnership.
+func (m *mockShutdownDeleter) GetShutdownCreatedByUserID(ctx context.Context, id int64) (sql.NullInt64, error) {
+	if m.ownerFunc != nil {
+		return m.ownerFunc(ctx, id)
+	}
+	return sql.NullInt64{Int64: 1, Valid: true}, nil
 }
 
 // contextWithScClaims creates a context with an "sc" role so the cascade
@@ -430,5 +442,133 @@ func TestDelete_ScUser_AnyShutdown_OK(t *testing.T) {
 	}
 	if parentCalled {
 		t.Error("parent lookup must NOT be called for sc role")
+	}
+}
+
+// === Cascade-owner restriction tests ===
+
+// TestDelete_CascadeUser_OwnRecord_OK — cascade-юзер 10 удаляет свою запись → 200.
+func TestDelete_CascadeUser_OwnRecord_OK(t *testing.T) {
+	mock := &mockShutdownDeleter{
+		getOrgFunc: func(ctx context.Context, id int64) (int64, error) { return 10, nil },
+		parentFunc: func(ctx context.Context, orgID int64) (*int64, error) {
+			if orgID == 10 {
+				return int64Ptr(5), nil
+			}
+			return nil, nil
+		},
+		ownerFunc: func(ctx context.Context, id int64) (sql.NullInt64, error) {
+			return sql.NullInt64{Int64: 10, Valid: true}, nil
+		},
+	}
+
+	ctx := contextWithDeleteRoleClaims(context.Background(), 10, 5, "cascade")
+	rr := runDeleteWithCtx(t, mock, ctx, "1")
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if mock.deleteCalls != 1 {
+		t.Errorf("DeleteShutdown must be called once, called %d times", mock.deleteCalls)
+	}
+}
+
+// TestDelete_CascadeUser_ForeignOwnerSameCascade_Forbidden — cascade-юзер 11
+// пробует удалить запись юзера 10 в общем каскаде → 403.
+func TestDelete_CascadeUser_ForeignOwnerSameCascade_Forbidden(t *testing.T) {
+	mock := &mockShutdownDeleter{
+		getOrgFunc: func(ctx context.Context, id int64) (int64, error) { return 10, nil },
+		parentFunc: func(ctx context.Context, orgID int64) (*int64, error) {
+			if orgID == 10 {
+				return int64Ptr(5), nil
+			}
+			return nil, nil
+		},
+		ownerFunc: func(ctx context.Context, id int64) (sql.NullInt64, error) {
+			return sql.NullInt64{Int64: 10, Valid: true}, nil
+		},
+	}
+
+	ctx := contextWithDeleteRoleClaims(context.Background(), 11, 5, "cascade")
+	rr := runDeleteWithCtx(t, mock, ctx, "1")
+
+	if rr.Code != http.StatusForbidden {
+		t.Errorf("expected 403, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if mock.deleteCalls != 0 {
+		t.Errorf("DeleteShutdown must NOT be called for non-owner, called %d times", mock.deleteCalls)
+	}
+	if !bytes.Contains(rr.Body.Bytes(), []byte("creator")) {
+		t.Errorf("error message should mention creator; got %s", rr.Body.String())
+	}
+}
+
+// TestDelete_CascadeUser_NullOwner_Forbidden — orphan record → 403.
+func TestDelete_CascadeUser_NullOwner_Forbidden(t *testing.T) {
+	mock := &mockShutdownDeleter{
+		getOrgFunc: func(ctx context.Context, id int64) (int64, error) { return 10, nil },
+		parentFunc: func(ctx context.Context, orgID int64) (*int64, error) {
+			if orgID == 10 {
+				return int64Ptr(5), nil
+			}
+			return nil, nil
+		},
+		ownerFunc: func(ctx context.Context, id int64) (sql.NullInt64, error) {
+			return sql.NullInt64{Valid: false}, nil
+		},
+	}
+
+	ctx := contextWithDeleteRoleClaims(context.Background(), 10, 5, "cascade")
+	rr := runDeleteWithCtx(t, mock, ctx, "1")
+
+	if rr.Code != http.StatusForbidden {
+		t.Errorf("expected 403 for orphan, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if mock.deleteCalls != 0 {
+		t.Errorf("DeleteShutdown must NOT be called for orphan, called %d times", mock.deleteCalls)
+	}
+}
+
+// TestDelete_ScUser_AnyOwner_OK — sc bypass.
+func TestDelete_ScUser_AnyOwner_OK(t *testing.T) {
+	ownerCalled := false
+	mock := &mockShutdownDeleter{
+		getOrgFunc: func(ctx context.Context, id int64) (int64, error) { return 999, nil },
+		ownerFunc: func(ctx context.Context, id int64) (sql.NullInt64, error) {
+			ownerCalled = true
+			return sql.NullInt64{Int64: 12345, Valid: true}, nil
+		},
+	}
+
+	ctx := contextWithDeleteRoleClaims(context.Background(), 1, 5, "sc")
+	rr := runDeleteWithCtx(t, mock, ctx, "1")
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected 200 for sc bypass, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if ownerCalled {
+		t.Error("ownership lookup must NOT happen for sc role")
+	}
+}
+
+// TestDelete_RaisUser_NullOwner_OK — rais bypass даже на orphan.
+func TestDelete_RaisUser_NullOwner_OK(t *testing.T) {
+	ownerCalled := false
+	mock := &mockShutdownDeleter{
+		getOrgFunc: func(ctx context.Context, id int64) (int64, error) { return 999, nil },
+		ownerFunc: func(ctx context.Context, id int64) (sql.NullInt64, error) {
+			ownerCalled = true
+			return sql.NullInt64{Valid: false}, nil
+		},
+	}
+
+	ctx := contextWithDeleteRoleClaims(context.Background(), 1, 5, "rais")
+	rr := runDeleteWithCtx(t, mock, ctx, "1")
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected 200 for rais bypass, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if ownerCalled {
+		t.Error("ownership lookup must NOT happen for rais role")
 	}
 }

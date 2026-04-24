@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	// Импортируем ваш пакет middleware, чтобы получить доступ к функции извлечения claims
@@ -127,6 +128,55 @@ func CheckCascadeStationAccessBatch(ctx context.Context, orgIDs []int64, checker
 		if err := CheckCascadeStationAccess(ctx, id, checker); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// OwnerChecker is the local repo dependency for ownership lookups.
+type OwnerChecker interface {
+	GetShutdownCreatedByUserID(ctx context.Context, id int64) (sql.NullInt64, error)
+}
+
+// CheckShutdownOwnership enforces cascade-only owner restriction for shutdown
+// mutations. sc/rais bypass the check (full access). Cascade users may only
+// mutate records they themselves created. Records with NULL owner (creator
+// was deleted) are read-only for cascade.
+//
+// Returns ErrForbidden when the cascade caller does not own the record (or
+// the record is orphaned), ErrClaimsNotFound when there are no claims in
+// the context, storage.ErrNotFound when the shutdown id does not exist.
+//
+// Other roles (not sc/rais/cascade) skip the check — orthogonal to other
+// org-level RBAC layers, which are handled separately.
+func CheckShutdownOwnership(ctx context.Context, shutdownID int64, repo OwnerChecker) error {
+	claims, ok := mwauth.ClaimsFromContext(ctx)
+	if !ok || claims == nil {
+		return ErrClaimsNotFound
+	}
+	for _, role := range claims.Roles {
+		if role == "sc" || role == "rais" {
+			return nil
+		}
+	}
+	isCascade := false
+	for _, role := range claims.Roles {
+		if role == "cascade" {
+			isCascade = true
+			break
+		}
+	}
+	if !isCascade {
+		return nil
+	}
+	owner, err := repo.GetShutdownCreatedByUserID(ctx, shutdownID)
+	if err != nil {
+		return err
+	}
+	if !owner.Valid {
+		return ErrForbidden
+	}
+	if owner.Int64 != claims.UserID {
+		return ErrForbidden
 	}
 	return nil
 }
