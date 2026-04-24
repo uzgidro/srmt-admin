@@ -2,6 +2,7 @@ package shutdowns
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -18,6 +19,7 @@ import (
 type shutdownDeleter interface {
 	DeleteShutdown(ctx context.Context, id int64) error
 	GetShutdownOrganizationID(ctx context.Context, id int64) (int64, error)
+	GetShutdownCreatedByUserID(ctx context.Context, id int64) (sql.NullInt64, error)
 	GetOrganizationParentID(ctx context.Context, orgID int64) (*int64, error)
 }
 
@@ -69,6 +71,30 @@ func Delete(log *slog.Logger, deleter shutdownDeleter) http.HandlerFunc {
 			log.Error("cascade access check failed", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)
 			render.JSON(w, r, resp.InternalServerError("Failed to verify access"))
+			return
+		}
+
+		// Ownership check — cascade callers may only delete records they created themselves.
+		if err := auth.CheckShutdownOwnership(r.Context(), id, deleter); err != nil {
+			if errors.Is(err, auth.ErrForbidden) {
+				log.Warn("cascade caller is not the owner of this shutdown",
+					slog.Int64("user_id", userID),
+					slog.Int64("shutdown_id", id),
+				)
+				render.Status(r, http.StatusForbidden)
+				render.JSON(w, r, resp.Forbidden("only the creator can delete this record"))
+				return
+			}
+			if errors.Is(err, storage.ErrNotFound) {
+				// Race: shutdown was deleted between GetShutdownOrganizationID and now.
+				log.Warn("shutdown not found during ownership check", slog.Int64("id", id))
+				render.Status(r, http.StatusNotFound)
+				render.JSON(w, r, resp.NotFound("Shutdown not found"))
+				return
+			}
+			log.Error("ownership check failed", sl.Err(err))
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, resp.InternalServerError("Failed to verify ownership"))
 			return
 		}
 
