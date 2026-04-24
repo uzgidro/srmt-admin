@@ -3,6 +3,7 @@ package shutdowns
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"io"
@@ -26,6 +27,7 @@ type mockShutdownEditor struct {
 	linkFunc    func(ctx context.Context, shutdownID int64, fileIDs []int64) error
 	getOrgFunc  func(ctx context.Context, id int64) (int64, error)
 	parentFunc  func(ctx context.Context, orgID int64) (*int64, error)
+	ownerFunc   func(ctx context.Context, id int64) (sql.NullInt64, error)
 	editCalls   int
 }
 
@@ -66,6 +68,16 @@ func (m *mockShutdownEditor) GetOrganizationParentID(ctx context.Context, orgID 
 		return m.parentFunc(ctx, orgID)
 	}
 	return nil, nil
+}
+
+// GetShutdownCreatedByUserID is required for cascade-only owner restriction.
+// Default returns the test caller's UserID (1) so legacy tests continue to pass
+// once the handler starts calling auth.CheckShutdownOwnership.
+func (m *mockShutdownEditor) GetShutdownCreatedByUserID(ctx context.Context, id int64) (sql.NullInt64, error) {
+	if m.ownerFunc != nil {
+		return m.ownerFunc(ctx, id)
+	}
+	return sql.NullInt64{Int64: 1, Valid: true}, nil
 }
 
 // Helper to create context with user claims (reuse from add_test.go approach).
@@ -549,5 +561,136 @@ func TestEdit_ScUser_AnyShutdown_OK(t *testing.T) {
 	}
 	if parentCalled {
 		t.Error("parent lookup must NOT be called for sc role")
+	}
+}
+
+// === Cascade-owner restriction tests ===
+
+// TestEdit_CascadeUser_OwnRecord_OK — cascade-юзер 10 правит свою запись
+// (created_by_user_id=10) в своём каскаде → 200.
+func TestEdit_CascadeUser_OwnRecord_OK(t *testing.T) {
+	mock := &mockShutdownEditor{
+		getOrgFunc: func(ctx context.Context, id int64) (int64, error) { return 10, nil },
+		parentFunc: func(ctx context.Context, orgID int64) (*int64, error) {
+			if orgID == 10 {
+				return int64Ptr(5), nil
+			}
+			return nil, nil
+		},
+		ownerFunc: func(ctx context.Context, id int64) (sql.NullInt64, error) {
+			return sql.NullInt64{Int64: 10, Valid: true}, nil
+		},
+	}
+
+	ctx := contextWithEditRoleClaims(context.Background(), 10, 5, "cascade")
+	rr := runEditWithCtx(t, mock, ctx, "1", editRequest{Reason: stringPtr("own record")})
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if mock.editCalls != 1 {
+		t.Errorf("EditShutdown must be called once, called %d times", mock.editCalls)
+	}
+}
+
+// TestEdit_CascadeUser_ForeignOwnerSameCascade_Forbidden — cascade-юзер 11 пробует
+// править запись юзера 10 в общем каскаде → 403 (НЕ 404 — явный отказ).
+func TestEdit_CascadeUser_ForeignOwnerSameCascade_Forbidden(t *testing.T) {
+	mock := &mockShutdownEditor{
+		getOrgFunc: func(ctx context.Context, id int64) (int64, error) { return 10, nil },
+		parentFunc: func(ctx context.Context, orgID int64) (*int64, error) {
+			if orgID == 10 {
+				return int64Ptr(5), nil
+			}
+			return nil, nil
+		},
+		ownerFunc: func(ctx context.Context, id int64) (sql.NullInt64, error) {
+			return sql.NullInt64{Int64: 10, Valid: true}, nil // owned by user 10
+		},
+	}
+
+	ctx := contextWithEditRoleClaims(context.Background(), 11, 5, "cascade") // user 11 ≠ owner
+	rr := runEditWithCtx(t, mock, ctx, "1", editRequest{Reason: stringPtr("not mine")})
+
+	if rr.Code != http.StatusForbidden {
+		t.Errorf("expected 403, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if mock.editCalls != 0 {
+		t.Errorf("EditShutdown must NOT be called for non-owner, called %d times", mock.editCalls)
+	}
+	// Ensure error message hints at ownership (helps frontend distinguish from cascade-access 403).
+	if !bytes.Contains(rr.Body.Bytes(), []byte("creator")) {
+		t.Errorf("error message should mention creator; got %s", rr.Body.String())
+	}
+}
+
+// TestEdit_CascadeUser_NullOwner_Forbidden — owner был удалён (FK SET NULL),
+// cascade-юзер пробует править → 403.
+func TestEdit_CascadeUser_NullOwner_Forbidden(t *testing.T) {
+	mock := &mockShutdownEditor{
+		getOrgFunc: func(ctx context.Context, id int64) (int64, error) { return 10, nil },
+		parentFunc: func(ctx context.Context, orgID int64) (*int64, error) {
+			if orgID == 10 {
+				return int64Ptr(5), nil
+			}
+			return nil, nil
+		},
+		ownerFunc: func(ctx context.Context, id int64) (sql.NullInt64, error) {
+			return sql.NullInt64{Valid: false}, nil // orphan
+		},
+	}
+
+	ctx := contextWithEditRoleClaims(context.Background(), 10, 5, "cascade")
+	rr := runEditWithCtx(t, mock, ctx, "1", editRequest{Reason: stringPtr("orphan")})
+
+	if rr.Code != http.StatusForbidden {
+		t.Errorf("expected 403 for orphaned record, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if mock.editCalls != 0 {
+		t.Errorf("EditShutdown must NOT be called for orphaned record, called %d times", mock.editCalls)
+	}
+}
+
+// TestEdit_ScUser_AnyOwner_OK — sc role игнорирует ownership даже на чужой записи.
+func TestEdit_ScUser_AnyOwner_OK(t *testing.T) {
+	ownerCalled := false
+	mock := &mockShutdownEditor{
+		getOrgFunc: func(ctx context.Context, id int64) (int64, error) { return 999, nil },
+		ownerFunc: func(ctx context.Context, id int64) (sql.NullInt64, error) {
+			ownerCalled = true
+			return sql.NullInt64{Int64: 12345, Valid: true}, nil
+		},
+	}
+
+	ctx := contextWithEditRoleClaims(context.Background(), 1, 5, "sc")
+	rr := runEditWithCtx(t, mock, ctx, "1", editRequest{Reason: stringPtr("admin override")})
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected 200 for sc bypass, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if ownerCalled {
+		t.Error("ownership lookup must NOT happen for sc role (helper short-circuits)")
+	}
+}
+
+// TestEdit_RaisUser_NullOwner_OK — rais тоже игнорирует ownership, даже на orphan.
+func TestEdit_RaisUser_NullOwner_OK(t *testing.T) {
+	ownerCalled := false
+	mock := &mockShutdownEditor{
+		getOrgFunc: func(ctx context.Context, id int64) (int64, error) { return 999, nil },
+		ownerFunc: func(ctx context.Context, id int64) (sql.NullInt64, error) {
+			ownerCalled = true
+			return sql.NullInt64{Valid: false}, nil
+		},
+	}
+
+	ctx := contextWithEditRoleClaims(context.Background(), 1, 5, "rais")
+	rr := runEditWithCtx(t, mock, ctx, "1", editRequest{Reason: stringPtr("rais override")})
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected 200 for rais bypass, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if ownerCalled {
+		t.Error("ownership lookup must NOT happen for rais role (helper short-circuits)")
 	}
 }
