@@ -565,6 +565,9 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 				r.Get("/config", gesreporthandler.GetConfigs(deps.Log, deps.PgRepo))
 				r.Get("/plans", gesreporthandler.GetPlans(deps.Log, deps.PgRepo))
 				r.Get("/cascade-config", gesreporthandler.GetCascadeConfigs(deps.Log, deps.PgRepo))
+				r.Put("/frozen-defaults", gesreporthandler.UpsertFrozenDefault(deps.Log, deps.PgRepo))
+				r.Delete("/frozen-defaults", gesreporthandler.DeleteFrozenDefault(deps.Log, deps.PgRepo))
+				r.Get("/frozen-defaults", gesreporthandler.ListFrozenDefaults(deps.Log, deps.PgRepo))
 			})
 
 			// Tier 2: sc/rais only — config write, plans write, export

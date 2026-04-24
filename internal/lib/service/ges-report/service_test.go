@@ -28,6 +28,7 @@ type mockRepo struct {
 	plans          []model.PlanRow
 	discharges     []model.IdleDischargeRow
 	cascadeWeather map[model.CascadeWeatherKey]*model.CascadeWeather
+	frozen         map[int64]map[string]float64
 }
 
 func (m *mockRepo) GetGESDailyDataBatch(_ context.Context, date string) ([]model.RawDailyRow, error) {
@@ -64,6 +65,21 @@ func (m *mockRepo) GetCascadeDailyWeatherBatch(_ context.Context, orgIDs []int64
 		}
 	}
 	return result, nil
+}
+
+func (m *mockRepo) GetFrozenDefaults(_ context.Context) (map[int64]map[string]float64, error) {
+	if m.frozen == nil {
+		return map[int64]map[string]float64{}, nil
+	}
+	out := make(map[int64]map[string]float64, len(m.frozen))
+	for k, v := range m.frozen {
+		inner := make(map[string]float64, len(v))
+		for kk, vv := range v {
+			inner[kk] = vv
+		}
+		out[k] = inner
+	}
+	return out, nil
 }
 
 // ptr returns a pointer to the given float64.
@@ -1316,5 +1332,194 @@ func TestBuildReport_RoundsIdleDischargeEventBlock(t *testing.T) {
 	// Grand total sums cascades — single cascade here, so same value.
 	if !approxEqual(report.GrandTotal.IdleDischargeM3s, 1.43) {
 		t.Errorf("grand total idle_discharge_total_m3s: got %v, want 1.43", report.GrandTotal.IdleDischargeM3s)
+	}
+}
+
+// === Frozen defaults (sticky carry-forward) tests ===
+
+// frozenStationRow builds a baseline RawDailyRow with HasRowForDate=true.
+// Tests override HasRowForDate / nullable fields to drive the cases.
+func frozenStationRow(orgID, cascadeID int64, cascadeName, date string) model.RawDailyRow {
+	cid := cascadeID
+	cn := cascadeName
+	return model.RawDailyRow{
+		OrganizationID:        orgID,
+		OrganizationName:      "Station Frozen",
+		CascadeID:             &cid,
+		CascadeName:           &cn,
+		Date:                  date,
+		DailyProductionMlnKWh: 24.0,
+		WorkingAggregates:     3,
+		InstalledCapacityMWt:  500.0,
+		TotalAggregates:       4,
+		HasReservoir:          true,
+		HasRowForDate:         true,
+	}
+}
+
+// TestBuildReport_FrozenWaterHeadAppliedWhenRowMissing — нет daily_data на дату
+// (HasRowForDate=false), все nullable поля nil, frozen water_head_m=45.0 →
+// в отчёте current.water_head_m=45.0.
+func TestBuildReport_FrozenWaterHeadAppliedWhenRowMissing(t *testing.T) {
+	row := frozenStationRow(100, 1, "Cascade A", "2026-03-13")
+	row.HasRowForDate = false
+	row.DailyProductionMlnKWh = 0 // no row → COALESCE
+	row.WorkingAggregates = 0
+
+	repo := &mockRepo{
+		todayDate:     "2026-03-13",
+		yesterdayDate: "2026-03-12",
+		prevYearDate:  "2025-03-13",
+		todayData:     []model.RawDailyRow{row},
+		frozen: map[int64]map[string]float64{
+			100: {"water_head_m": 45.0},
+		},
+	}
+
+	svc := NewService(repo, mustLoc("Asia/Tashkent"), discardLogger())
+	report, err := svc.BuildDailyReport(context.Background(), "2026-03-13", nil)
+	if err != nil {
+		t.Fatalf("BuildDailyReport: %v", err)
+	}
+	st := report.Cascades[0].Stations[0]
+	if st.Current.WaterHeadM == nil {
+		t.Fatal("current.water_head_m is nil — frozen value not applied")
+	}
+	if !approxEqual(*st.Current.WaterHeadM, 45.0) {
+		t.Errorf("current.water_head_m: got %v, want 45.0 (frozen)", *st.Current.WaterHeadM)
+	}
+}
+
+// TestBuildReport_FrozenWaterHeadAppliedWhenFieldNull — daily_data строка есть,
+// но nullable water_head_m=NULL, frozen=45.0 → в отчёте 45.0.
+func TestBuildReport_FrozenWaterHeadAppliedWhenFieldNull(t *testing.T) {
+	row := frozenStationRow(100, 1, "Cascade A", "2026-03-13")
+	row.WaterHeadM = nil // explicitly NULL despite HasRowForDate=true
+
+	repo := &mockRepo{
+		todayDate: "2026-03-13", yesterdayDate: "2026-03-12", prevYearDate: "2025-03-13",
+		todayData: []model.RawDailyRow{row},
+		frozen:    map[int64]map[string]float64{100: {"water_head_m": 45.0}},
+	}
+
+	svc := NewService(repo, mustLoc("Asia/Tashkent"), discardLogger())
+	report, _ := svc.BuildDailyReport(context.Background(), "2026-03-13", nil)
+	st := report.Cascades[0].Stations[0]
+	if st.Current.WaterHeadM == nil || !approxEqual(*st.Current.WaterHeadM, 45.0) {
+		t.Errorf("current.water_head_m: got %v, want 45.0 (frozen fills NULL)", st.Current.WaterHeadM)
+	}
+}
+
+// TestBuildReport_FrozenDoesNotOverrideExplicitValue — daily_data.water_head_m=40.0,
+// frozen=45.0 → в отчёте 40.0 (явное значение побеждает).
+func TestBuildReport_FrozenDoesNotOverrideExplicitValue(t *testing.T) {
+	row := frozenStationRow(100, 1, "Cascade A", "2026-03-13")
+	v := 40.0
+	row.WaterHeadM = &v
+
+	repo := &mockRepo{
+		todayDate: "2026-03-13", yesterdayDate: "2026-03-12", prevYearDate: "2025-03-13",
+		todayData: []model.RawDailyRow{row},
+		frozen:    map[int64]map[string]float64{100: {"water_head_m": 45.0}},
+	}
+
+	svc := NewService(repo, mustLoc("Asia/Tashkent"), discardLogger())
+	report, _ := svc.BuildDailyReport(context.Background(), "2026-03-13", nil)
+	st := report.Cascades[0].Stations[0]
+	if st.Current.WaterHeadM == nil || !approxEqual(*st.Current.WaterHeadM, 40.0) {
+		t.Errorf("current.water_head_m: got %v, want 40.0 (explicit, frozen ignored)", st.Current.WaterHeadM)
+	}
+}
+
+// TestBuildReport_FrozenWorkingAggregatesAppliedWhenNoRow — !HasRowForDate,
+// working_aggregates=0 (COALESCE), frozen=3 → в отчёте 3.
+func TestBuildReport_FrozenWorkingAggregatesAppliedWhenNoRow(t *testing.T) {
+	row := frozenStationRow(100, 1, "Cascade A", "2026-03-13")
+	row.HasRowForDate = false
+	row.WorkingAggregates = 0
+	row.DailyProductionMlnKWh = 0
+
+	repo := &mockRepo{
+		todayDate: "2026-03-13", yesterdayDate: "2026-03-12", prevYearDate: "2025-03-13",
+		todayData: []model.RawDailyRow{row},
+		frozen:    map[int64]map[string]float64{100: {"working_aggregates": 3.0}},
+	}
+
+	svc := NewService(repo, mustLoc("Asia/Tashkent"), discardLogger())
+	report, _ := svc.BuildDailyReport(context.Background(), "2026-03-13", nil)
+	st := report.Cascades[0].Stations[0]
+	if st.Current.WorkingAggregates != 3 {
+		t.Errorf("current.working_aggregates: got %d, want 3 (frozen, no row)", st.Current.WorkingAggregates)
+	}
+}
+
+// TestBuildReport_FrozenWorkingAggregatesNotAppliedWhenRowExists — HasRowForDate=true,
+// working_aggregates=0 в БД, frozen=3 → в отчёте 0 (явный 0, frozen НЕ применяется).
+// Регрессия для §2.7: для NOT NULL полей frozen применяется только когда строки нет.
+func TestBuildReport_FrozenWorkingAggregatesNotAppliedWhenRowExists(t *testing.T) {
+	row := frozenStationRow(100, 1, "Cascade A", "2026-03-13")
+	row.WorkingAggregates = 0 // explicit 0 with HasRowForDate=true
+
+	repo := &mockRepo{
+		todayDate: "2026-03-13", yesterdayDate: "2026-03-12", prevYearDate: "2025-03-13",
+		todayData: []model.RawDailyRow{row},
+		frozen:    map[int64]map[string]float64{100: {"working_aggregates": 3.0}},
+	}
+
+	svc := NewService(repo, mustLoc("Asia/Tashkent"), discardLogger())
+	report, _ := svc.BuildDailyReport(context.Background(), "2026-03-13", nil)
+	st := report.Cascades[0].Stations[0]
+	if st.Current.WorkingAggregates != 0 {
+		t.Errorf("current.working_aggregates: got %d, want 0 (explicit 0; frozen MUST be ignored when HasRowForDate=true)", st.Current.WorkingAggregates)
+	}
+}
+
+// TestBuildReport_FrozenAppliedToPreviousDay — previous_day snapshot тоже видит frozen.
+// Без этого diff'ы будут сравнивать сегодня=frozen vs вчера=nil/0 — мусор.
+func TestBuildReport_FrozenAppliedToPreviousDay(t *testing.T) {
+	today := frozenStationRow(100, 1, "Cascade A", "2026-03-13")
+	yesterdayRow := frozenStationRow(100, 1, "Cascade A", "2026-03-12")
+	yesterdayRow.HasRowForDate = false
+	yesterdayRow.WaterHeadM = nil
+
+	repo := &mockRepo{
+		todayDate: "2026-03-13", yesterdayDate: "2026-03-12", prevYearDate: "2025-03-13",
+		todayData:     []model.RawDailyRow{today},
+		yesterdayData: []model.RawDailyRow{yesterdayRow},
+		frozen:        map[int64]map[string]float64{100: {"water_head_m": 45.0}},
+	}
+
+	svc := NewService(repo, mustLoc("Asia/Tashkent"), discardLogger())
+	report, _ := svc.BuildDailyReport(context.Background(), "2026-03-13", nil)
+	st := report.Cascades[0].Stations[0]
+	if st.PreviousDay == nil {
+		t.Fatal("previous_day is nil")
+	}
+	if st.PreviousDay.WaterHeadM == nil || !approxEqual(*st.PreviousDay.WaterHeadM, 45.0) {
+		t.Errorf("previous_day.water_head_m: got %v, want 45.0 (frozen on yesterday)", st.PreviousDay.WaterHeadM)
+	}
+}
+
+// TestBuildReport_NoFrozenForField_Unchanged — org has frozen entry for water_head_m
+// but NOT for water_level_m → water_level_m stays nil (не магически 0).
+func TestBuildReport_NoFrozenForField_Unchanged(t *testing.T) {
+	row := frozenStationRow(100, 1, "Cascade A", "2026-03-13")
+	row.WaterHeadM = nil
+	row.WaterLevelM = nil
+
+	repo := &mockRepo{
+		todayDate: "2026-03-13", yesterdayDate: "2026-03-12", prevYearDate: "2025-03-13",
+		todayData: []model.RawDailyRow{row},
+		frozen:    map[int64]map[string]float64{100: {"water_head_m": 45.0}},
+	}
+
+	svc := NewService(repo, mustLoc("Asia/Tashkent"), discardLogger())
+	report, _ := svc.BuildDailyReport(context.Background(), "2026-03-13", nil)
+	st := report.Cascades[0].Stations[0]
+	if st.Current.WaterLevelM != nil {
+		t.Errorf("current.water_level_m: got %v, want nil (no frozen for this field)", st.Current.WaterLevelM)
+	}
+	if st.Current.WaterHeadM == nil || !approxEqual(*st.Current.WaterHeadM, 45.0) {
+		t.Errorf("current.water_head_m: got %v, want 45.0 (frozen)", st.Current.WaterHeadM)
 	}
 }

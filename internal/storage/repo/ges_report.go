@@ -450,6 +450,79 @@ func (r *Repo) UpsertGESDailyData(ctx context.Context, items []gesreport.UpsertD
 		}
 	}
 
+	// Synchronize ges_frozen_defaults — UPDATE-only: when the user explicitly
+	// provided a non-null value for a freezable field, push that value into the
+	// frozen row if one already exists for (org, field). Missing rows are a
+	// no-op (0 rows affected, no error). New frozen rows are NOT created here —
+	// only the dedicated frozen-defaults endpoints can do that.
+	const syncFrozenQuery = `
+		UPDATE ges_frozen_defaults
+		   SET frozen_value = $1, updated_at = NOW()
+		 WHERE organization_id = $2 AND field_name = $3`
+	syncFrozen := func(orgID int64, field string, value float64) error {
+		if _, err := tx.ExecContext(ctx, syncFrozenQuery, value, orgID, field); err != nil {
+			if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
+				return translatedErr
+			}
+			return fmt.Errorf("%s: failed to sync frozen default for org_id=%d, field=%s: %w",
+				op, orgID, field, err)
+		}
+		return nil
+	}
+
+	for _, item := range items {
+		if item.DailyProductionMlnKWh.Set && item.DailyProductionMlnKWh.Value != nil {
+			if err := syncFrozen(item.OrganizationID, gesreport.FrozenFieldDailyProduction, *item.DailyProductionMlnKWh.Value); err != nil {
+				return err
+			}
+		}
+		if item.WorkingAggregates.Set && item.WorkingAggregates.Value != nil {
+			if err := syncFrozen(item.OrganizationID, gesreport.FrozenFieldWorkingAggregates, float64(*item.WorkingAggregates.Value)); err != nil {
+				return err
+			}
+		}
+		if item.RepairAggregates.Set && item.RepairAggregates.Value != nil {
+			if err := syncFrozen(item.OrganizationID, gesreport.FrozenFieldRepairAggregates, float64(*item.RepairAggregates.Value)); err != nil {
+				return err
+			}
+		}
+		if item.ModernizationAggregates.Set && item.ModernizationAggregates.Value != nil {
+			if err := syncFrozen(item.OrganizationID, gesreport.FrozenFieldModernizationAggregates, float64(*item.ModernizationAggregates.Value)); err != nil {
+				return err
+			}
+		}
+		if item.WaterLevelM.Set && item.WaterLevelM.Value != nil {
+			if err := syncFrozen(item.OrganizationID, gesreport.FrozenFieldWaterLevelM, *item.WaterLevelM.Value); err != nil {
+				return err
+			}
+		}
+		if item.WaterVolumeMlnM3.Set && item.WaterVolumeMlnM3.Value != nil {
+			if err := syncFrozen(item.OrganizationID, gesreport.FrozenFieldWaterVolumeMlnM3, *item.WaterVolumeMlnM3.Value); err != nil {
+				return err
+			}
+		}
+		if item.WaterHeadM.Set && item.WaterHeadM.Value != nil {
+			if err := syncFrozen(item.OrganizationID, gesreport.FrozenFieldWaterHeadM, *item.WaterHeadM.Value); err != nil {
+				return err
+			}
+		}
+		if item.ReservoirIncomeM3s.Set && item.ReservoirIncomeM3s.Value != nil {
+			if err := syncFrozen(item.OrganizationID, gesreport.FrozenFieldReservoirIncomeM3s, *item.ReservoirIncomeM3s.Value); err != nil {
+				return err
+			}
+		}
+		if item.TotalOutflowM3s.Set && item.TotalOutflowM3s.Value != nil {
+			if err := syncFrozen(item.OrganizationID, gesreport.FrozenFieldTotalOutflowM3s, *item.TotalOutflowM3s.Value); err != nil {
+				return err
+			}
+		}
+		if item.GESFlowM3s.Set && item.GESFlowM3s.Value != nil {
+			if err := syncFrozen(item.OrganizationID, gesreport.FrozenFieldGESFlowM3s, *item.GESFlowM3s.Value); err != nil {
+				return err
+			}
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("%s: failed to commit transaction: %w", op, err)
 	}
@@ -620,7 +693,8 @@ func (r *Repo) GetGESDailyDataBatch(ctx context.Context, date string) ([]gesrepo
 			COALESCE(d.modernization_aggregates, 0),
 			d.water_level_m, d.water_volume_mln_m3, d.water_head_m,
 			d.reservoir_income_m3s, d.total_outflow_m3s, d.ges_flow_m3s,
-			c.installed_capacity_mwt, c.total_aggregates, c.has_reservoir, c.sort_order
+			c.installed_capacity_mwt, c.total_aggregates, c.has_reservoir, c.sort_order,
+			(d.id IS NOT NULL) AS has_row_for_date
 		FROM ges_config c
 		JOIN organizations o ON c.organization_id = o.id
 		LEFT JOIN organizations po ON o.parent_organization_id = po.id
@@ -659,6 +733,7 @@ func (r *Repo) GetGESDailyDataBatch(ctx context.Context, date string) ([]gesrepo
 			&row.TotalAggregates,
 			&row.HasReservoir,
 			&row.SortOrder,
+			&row.HasRowForDate,
 		); err != nil {
 			return nil, fmt.Errorf("%s: scan: %w", op, err)
 		}
@@ -979,4 +1054,132 @@ func (r *Repo) GetCascadeDailyWeather(ctx context.Context, orgID int64, date str
 		w.Condition = &v
 	}
 	return w, nil
+}
+
+// --- Frozen Defaults ---
+
+// GetFrozenDefaults returns all frozen-default rows as a nested map keyed
+// org → field → value. Returns an empty (non-nil) map if no rows exist.
+// Used by the report service to apply per-org per-field fallback values
+// when the ges_daily_data row for the date is missing or has NULL.
+func (r *Repo) GetFrozenDefaults(ctx context.Context) (map[int64]map[string]float64, error) {
+	const op = "storage.repo.GESReport.GetFrozenDefaults"
+
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT organization_id, field_name, frozen_value FROM ges_frozen_defaults`)
+	if err != nil {
+		return nil, fmt.Errorf("%s: query: %w", op, err)
+	}
+	defer rows.Close()
+
+	result := make(map[int64]map[string]float64)
+	for rows.Next() {
+		var orgID int64
+		var field string
+		var value float64
+		if err := rows.Scan(&orgID, &field, &value); err != nil {
+			return nil, fmt.Errorf("%s: scan: %w", op, err)
+		}
+		inner, ok := result[orgID]
+		if !ok {
+			inner = make(map[string]float64)
+			result[orgID] = inner
+		}
+		inner[field] = value
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: rows: %w", op, err)
+	}
+	return result, nil
+}
+
+// UpsertFrozenDefault inserts or updates a single frozen-default row keyed by
+// (organization_id, field_name). On conflict it updates frozen_value, refreshes
+// updated_at, and overwrites frozen_by with the new caller's user id.
+func (r *Repo) UpsertFrozenDefault(ctx context.Context, req gesreport.UpsertFrozenDefaultRequest, userID int64) error {
+	const op = "storage.repo.GESReport.UpsertFrozenDefault"
+
+	const query = `
+		INSERT INTO ges_frozen_defaults (organization_id, field_name, frozen_value, frozen_by, frozen_at, updated_at)
+		VALUES ($1, $2, $3, $4, NOW(), NOW())
+		ON CONFLICT (organization_id, field_name) DO UPDATE SET
+			frozen_value = EXCLUDED.frozen_value,
+			updated_at = NOW(),
+			frozen_by = EXCLUDED.frozen_by`
+
+	if _, err := r.db.ExecContext(ctx, query,
+		req.OrganizationID,
+		req.FieldName,
+		req.FrozenValue,
+		userID,
+	); err != nil {
+		if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
+			return translatedErr
+		}
+		return fmt.Errorf("%s: %w", op, err)
+	}
+	return nil
+}
+
+// DeleteFrozenDefault removes the frozen-default row for the given
+// (organization_id, field_name). Idempotent: returns nil even if no row was
+// deleted — the absence of a row is the same end state the caller asked for.
+func (r *Repo) DeleteFrozenDefault(ctx context.Context, orgID int64, field string) error {
+	const op = "storage.repo.GESReport.DeleteFrozenDefault"
+
+	if _, err := r.db.ExecContext(ctx,
+		`DELETE FROM ges_frozen_defaults WHERE organization_id = $1 AND field_name = $2`,
+		orgID, field,
+	); err != nil {
+		if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
+			return translatedErr
+		}
+		return fmt.Errorf("%s: %w", op, err)
+	}
+	return nil
+}
+
+// ListFrozenDefaults returns all frozen-default rows ordered by
+// (organization_id, field_name). Each row carries the station's parent
+// organization (cascade) id when present, so handlers can filter by cascade
+// the same way filterGESConfigsForCaller does for ges_config.
+func (r *Repo) ListFrozenDefaults(ctx context.Context) ([]gesreport.FrozenDefault, error) {
+	const op = "storage.repo.GESReport.ListFrozenDefaults"
+
+	const query = `
+		SELECT f.organization_id, o.parent_organization_id, f.field_name, f.frozen_value, f.frozen_at, f.updated_at
+		FROM ges_frozen_defaults f
+		JOIN organizations o ON o.id = f.organization_id
+		ORDER BY f.organization_id, f.field_name`
+
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("%s: query: %w", op, err)
+	}
+	defer rows.Close()
+
+	result := make([]gesreport.FrozenDefault, 0)
+	for rows.Next() {
+		var fd gesreport.FrozenDefault
+		var cascadeID sql.NullInt64
+		if err := rows.Scan(
+			&fd.OrganizationID,
+			&cascadeID,
+			&fd.FieldName,
+			&fd.FrozenValue,
+			&fd.FrozenAt,
+			&fd.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("%s: scan: %w", op, err)
+		}
+		if cascadeID.Valid {
+			id := cascadeID.Int64
+			fd.CascadeID = &id
+		}
+		result = append(result, fd)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: rows: %w", op, err)
+	}
+	return result, nil
 }

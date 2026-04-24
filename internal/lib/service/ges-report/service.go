@@ -22,6 +22,7 @@ type Repository interface {
 	GetGESPlansForReport(ctx context.Context, year int, months []int) ([]model.PlanRow, error)
 	GetIdleDischargesForDate(ctx context.Context, start, end time.Time) ([]model.IdleDischargeRow, error)
 	GetCascadeDailyWeatherBatch(ctx context.Context, orgIDs []int64, dates []string) (map[model.CascadeWeatherKey]*model.CascadeWeather, error)
+	GetFrozenDefaults(ctx context.Context) (map[int64]map[string]float64, error)
 }
 
 // Service assembles the GES daily report.
@@ -96,6 +97,18 @@ func (s *Service) BuildDailyReport(ctx context.Context, date string, cascadeOrgI
 	if err != nil {
 		return nil, fmt.Errorf("GetIdleDischargesForDate: %w", err)
 	}
+
+	frozenMap, err := s.repo.GetFrozenDefaults(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("GetFrozenDefaults: %w", err)
+	}
+
+	// Overlay frozen defaults BEFORE building the lookup maps so previous_day,
+	// previous_year, and current snapshots all see the same frozen values.
+	// See plan §2.7 for semantics.
+	todayData = applyFrozenSlice(todayData, frozenMap)
+	yesterdayData = applyFrozenSlice(yesterdayData, frozenMap)
+	prevYearData = applyFrozenSlice(prevYearData, frozenMap)
 
 	// Collect unique cascade org IDs from todayData for batch weather lookup.
 	cascadeOrgIDSet := make(map[int64]struct{})
