@@ -124,6 +124,7 @@ import (
 	receptionGetById "srmt-admin/internal/http-server/handlers/reception/get-by-id"
 	"srmt-admin/internal/http-server/handlers/reports"
 	reservoirdevicesummary "srmt-admin/internal/http-server/handlers/reservoir-device-summary"
+	reservoirfloodhandler "srmt-admin/internal/http-server/handlers/reservoir-flood"
 	reservoirsummary "srmt-admin/internal/http-server/handlers/reservoir-summary"
 	reservoirsummaryhourly "srmt-admin/internal/http-server/handlers/reservoir-summary-hourly"
 	resAdd "srmt-admin/internal/http-server/handlers/reservoirs/add"
@@ -479,9 +480,6 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			// Calendar
 			r.Get("/calendar/events", calendar.Get(deps.Log, deps.PgRepo, loc))
 
-			// Level Volume
-			r.Get("/level-volume", levelVolumeGet.New(deps.Log, deps.PgRepo))
-
 			r.Get("/reservoir-device", reservoirdevicesummary.Get(deps.Log, deps.PgRepo))
 			r.Patch("/reservoir-device", reservoirdevicesummary.Patch(deps.Log, deps.PgRepo))
 
@@ -540,6 +538,29 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 				filterExcelGen.New(),
 				loc,
 			))
+		})
+
+		// Level Volume — sc/rais plus reservoir/reservoir_duty (read-only).
+		r.Group(func(r chi.Router) {
+			r.Use(mwauth.RequireAnyRole("sc", "rais", "reservoir", "reservoir_duty"))
+			r.Get("/level-volume", levelVolumeGet.New(deps.Log, deps.PgRepo))
+		})
+
+		// Reservoir Flood (hourly observations + per-org config).
+		r.Route("/reservoir-flood", func(r chi.Router) {
+			// Tier 1: read + write hourly data + read config.
+			r.Group(func(r chi.Router) {
+				r.Use(mwauth.RequireAnyRole("sc", "rais", "reservoir_duty"))
+				r.Get("/hourly", reservoirfloodhandler.GetHourly(deps.Log, deps.PgRepo))
+				r.Post("/hourly", reservoirfloodhandler.UpsertHourly(deps.Log, deps.PgRepo))
+				r.Get("/config", reservoirfloodhandler.GetConfigs(deps.Log, deps.PgRepo))
+			})
+			// Tier 2: config write — sc/rais only.
+			r.Group(func(r chi.Router) {
+				r.Use(mwauth.RequireAnyRole("sc", "rais"))
+				r.Post("/config", reservoirfloodhandler.UpsertConfig(deps.Log, deps.PgRepo))
+				r.Delete("/config", reservoirfloodhandler.DeleteConfig(deps.Log, deps.PgRepo))
+			})
 		})
 
 		// Shutdowns — cascade role may manage shutdowns within its own cascade
