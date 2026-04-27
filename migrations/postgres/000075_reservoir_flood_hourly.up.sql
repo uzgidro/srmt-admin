@@ -11,7 +11,7 @@ CREATE TABLE reservoir_flood_hourly (
     id                   BIGSERIAL PRIMARY KEY,
     organization_id      BIGINT      NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     recorded_at          TIMESTAMPTZ NOT NULL,
-    water_level_m        NUMERIC,
+    water_level_m        NUMERIC CHECK (water_level_m >= 0),
     water_volume_mln_m3  NUMERIC CHECK (water_volume_mln_m3 >= 0),
     inflow_m3s           NUMERIC CHECK (inflow_m3s >= 0),
     outflow_m3s          NUMERIC CHECK (outflow_m3s >= 0),

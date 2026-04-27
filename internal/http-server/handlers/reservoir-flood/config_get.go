@@ -23,6 +23,19 @@ func GetConfigs(log *slog.Logger, repo ConfigGetter) http.HandlerFunc {
 		const op = "handlers.reservoir-flood.GetConfigs"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
 
+		// Reject broken-account state (non-admin without org) BEFORE the repo,
+		// symmetric with the upsert path. Returning 200 with [] would silently
+		// mask a misconfigured user.
+		if !callerIsAdmin(r.Context()) {
+			claims, ok := mwauth.ClaimsFromContext(r.Context())
+			if !ok || claims == nil || claims.OrganizationID == 0 {
+				log.Warn("non-admin caller without organization id")
+				render.Status(r, http.StatusForbidden)
+				render.JSON(w, r, resp.Forbidden("user has no organization assigned"))
+				return
+			}
+		}
+
 		configs, err := repo.GetAllReservoirFloodConfigs(r.Context())
 		if err != nil {
 			log.Error("failed to get configs", sl.Err(err))
@@ -39,6 +52,10 @@ func GetConfigs(log *slog.Logger, repo ConfigGetter) http.HandlerFunc {
 	}
 }
 
+// filterConfigsForCaller restricts the response to configs the caller is
+// allowed to see. sc/rais see everything. Other roles (typically
+// reservoir_duty) see only their own org's config. The handler MUST have
+// already enforced claims.OrganizationID != 0 for non-admins — see GetConfigs.
 func filterConfigsForCaller(ctx context.Context, list []model.Config) []model.Config {
 	claims, ok := mwauth.ClaimsFromContext(ctx)
 	if !ok || claims == nil {
@@ -48,9 +65,6 @@ func filterConfigsForCaller(ctx context.Context, list []model.Config) []model.Co
 		if role == "sc" || role == "rais" {
 			return list
 		}
-	}
-	if claims.OrganizationID == 0 {
-		return []model.Config{}
 	}
 	out := make([]model.Config, 0, len(list))
 	for _, c := range list {

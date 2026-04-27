@@ -54,6 +54,19 @@ func GetHourly(log *slog.Logger, repo HourlyGetter) http.HandlerFunc {
 			orgIDs = []int64{id}
 		}
 
+		// Reject broken-account state (non-admin without org) BEFORE the repo,
+		// symmetric with the upsert path which uses auth.CheckOrgAccessBatch.
+		// Returning 200 with [] would silently mask a misconfigured user.
+		if !callerIsAdmin(r.Context()) {
+			claims, ok := mwauth.ClaimsFromContext(r.Context())
+			if !ok || claims == nil || claims.OrganizationID == 0 {
+				log.Warn("non-admin caller without organization id")
+				render.Status(r, http.StatusForbidden)
+				render.JSON(w, r, resp.Forbidden("user has no organization assigned"))
+				return
+			}
+		}
+
 		records, err := repo.GetReservoirFloodHourlyRange(r.Context(), orgIDs, start, end)
 		if err != nil {
 			log.Error("failed to get hourly range", sl.Err(err))
@@ -69,6 +82,11 @@ func GetHourly(log *slog.Logger, repo HourlyGetter) http.HandlerFunc {
 	}
 }
 
+// filterRecordsForCaller restricts the response to records the caller is
+// allowed to see. sc/rais see everything. Other roles (typically
+// reservoir_duty) see only records for their own org. The handler MUST have
+// already enforced claims.OrganizationID != 0 before calling this for
+// non-admin roles — see GetHourly.
 func filterRecordsForCaller(ctx context.Context, list []model.HourlyRecord) []model.HourlyRecord {
 	claims, ok := mwauth.ClaimsFromContext(ctx)
 	if !ok || claims == nil {
@@ -78,9 +96,6 @@ func filterRecordsForCaller(ctx context.Context, list []model.HourlyRecord) []mo
 		if role == "sc" || role == "rais" {
 			return list
 		}
-	}
-	if claims.OrganizationID == 0 {
-		return []model.HourlyRecord{}
 	}
 	out := make([]model.HourlyRecord, 0, len(list))
 	for _, rec := range list {

@@ -10,6 +10,7 @@ import (
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
 	model "srmt-admin/internal/lib/model/reservoir-flood"
+	"srmt-admin/internal/lib/service/auth"
 	"srmt-admin/internal/storage"
 
 	"github.com/go-chi/chi/v5/middleware"
@@ -30,7 +31,10 @@ func UpsertConfig(log *slog.Logger, repo ConfigUpserter) http.HandlerFunc {
 		// Defence-in-depth: route-level Tier 2 (sc/rais) is the primary gate,
 		// but reject reservoir_duty here too in case wiring drifts.
 		if !callerIsAdmin(r.Context()) {
-			log.Warn("non-admin role attempted to upsert config")
+			userID, _ := auth.GetUserID(r.Context())
+			log.Warn("non-admin attempted config upsert",
+				slog.Int64("user_id", userID),
+			)
 			render.Status(r, http.StatusForbidden)
 			render.JSON(w, r, resp.Forbidden("only sc/rais may modify config"))
 			return

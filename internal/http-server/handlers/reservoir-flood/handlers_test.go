@@ -371,3 +371,50 @@ func TestGetConfigs_OK(t *testing.T) {
 		t.Errorf("want 1 config, got %d", len(got))
 	}
 }
+
+// ===== Regression tests for review findings =====
+
+// Water level negative must be rejected (regression for security review RISK-1).
+// water_level_m uses Baltic height datum and is always positive in operational
+// contexts. The handler MUST reject negative values like every other metric.
+func TestUpsertHourly_NegativeWaterLevel_BadRequest(t *testing.T) {
+	repo := &captureRepo{}
+	body := `[{"organization_id": 42, "recorded_at": "2026-04-27T15:00:00Z", "water_level_m": -1.0}]`
+	rr := doRequest(t, repo, scClaims(), http.MethodPost, "/reservoir-flood/hourly", body)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status: want 400, got %d, body: %s", rr.Code, rr.Body.String())
+	}
+	if len(repo.upsertHourlyItems) != 0 {
+		t.Errorf("repo MUST NOT be called on negative water_level_m; got %d items", len(repo.upsertHourlyItems))
+	}
+}
+
+// Broken-account state (non-admin without org) on GET /hourly must yield 403,
+// not silently empty 200. Regression for security review RISK-2.
+func TestGetHourly_DutyNoOrgID_Forbidden(t *testing.T) {
+	repo := &captureRepo{
+		hourlyRangeResult: []model.HourlyRecord{
+			{ID: 1, OrganizationID: 42, RecordedAt: time.Date(2026, 4, 27, 15, 0, 0, 0, time.UTC)},
+		},
+	}
+	// duty user with OrganizationID = 0 (broken DB setup).
+	claims := &token.Claims{UserID: 10, OrganizationID: 0, Roles: []string{"reservoir_duty"}}
+	rr := doRequest(t, repo, claims, http.MethodGet, "/reservoir-flood/hourly?date=2026-04-27", "")
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("status: want 403, got %d, body: %s", rr.Code, rr.Body.String())
+	}
+}
+
+// Same regression but on GET /config.
+func TestGetConfigs_DutyNoOrgID_Forbidden(t *testing.T) {
+	repo := &captureRepo{
+		configList: []model.Config{
+			{ID: 1, OrganizationID: 42, OrganizationName: "Charvak", SortOrder: 1, IsActive: true},
+		},
+	}
+	claims := &token.Claims{UserID: 10, OrganizationID: 0, Roles: []string{"reservoir_duty"}}
+	rr := doRequest(t, repo, claims, http.MethodGet, "/reservoir-flood/config", "")
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("status: want 403, got %d, body: %s", rr.Code, rr.Body.String())
+	}
+}

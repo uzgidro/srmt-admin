@@ -119,8 +119,14 @@ func UpsertHourly(log *slog.Logger, repo HourlyUpserter) http.HandlerFunc {
 }
 
 // negativeMetric returns the field name of the first negative metric (if any),
-// or "" when all metrics are non-negative or absent.
+// or "" when all metrics are non-negative or absent. Covers all 7 numeric
+// fields in lockstep with the DB CHECK constraints in migration 000075.
+// water_level_m uses the Baltic height datum (always positive in operational
+// contexts); negative values indicate corrupt input from the frontend.
 func negativeMetric(it model.UpsertHourlyRequest) string {
+	if v := it.WaterLevelM.Value; v != nil && *v < 0 {
+		return "water_level_m"
+	}
 	if v := it.WaterVolumeMlnM3.Value; v != nil && *v < 0 {
 		return "water_volume_mln_m3"
 	}

@@ -9,6 +9,7 @@ import (
 
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
+	"srmt-admin/internal/lib/service/auth"
 	"srmt-admin/internal/storage"
 
 	"github.com/go-chi/chi/v5/middleware"
@@ -25,6 +26,13 @@ func DeleteConfig(log *slog.Logger, repo ConfigDeleter) http.HandlerFunc {
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
 
 		if !callerIsAdmin(r.Context()) {
+			// Audit trail for the most destructive endpoint: log the user id
+			// (extracted best-effort) so a privilege-escalation attempt is
+			// visible in incident analysis.
+			userID, _ := auth.GetUserID(r.Context())
+			log.Warn("non-admin attempted config delete",
+				slog.Int64("user_id", userID),
+			)
 			render.Status(r, http.StatusForbidden)
 			render.JSON(w, r, resp.Forbidden("only sc/rais may modify config"))
 			return

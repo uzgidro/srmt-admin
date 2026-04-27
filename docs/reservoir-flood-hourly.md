@@ -214,7 +214,7 @@ GET /reservoir-flood/hourly?date=2026-04-27&organization_id=42
 DELETE /reservoir-flood/config?organization_id=42
 ```
 
-**Response 204** No Content. Тело пустое. Идемпотентно: если записи не было — всё равно 204.
+**Response 204** No Content. Тело пустое.
 
 **Errors:**
 
@@ -223,7 +223,10 @@ DELETE /reservoir-flood/config?organization_id=42
 | 400 | `organization_id` отсутствует или невалидный | `{"error": "invalid organization_id"}` |
 | 401 | Нет/протух токен | `{"error": "unauthorized"}` |
 | 403 | Не sc/rais | `{"error": "forbidden"}` |
+| 404 | Записи с таким `organization_id` нет | `{"error": "config not found"}` |
 | 500 | Ошибка БД | `{"error": "internal server error"}` |
+
+> **Примечание:** DELETE НЕ идемпотентен — повторный запрос на уже удалённый `organization_id` вернёт **404**. Фронту обработать этот кейс (показать toast «уже удалено» или просто скрыть строку из UI).
 
 ### 6. `GET /level-volume`
 
