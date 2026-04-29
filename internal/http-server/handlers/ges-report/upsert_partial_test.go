@@ -420,3 +420,78 @@ func isNilPtr(v any) bool {
 	}
 	return false
 }
+
+// --- own_consumption_kwh: Optional[float64] field tests ---
+//
+// own_consumption_kwh joins the daily_production / aggregates / water family
+// in ges_daily_data. Three-state Optional semantics MUST hold so the frontend
+// can distinguish "preserve current DB value" from "explicit clear" from
+// "set to N". Negatives must be rejected at the handler before they reach SQL.
+
+// Absent → Optional.Set=false, Value=nil (preserve-DB on the upsert side).
+func TestUpsertGESDailyData_OwnConsumption_AbsentPreserved(t *testing.T) {
+	upserter := &captureGESUpserter{}
+	body := `[{"organization_id": 100, "date": "2026-04-13"}]`
+	rr := doGESUpsert(t, upserter, body)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d; body: %s", rr.Code, rr.Body.String())
+	}
+	if len(upserter.last) != 1 {
+		t.Fatalf("captured items: want 1, got %d", len(upserter.last))
+	}
+	item := upserter.last[0]
+	if item.OwnConsumptionKWh.Set {
+		t.Errorf("OwnConsumptionKWh.Set = true, want false (absent)")
+	}
+	if item.OwnConsumptionKWh.Value != nil {
+		t.Errorf("OwnConsumptionKWh.Value = %v, want nil (absent)", *item.OwnConsumptionKWh.Value)
+	}
+}
+
+// Explicit null → Optional.Set=true, Value=nil. Repo SQL CASE WHEN $N::boolean
+// will COALESCE to 0 (clear semantics).
+func TestUpsertGESDailyData_OwnConsumption_NullClears(t *testing.T) {
+	upserter := &captureGESUpserter{}
+	body := `[{"organization_id": 100, "date": "2026-04-13", "own_consumption_kwh": null}]`
+	rr := doGESUpsert(t, upserter, body)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d; body: %s", rr.Code, rr.Body.String())
+	}
+	item := upserter.last[0]
+	if !item.OwnConsumptionKWh.Set {
+		t.Errorf("OwnConsumptionKWh.Set = false, want true (explicit null)")
+	}
+	if item.OwnConsumptionKWh.Value != nil {
+		t.Errorf("OwnConsumptionKWh.Value = %v, want nil (explicit null)", *item.OwnConsumptionKWh.Value)
+	}
+}
+
+// Concrete value → stored verbatim.
+func TestUpsertGESDailyData_OwnConsumption_Stored(t *testing.T) {
+	upserter := &captureGESUpserter{}
+	body := `[{"organization_id": 100, "date": "2026-04-13", "own_consumption_kwh": 1250.5}]`
+	rr := doGESUpsert(t, upserter, body)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d; body: %s", rr.Code, rr.Body.String())
+	}
+	item := upserter.last[0]
+	if !item.OwnConsumptionKWh.Set || item.OwnConsumptionKWh.Value == nil || *item.OwnConsumptionKWh.Value != 1250.5 {
+		t.Errorf("OwnConsumptionKWh = %+v, want set with 1250.5", item.OwnConsumptionKWh)
+	}
+}
+
+// Negative own_consumption_kwh — generation cannot be negative; the handler
+// MUST reject before any repo call. Mirrors the pattern used for aggregate
+// fields (working/repair/modernization) and prevents bad data from landing
+// even if the DB CHECK constraint were ever relaxed.
+func TestUpsertGESDailyData_NegativeOwnConsumption_BadRequest(t *testing.T) {
+	upserter := &captureGESUpserter{}
+	body := `[{"organization_id": 100, "date": "2026-04-13", "own_consumption_kwh": -5.0}]`
+	rr := doGESUpsert(t, upserter, body)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status: want 400, got %d; body: %s", rr.Code, rr.Body.String())
+	}
+	if len(upserter.last) != 0 {
+		t.Errorf("repo MUST NOT be called on negative own_consumption_kwh; got %d items", len(upserter.last))
+	}
+}
