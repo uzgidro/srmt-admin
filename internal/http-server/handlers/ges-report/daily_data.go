@@ -236,6 +236,9 @@ func validateAggregates(
 		if msg, ok := checkNonNegative("modernization_aggregates", item.OrganizationID, item.ModernizationAggregates); !ok {
 			return http.StatusBadRequest, msg, nil
 		}
+		if msg, ok := checkNonNegativeFloat("own_consumption_kwh", item.OrganizationID, item.OwnConsumptionKWh); !ok {
+			return http.StatusBadRequest, msg, nil
+		}
 	}
 
 	// 2. Sum check requires totals from ges_config and current DB values for
@@ -385,6 +388,18 @@ func checkNonNegative(field string, orgID int64, o optional.Optional[int]) (stri
 	}
 	if *o.Value < 0 {
 		return fmt.Sprintf("%s must be >= 0 for organization_id=%d, got %d", field, orgID, *o.Value), false
+	}
+	return "", true
+}
+
+// checkNonNegativeFloat is the float64 analog of checkNonNegative, used by
+// own_consumption_kwh. Absent and null pass through.
+func checkNonNegativeFloat(field string, orgID int64, o optional.Optional[float64]) (string, bool) {
+	if !o.Set || o.Value == nil {
+		return "", true
+	}
+	if *o.Value < 0 {
+		return fmt.Sprintf("%s must be >= 0 for organization_id=%d, got %g", field, orgID, *o.Value), false
 	}
 	return "", true
 }

@@ -145,6 +145,7 @@ import (
 	"srmt-admin/internal/http-server/handlers/signatures"
 	snowCover "srmt-admin/internal/http-server/handlers/snow-cover"
 	snowCoverGet "srmt-admin/internal/http-server/handlers/snow-cover/get"
+	solarhandler "srmt-admin/internal/http-server/handlers/solar"
 	"srmt-admin/internal/http-server/handlers/telegram/gidro/test"
 	usersAdd "srmt-admin/internal/http-server/handlers/users/add"
 	assignRole "srmt-admin/internal/http-server/handlers/users/assign-role"
@@ -560,6 +561,25 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 				r.Use(mwauth.RequireAnyRole("sc", "rais"))
 				r.Post("/config", reservoirfloodhandler.UpsertConfig(deps.Log, deps.PgRepo))
 				r.Delete("/config", reservoirfloodhandler.DeleteConfig(deps.Log, deps.PgRepo))
+			})
+		})
+
+		// Solar (daily generation + per-org config + monthly plans).
+		r.Route("/solar", func(r chi.Router) {
+			// Tier 1: read + write daily data + read config + read plans.
+			r.Group(func(r chi.Router) {
+				r.Use(mwauth.RequireAnyRole("sc", "rais", "cascade"))
+				r.Get("/daily-data", solarhandler.GetDailyData(deps.Log, deps.PgRepo))
+				r.Post("/daily-data", solarhandler.UpsertDailyData(deps.Log, deps.PgRepo))
+				r.Get("/config", solarhandler.GetConfigs(deps.Log, deps.PgRepo))
+				r.Get("/plans", solarhandler.GetPlans(deps.Log, deps.PgRepo))
+			})
+			// Tier 2: config write + plan write — sc/rais only.
+			r.Group(func(r chi.Router) {
+				r.Use(mwauth.RequireAnyRole("sc", "rais"))
+				r.Post("/config", solarhandler.UpsertConfig(deps.Log, deps.PgRepo))
+				r.Delete("/config", solarhandler.DeleteConfig(deps.Log, deps.PgRepo))
+				r.Post("/plans", solarhandler.BulkUpsertPlan(deps.Log, deps.PgRepo))
 			})
 		})
 

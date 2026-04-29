@@ -64,6 +64,7 @@ type DailyData struct {
 	ReservoirIncomeM3s      *float64 `json:"reservoir_income_m3s"`
 	TotalOutflowM3s         *float64 `json:"total_outflow_m3s"`
 	GESFlowM3s              *float64 `json:"ges_flow_m3s"`
+	OwnConsumptionKWh       *float64 `json:"own_consumption_kwh"`
 }
 
 type UpsertDailyDataRequest struct {
@@ -79,6 +80,7 @@ type UpsertDailyDataRequest struct {
 	ReservoirIncomeM3s      optional.Optional[float64] `json:"reservoir_income_m3s"`
 	TotalOutflowM3s         optional.Optional[float64] `json:"total_outflow_m3s"`
 	GESFlowM3s              optional.Optional[float64] `json:"ges_flow_m3s"`
+	OwnConsumptionKWh       optional.Optional[float64] `json:"own_consumption_kwh"`
 }
 
 // UpsertCascadeDailyWeatherRequest is the body item for manual weather corrections
@@ -213,8 +215,10 @@ type DiffData struct {
 }
 
 type Aggregations struct {
-	MTDProductionMlnKWh float64 `json:"mtd_production_mln_kwh"`
-	YTDProductionMlnKWh float64 `json:"ytd_production_mln_kwh"`
+	MTDProductionMlnKWh  float64 `json:"mtd_production_mln_kwh"`
+	YTDProductionMlnKWh  float64 `json:"ytd_production_mln_kwh"`
+	MTDOwnConsumptionKWh float64 `json:"mtd_own_consumption_kwh"`
+	YTDOwnConsumptionKWh float64 `json:"ytd_own_consumption_kwh"`
 }
 
 type PlanData struct {
@@ -297,11 +301,13 @@ type RawDailyRow struct {
 }
 
 type ProductionAggregation struct {
-	OrganizationID int64
-	MTD            float64
-	YTD            float64
-	PrevYearMTD    float64
-	PrevYearYTD    float64
+	OrganizationID       int64
+	MTD                  float64
+	YTD                  float64
+	PrevYearMTD          float64
+	PrevYearYTD          float64
+	MTDOwnConsumptionKWh float64
+	YTDOwnConsumptionKWh float64
 }
 
 type PlanRow struct {
@@ -375,11 +381,11 @@ type FrozenDefault struct {
 
 type UpsertFrozenDefaultRequest struct {
 	OrganizationID int64   `json:"organization_id" validate:"required"`
-	FieldName      string  `json:"field_name" validate:"required,oneof=daily_production_mln_kwh working_aggregates repair_aggregates modernization_aggregates water_level_m water_volume_mln_m3 water_head_m reservoir_income_m3s total_outflow_m3s ges_flow_m3s"`
+	FieldName      string  `json:"field_name" validate:"required,oneof=daily_production_mln_kwh working_aggregates repair_aggregates modernization_aggregates water_level_m water_volume_mln_m3 water_head_m reservoir_income_m3s total_outflow_m3s ges_flow_m3s own_consumption_kwh"`
 	FrozenValue    float64 `json:"frozen_value" validate:"gte=0"`
 }
 
 type DeleteFrozenDefaultRequest struct {
 	OrganizationID int64  `json:"organization_id" validate:"required"`
-	FieldName      string `json:"field_name" validate:"required,oneof=daily_production_mln_kwh working_aggregates repair_aggregates modernization_aggregates water_level_m water_volume_mln_m3 water_head_m reservoir_income_m3s total_outflow_m3s ges_flow_m3s"`
+	FieldName      string `json:"field_name" validate:"required,oneof=daily_production_mln_kwh working_aggregates repair_aggregates modernization_aggregates water_level_m water_volume_mln_m3 water_head_m reservoir_income_m3s total_outflow_m3s ges_flow_m3s own_consumption_kwh"`
 }

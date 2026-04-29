@@ -138,11 +138,13 @@ func TestBuildReport_SingleStation(t *testing.T) {
 		prevYearData:  nil,
 		aggregations: []model.ProductionAggregation{
 			{
-				OrganizationID: orgID,
-				MTD:            50.0,
-				YTD:            200.0,
-				PrevYearMTD:    45.0,
-				PrevYearYTD:    160.0,
+				OrganizationID:       orgID,
+				MTD:                  50.0,
+				YTD:                  200.0,
+				PrevYearMTD:          45.0,
+				PrevYearYTD:          160.0,
+				MTDOwnConsumptionKWh: 1234.5,
+				YTDOwnConsumptionKWh: 9876.5,
 			},
 		},
 		// Quarter for March: months 1,2,3 — plan per month = 100
@@ -187,6 +189,17 @@ func TestBuildReport_SingleStation(t *testing.T) {
 	}
 	if !approxEqual(st.Aggregations.YTDProductionMlnKWh, 200.0) {
 		t.Errorf("YTD: got %.4f, want 200.0", st.Aggregations.YTDProductionMlnKWh)
+	}
+
+	// own_consumption MTD/YTD must flow from ProductionAggregation through
+	// the service into the response Aggregations block. The repo sets the
+	// SQL SUM result; the service maps it onto the response struct without
+	// transformation. This is the only end-to-end test of that path.
+	if !approxEqual(st.Aggregations.MTDOwnConsumptionKWh, 1234.5) {
+		t.Errorf("MTD own_consumption: got %.4f, want 1234.5", st.Aggregations.MTDOwnConsumptionKWh)
+	}
+	if !approxEqual(st.Aggregations.YTDOwnConsumptionKWh, 9876.5) {
+		t.Errorf("YTD own_consumption: got %.4f, want 9876.5", st.Aggregations.YTDOwnConsumptionKWh)
 	}
 
 	// Plan

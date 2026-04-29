@@ -304,8 +304,10 @@ func (s *Service) computeStation(
 	// Aggregations.
 	agg := aggMap[row.OrganizationID]
 	aggregations := model.Aggregations{
-		MTDProductionMlnKWh: agg.MTD,
-		YTDProductionMlnKWh: agg.YTD,
+		MTDProductionMlnKWh:  agg.MTD,
+		YTDProductionMlnKWh:  agg.YTD,
+		MTDOwnConsumptionKWh: agg.MTDOwnConsumptionKWh,
+		YTDOwnConsumptionKWh: agg.YTDOwnConsumptionKWh,
 	}
 
 	// Plan.
