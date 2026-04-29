@@ -372,6 +372,7 @@ func (r *Repo) UpsertGESDailyData(ctx context.Context, items []gesreport.UpsertD
 			repair_aggregates, modernization_aggregates,
 			water_level_m, water_volume_mln_m3, water_head_m,
 			reservoir_income_m3s, total_outflow_m3s, ges_flow_m3s,
+			own_consumption_kwh,
 			created_by_user_id, updated_by_user_id, created_at, updated_at
 		) VALUES (
 			$1, $2::date,
@@ -379,39 +380,43 @@ func (r *Repo) UpsertGESDailyData(ctx context.Context, items []gesreport.UpsertD
 			COALESCE($5, 0), COALESCE($6, 0),
 			$7, $8, $9,
 			$10, $11, $12,
-			$13, $13, NOW(), NOW()
+			$13,
+			$14, $14, NOW(), NOW()
 		)
 		ON CONFLICT (organization_id, date) DO UPDATE SET
-			daily_production_mln_kwh = CASE WHEN $14::boolean
+			daily_production_mln_kwh = CASE WHEN $15::boolean
 				THEN COALESCE(EXCLUDED.daily_production_mln_kwh, 0::numeric)
 				ELSE ges_daily_data.daily_production_mln_kwh END,
-			working_aggregates = CASE WHEN $15::boolean
+			working_aggregates = CASE WHEN $16::boolean
 				THEN COALESCE(EXCLUDED.working_aggregates, 0)
 				ELSE ges_daily_data.working_aggregates END,
-			repair_aggregates = CASE WHEN $16::boolean
+			repair_aggregates = CASE WHEN $17::boolean
 				THEN COALESCE(EXCLUDED.repair_aggregates, 0)
 				ELSE ges_daily_data.repair_aggregates END,
-			modernization_aggregates = CASE WHEN $17::boolean
+			modernization_aggregates = CASE WHEN $18::boolean
 				THEN COALESCE(EXCLUDED.modernization_aggregates, 0)
 				ELSE ges_daily_data.modernization_aggregates END,
-			water_level_m = CASE WHEN $18::boolean
+			water_level_m = CASE WHEN $19::boolean
 				THEN EXCLUDED.water_level_m
 				ELSE ges_daily_data.water_level_m END,
-			water_volume_mln_m3 = CASE WHEN $19::boolean
+			water_volume_mln_m3 = CASE WHEN $20::boolean
 				THEN EXCLUDED.water_volume_mln_m3
 				ELSE ges_daily_data.water_volume_mln_m3 END,
-			water_head_m = CASE WHEN $20::boolean
+			water_head_m = CASE WHEN $21::boolean
 				THEN EXCLUDED.water_head_m
 				ELSE ges_daily_data.water_head_m END,
-			reservoir_income_m3s = CASE WHEN $21::boolean
+			reservoir_income_m3s = CASE WHEN $22::boolean
 				THEN EXCLUDED.reservoir_income_m3s
 				ELSE ges_daily_data.reservoir_income_m3s END,
-			total_outflow_m3s = CASE WHEN $22::boolean
+			total_outflow_m3s = CASE WHEN $23::boolean
 				THEN EXCLUDED.total_outflow_m3s
 				ELSE ges_daily_data.total_outflow_m3s END,
-			ges_flow_m3s = CASE WHEN $23::boolean
+			ges_flow_m3s = CASE WHEN $24::boolean
 				THEN EXCLUDED.ges_flow_m3s
 				ELSE ges_daily_data.ges_flow_m3s END,
+			own_consumption_kwh = CASE WHEN $25::boolean
+				THEN EXCLUDED.own_consumption_kwh
+				ELSE ges_daily_data.own_consumption_kwh END,
 			updated_by_user_id = EXCLUDED.updated_by_user_id,
 			updated_at = NOW()`
 
@@ -429,17 +434,19 @@ func (r *Repo) UpsertGESDailyData(ctx context.Context, items []gesreport.UpsertD
 			item.ReservoirIncomeM3s.Value,      // $10
 			item.TotalOutflowM3s.Value,         // $11
 			item.GESFlowM3s.Value,              // $12
-			userID,                             // $13
-			item.DailyProductionMlnKWh.Set,     // $14
-			item.WorkingAggregates.Set,         // $15
-			item.RepairAggregates.Set,          // $16
-			item.ModernizationAggregates.Set,   // $17
-			item.WaterLevelM.Set,               // $18
-			item.WaterVolumeMlnM3.Set,          // $19
-			item.WaterHeadM.Set,                // $20
-			item.ReservoirIncomeM3s.Set,        // $21
-			item.TotalOutflowM3s.Set,           // $22
-			item.GESFlowM3s.Set,                // $23
+			item.OwnConsumptionKWh.Value,       // $13
+			userID,                             // $14
+			item.DailyProductionMlnKWh.Set,     // $15
+			item.WorkingAggregates.Set,         // $16
+			item.RepairAggregates.Set,          // $17
+			item.ModernizationAggregates.Set,   // $18
+			item.WaterLevelM.Set,               // $19
+			item.WaterVolumeMlnM3.Set,          // $20
+			item.WaterHeadM.Set,                // $21
+			item.ReservoirIncomeM3s.Set,        // $22
+			item.TotalOutflowM3s.Set,           // $23
+			item.GESFlowM3s.Set,                // $24
+			item.OwnConsumptionKWh.Set,         // $25
 		)
 		if err != nil {
 			if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
@@ -579,7 +586,8 @@ func (r *Repo) GetGESDailyData(ctx context.Context, organizationID int64, date s
 			daily_production_mln_kwh, working_aggregates,
 			COALESCE(repair_aggregates, 0), COALESCE(modernization_aggregates, 0),
 			water_level_m, water_volume_mln_m3, water_head_m,
-			reservoir_income_m3s, total_outflow_m3s, ges_flow_m3s
+			reservoir_income_m3s, total_outflow_m3s, ges_flow_m3s,
+			own_consumption_kwh
 		FROM ges_daily_data
 		WHERE organization_id = $1 AND date = $2::date`
 
@@ -598,6 +606,7 @@ func (r *Repo) GetGESDailyData(ctx context.Context, organizationID int64, date s
 		&d.ReservoirIncomeM3s,
 		&d.TotalOutflowM3s,
 		&d.GESFlowM3s,
+		&d.OwnConsumptionKWh,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -768,7 +777,11 @@ func (r *Repo) GetGESProductionAggregations(ctx context.Context, date string) ([
 			         THEN daily_production_mln_kwh ELSE 0 END) AS prev_year_mtd,
 			SUM(CASE WHEN date >= DATE_TRUNC('year', ($1::date - INTERVAL '1 year'))
 			          AND date <= ($1::date - INTERVAL '1 year')
-			         THEN daily_production_mln_kwh ELSE 0 END) AS prev_year_ytd
+			         THEN daily_production_mln_kwh ELSE 0 END) AS prev_year_ytd,
+			SUM(CASE WHEN date >= DATE_TRUNC('month', $1::date) AND date <= $1::date
+			         THEN COALESCE(own_consumption_kwh, 0) ELSE 0 END) AS mtd_own_consumption_kwh,
+			SUM(CASE WHEN date >= DATE_TRUNC('year', $1::date) AND date <= $1::date
+			         THEN COALESCE(own_consumption_kwh, 0) ELSE 0 END) AS ytd_own_consumption_kwh
 		FROM ges_daily_data
 		WHERE date >= DATE_TRUNC('year', ($1::date - INTERVAL '1 year'))
 		  AND date <= $1::date
@@ -789,6 +802,8 @@ func (r *Repo) GetGESProductionAggregations(ctx context.Context, date string) ([
 			&agg.YTD,
 			&agg.PrevYearMTD,
 			&agg.PrevYearYTD,
+			&agg.MTDOwnConsumptionKWh,
+			&agg.YTDOwnConsumptionKWh,
 		); err != nil {
 			return nil, fmt.Errorf("%s: scan: %w", op, err)
 		}
