@@ -167,6 +167,10 @@ func (r *Repo) GetSolarDailyDataRange(ctx context.Context, orgIDs []int64, start
 		err  error
 	)
 
+	// Half-open window [start, end). Caller passes end = start + 24h for a
+	// single-day query; the strict `<` upper bound prevents Postgres' date
+	// cast of the end timestamp from inadvertently including the next
+	// calendar day.
 	if len(orgIDs) == 0 {
 		const query = `
 			SELECT d.id, d.organization_id, COALESCE(o.name, ''),
@@ -176,7 +180,7 @@ func (r *Repo) GetSolarDailyDataRange(ctx context.Context, orgIDs []int64, start
 			FROM solar_daily_data d
 			JOIN solar_config c ON c.organization_id = d.organization_id
 			LEFT JOIN organizations o ON o.id = d.organization_id
-			WHERE d.date >= $1::date AND d.date <= $2::date
+			WHERE d.date >= $1::date AND d.date < $2::date
 			ORDER BY d.organization_id, d.date`
 		rows, err = r.db.QueryContext(ctx, query, start, end)
 	} else {
@@ -187,7 +191,7 @@ func (r *Repo) GetSolarDailyDataRange(ctx context.Context, orgIDs []int64, start
 			       d.updated_at
 			FROM solar_daily_data d
 			LEFT JOIN organizations o ON o.id = d.organization_id
-			WHERE d.date >= $1::date AND d.date <= $2::date
+			WHERE d.date >= $1::date AND d.date < $2::date
 			  AND d.organization_id = ANY($3)
 			ORDER BY d.organization_id, d.date`
 		rows, err = r.db.QueryContext(ctx, query, start, end, pq.Array(orgIDs))
