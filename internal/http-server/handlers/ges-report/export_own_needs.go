@@ -3,9 +3,13 @@ package gesreport
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"time"
 
 	"github.com/go-chi/chi/v5/middleware"
@@ -54,6 +58,16 @@ func ExportOwnNeeds(
 			return
 		}
 
+		format := r.URL.Query().Get("format")
+		if format == "" {
+			format = "excel"
+		}
+		if format != "excel" && format != "pdf" {
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, resp.BadRequest("invalid format, expected 'excel' or 'pdf'"))
+			return
+		}
+
 		report, err := reportSvc.BuildOwnNeedsReport(r.Context(), dateStr)
 		if err != nil {
 			log.Error("failed to build own-needs report", sl.Err(err))
@@ -74,7 +88,15 @@ func ExportOwnNeeds(
 		}
 		defer excelFile.Close()
 
-		writeOwnNeedsExcel(w, excelFile, parsedDate, log)
+		if format == "excel" {
+			writeOwnNeedsExcel(w, excelFile, parsedDate, log)
+			return
+		}
+		if err := exportOwnNeedsPDF(w, excelFile, parsedDate, log); err != nil {
+			log.Error("failed to export PDF", sl.Err(err))
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, resp.InternalServerError("failed to convert to PDF"))
+		}
 	}
 }
 
@@ -104,4 +126,126 @@ func writeOwnNeedsExcel(w http.ResponseWriter, f *excelize.File, date time.Time,
 		slog.String("filename", filename),
 		slog.Int("file_size", buf.Len()),
 	)
+}
+
+// exportOwnNeedsPDF converts the workbook to PDF via headless LibreOffice
+// and writes it to the response. The conversion path mirrors exportPDFGes
+// from export.go — the two helpers are kept separate because they differ
+// in print-titles range, page layout (own-needs forces landscape +
+// fit-to-width), and filename. See plan §1.
+func exportOwnNeedsPDF(w http.ResponseWriter, f *excelize.File, date time.Time, log *slog.Logger) error {
+	tempDir, err := os.MkdirTemp("", "own-needs-pdf-*")
+	if err != nil {
+		return fmt.Errorf("create temp directory: %w", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	sheet := f.GetSheetName(0)
+
+	marginTop := 0.3
+	marginBottom := 0.3
+	marginLeft := 0.3
+	marginRight := 0.3
+	marginHeader := 0.1
+	marginFooter := 0.0
+	if err := f.SetPageMargins(sheet, &excelize.PageLayoutMarginsOptions{
+		Top:    &marginTop,
+		Bottom: &marginBottom,
+		Left:   &marginLeft,
+		Right:  &marginRight,
+		Header: &marginHeader,
+		Footer: &marginFooter,
+	}); err != nil {
+		return fmt.Errorf("set page margins: %w", err)
+	}
+
+	// own-needs has 16 columns (A..P); portrait clips. Force landscape +
+	// fit-to-width so LibreOffice scales the body to one printable width.
+	// We do not rely on the template's own PageSetup because the user could
+	// re-save the xlsx in Excel and silently flip orientation.
+	orientation := "landscape"
+	fit := 1
+	if err := f.SetPageLayout(sheet, &excelize.PageLayoutOptions{
+		Orientation: &orientation,
+		FitToWidth:  &fit,
+		FitToHeight: &fit,
+	}); err != nil {
+		return fmt.Errorf("set page layout: %w", err)
+	}
+
+	if err := setOwnNeedsPDFPrintTitles(f, sheet); err != nil {
+		return fmt.Errorf("set print titles: %w", err)
+	}
+
+	excelPath := filepath.Join(tempDir, "own-needs.xlsx")
+	if err := f.SaveAs(excelPath); err != nil {
+		return fmt.Errorf("save Excel file: %w", err)
+	}
+	pdfPath := filepath.Join(tempDir, "own-needs.pdf")
+
+	cmd := exec.Command(
+		"soffice",
+		"--headless",
+		"--language=ru-RU",
+		"--convert-to", "pdf",
+		"--outdir", tempDir,
+		excelPath,
+	)
+	cmd.Env = append(os.Environ(),
+		"LANG=ru_RU.UTF-8",
+		"LC_ALL=ru_RU.UTF-8",
+	)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Error("LibreOffice conversion failed", slog.String("output", string(output)))
+		return fmt.Errorf("convert Excel to PDF: %w", err)
+	}
+
+	pdfData, err := os.ReadFile(pdfPath)
+	if err != nil {
+		return fmt.Errorf("read PDF file: %w", err)
+	}
+
+	filename := fmt.Sprintf("Own-Needs-%s.pdf", date.Format("2006-01-02"))
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(pdfData)))
+
+	if _, err := w.Write(pdfData); err != nil {
+		return fmt.Errorf("write response: %w", err)
+	}
+
+	log.Info("generated own-needs PDF export",
+		slog.String("date", date.Format("2006-01-02")),
+		slog.String("filename", filename),
+		slog.Int("file_size", len(pdfData)),
+	)
+	return nil
+}
+
+// setOwnNeedsPDFPrintTitles installs Print_Titles for rows 1..5 (the
+// own-needs header block) so they repeat on every printed page. The
+// template carries Print_Area / _FilterDatabase / Print_Titles defined
+// names scoped to the original sheet. After SetSheetName excelize
+// rewrites each name's Scope but leaves RefersTo pointing at the old
+// sheet — LibreOffice silently drops them and the narrow Print_Area
+// clips the PDF to one page. This helper drops those stale entries
+// before writing a fresh Print_Titles. Print_Area is intentionally
+// not reinstalled so LibreOffice paginates the whole body.
+//
+// Mirrors setPDFPrintTitles in export.go; the only difference is the
+// row range ($1:$5 vs $1:$6).
+func setOwnNeedsPDFPrintTitles(f *excelize.File, sheet string) error {
+	for _, name := range []string{"_xlnm._FilterDatabase", "_xlnm.Print_Titles", "_xlnm.Print_Area"} {
+		err := f.DeleteDefinedName(&excelize.DefinedName{Name: name, Scope: sheet})
+		if err != nil && !errors.Is(err, excelize.ErrDefinedNameScope) {
+			return fmt.Errorf("delete %s: %w", name, err)
+		}
+	}
+	return f.SetDefinedName(&excelize.DefinedName{
+		Name:     "_xlnm.Print_Titles",
+		RefersTo: fmt.Sprintf("'%s'!$1:$5", sheet),
+		Scope:    sheet,
+	})
 }

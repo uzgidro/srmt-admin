@@ -156,6 +156,110 @@ func TestExportOwnNeeds_BuilderErrorReturns500(t *testing.T) {
 	}
 }
 
+// TestExportOwnNeeds_DefaultFormatIsExcel verifies that omitting the format
+// query param falls back to xlsx (regression guard once format=pdf is wired).
+func TestExportOwnNeeds_DefaultFormatIsExcel(t *testing.T) {
+	h := setupOwnNeedsRouter(t, &mockOwnNeedsBuilder{report: testOwnNeedsReport()}, "sc")
+	rr := doOwnNeedsGET(t, h, "date=2026-04-27") // no format=...
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: got %d, want 200. body=%s", rr.Code, rr.Body.String())
+	}
+	if ct := rr.Header().Get("Content-Type"); ct != "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" {
+		t.Errorf("Content-Type: got %q, want xlsx mime", ct)
+	}
+}
+
+// TestExportOwnNeeds_InvalidFormat verifies that any value other than
+// excel|pdf returns 400 — same shape as TestExport_InvalidFormat.
+func TestExportOwnNeeds_InvalidFormat(t *testing.T) {
+	h := setupOwnNeedsRouter(t, &mockOwnNeedsBuilder{report: testOwnNeedsReport()}, "sc")
+	rr := doOwnNeedsGET(t, h, "date=2026-04-27&format=csv")
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status: got %d, want 400. body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+// TestSetOwnNeedsPDFPrintTitles_RepeatsRows1To5 verifies that the helper
+// installs Print_Titles for rows 1-5 (header block) on the given sheet.
+// The own-needs header is one row shorter than the production export's
+// 1-6 range because there is no separate cascade-summary header above the
+// column captions.
+func TestSetOwnNeedsPDFPrintTitles_RepeatsRows1To5(t *testing.T) {
+	f := excelize.NewFile()
+	sheet := f.GetSheetName(0)
+
+	if err := setOwnNeedsPDFPrintTitles(f, sheet); err != nil {
+		t.Fatalf("setOwnNeedsPDFPrintTitles: %v", err)
+	}
+
+	names := f.GetDefinedName()
+	var found *excelize.DefinedName
+	for i := range names {
+		if names[i].Name == "_xlnm.Print_Titles" && names[i].Scope == sheet {
+			found = &names[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("_xlnm.Print_Titles not set on sheet %q. names=%+v", sheet, names)
+	}
+
+	want := "'" + sheet + "'!$1:$5"
+	if found.RefersTo != want {
+		t.Errorf("RefersTo = %q, want %q", found.RefersTo, want)
+	}
+}
+
+// TestSetOwnNeedsPDFPrintTitles_DropsStaleDefinedNames mirrors the
+// production-export test: the template carries Print_Area / _FilterDatabase
+// scoped to the original sheet; after SetSheetName excelize keeps the new
+// scope but stale RefersTo, which clips LibreOffice's PDF to one page.
+// setOwnNeedsPDFPrintTitles must remove them before writing fresh titles.
+func TestSetOwnNeedsPDFPrintTitles_DropsStaleDefinedNames(t *testing.T) {
+	f := excelize.NewFile()
+	oldSheet := f.GetSheetName(0)
+	newSheet := "27.04.26"
+	if err := f.SetSheetName(oldSheet, newSheet); err != nil {
+		t.Fatalf("SetSheetName: %v", err)
+	}
+
+	stale := []excelize.DefinedName{
+		{Name: "_xlnm._FilterDatabase", RefersTo: "'" + oldSheet + "'!$A$5:$P$8", Scope: newSheet},
+		{Name: "_xlnm.Print_Titles", RefersTo: "'" + oldSheet + "'!$1:$5", Scope: newSheet},
+		{Name: "_xlnm.Print_Area", RefersTo: "'" + oldSheet + "'!$A$1:$P$8", Scope: newSheet},
+	}
+	for _, n := range stale {
+		if err := f.SetDefinedName(&n); err != nil {
+			t.Fatalf("seed %s: %v", n.Name, err)
+		}
+	}
+
+	if err := setOwnNeedsPDFPrintTitles(f, newSheet); err != nil {
+		t.Fatalf("setOwnNeedsPDFPrintTitles: %v", err)
+	}
+
+	var printTitles *excelize.DefinedName
+	for _, n := range f.GetDefinedName() {
+		if n.Scope != newSheet {
+			continue
+		}
+		switch n.Name {
+		case "_xlnm.Print_Area", "_xlnm._FilterDatabase":
+			t.Errorf("stale %s survived with RefersTo=%q", n.Name, n.RefersTo)
+		case "_xlnm.Print_Titles":
+			nn := n
+			printTitles = &nn
+		}
+	}
+	if printTitles == nil {
+		t.Fatalf("_xlnm.Print_Titles missing after setOwnNeedsPDFPrintTitles")
+	}
+	want := "'" + newSheet + "'!$1:$5"
+	if printTitles.RefersTo != want {
+		t.Errorf("Print_Titles RefersTo = %q, want %q", printTitles.RefersTo, want)
+	}
+}
+
 // --- helpers ---
 
 type errBuilder string

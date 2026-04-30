@@ -1,23 +1,22 @@
 # GET /ges-report/own-needs/export — экспорт ежедневного отчёта по СН/ХН
 
-Эндпоинт генерирует Excel по шаблону `template/own-needs.xlsx` за указанную дату. Под капотом вызывает `BuildOwnNeedsReport(date)` — лёгкая проекция `BuildDailyReport`, дополнительных SQL-запросов нет.
+Эндпоинт генерирует Excel или PDF по шаблону `template/own-needs.xlsx` за указанную дату. Под капотом вызывает `BuildOwnNeedsReport(date)` — лёгкая проекция `BuildDailyReport`, дополнительных SQL-запросов нет.
 
 **Доступ:** только роли `sc` и `rais`. Для роли `cascade` — **403 Forbidden** (как у существующего `/ges-report/export`).
 
 ## Запрос
 
 ```http
-GET /ges-report/own-needs/export?date=YYYY-MM-DD
+GET /ges-report/own-needs/export?date=YYYY-MM-DD&format=excel
 Authorization: Bearer <token>
 ```
 
 ### Query params
 
-| Параметр | Тип | Обязательно | Описание |
-| --- | --- | --- | --- |
-| `date` | `string` | да | Дата отчёта в формате `YYYY-MM-DD` |
-
-PDF-формат не поддерживается (в отличие от `/ges-report/export`). Если потребуется — добавим отдельной итерацией через тот же путь soffice → pdf.
+| Параметр | Тип | Обязательно | По умолчанию | Описание |
+| --- | --- | --- | --- | --- |
+| `date` | `string` | да | — | Дата отчёта в формате `YYYY-MM-DD` |
+| `format` | `string` | нет | `excel` | `excel` или `pdf` |
 
 ## Что в файле
 
@@ -58,37 +57,62 @@ PDF-формат не поддерживается (в отличие от `/ges
 
 ## Filename
 
-`Own-Needs-YYYY-MM-DD.xlsx` (например `Own-Needs-2026-04-27.xlsx`).
+- Excel: `Own-Needs-YYYY-MM-DD.xlsx` (например `Own-Needs-2026-04-27.xlsx`)
+- PDF: `Own-Needs-YYYY-MM-DD.pdf`
+
+## PDF
+
+PDF собирается через headless LibreOffice (`soffice --convert-to pdf`) на сервере — тот же путь, что и `/ges-report/export?format=pdf`. На дев-машине должен быть установлен `soffice` (LibreOffice), иначе PDF-путь возвращает **500 Internal Server Error**. На проде уже установлен.
+
+Перед конвертацией handler:
+
+- ставит `landscape` ориентацию + `fit-to-width=1` через `excelize.SetPageLayout` (16 колонок A..P не помещаются в portrait);
+- устанавливает поля страницы (top/bottom/left/right=0.3", header=0.1", footer=0");
+- инсталлирует `Print_Titles` для строк 1-5, чтобы заголовок организации + капшены колонок повторялись на каждой странице;
+- удаляет стейл `_xlnm.Print_Area` / `_xlnm._FilterDatabase`, оставшиеся в шаблоне после `SetSheetName` (иначе LibreOffice клипает PDF до одной страницы).
 
 ## Пример
 
 ```bash
+# Excel
 curl -H "Authorization: Bearer $TOKEN" \
   "http://api.example.com/ges-report/own-needs/export?date=2026-04-27" \
   -o Own-Needs-2026-04-27.xlsx
+
+# PDF
+curl -H "Authorization: Bearer $TOKEN" \
+  "http://api.example.com/ges-report/own-needs/export?date=2026-04-27&format=pdf" \
+  -o Own-Needs-2026-04-27.pdf
 ```
 
 Референсный заполненный пример (от заказчика) — `docs/2026-04-30/own-needs-temp.xlsx`. Сгенерированный нашим экспортом файл должен визуально соответствовать ему по составу колонок и порядку каскадов/станций.
 
 ## Ответ
 
+**Excel:**
+
 - `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
 - `Content-Disposition: attachment; filename="Own-Needs-YYYY-MM-DD.xlsx"`
 - Тело: бинарный xlsx
+
+**PDF:**
+
+- `Content-Type: application/pdf`
+- `Content-Disposition: attachment; filename="Own-Needs-YYYY-MM-DD.pdf"`
+- Тело: бинарный pdf
 
 ## Ошибки
 
 | HTTP | Причина |
 | --- | --- |
-| `400 Bad Request` | Отсутствует `date` или невалидный формат |
+| `400 Bad Request` | Отсутствует `date`, невалидный формат даты, неверный `format` (не `excel`/`pdf`) |
 | `401 Unauthorized` | Нет/невалидный токен |
 | `403 Forbidden` | Роль не `sc` и не `rais` |
-| `500 Internal Server Error` | Ошибка БД или генерации Excel |
+| `500 Internal Server Error` | Ошибка БД, генерации Excel или конвертации PDF (нет `soffice`, ошибка LibreOffice) |
 
 ## Что НЕ реализовано (по решению на момент мерджа)
 
 - **Микро-ГЭС сводный блок** — в референсном сэмпле есть отдельная сводка только по микро-ГЭС с прогнозами и фарқ. В текущей версии не воспроизводится; если потребуется — отдельный handler / sheet или флаг `?include_micro_summary=true`.
-- **PDF** — только Excel. Конвертация через soffice добавится при необходимости (паттерн уже есть в `/ges-report/export`).
 - **Cascade-проекция** — экспорт глобальный по всем каскадам. Отдельный отчёт «по своему каскаду» для роли `cascade` не сделан (контракт продукта — этот отчёт для sc/rais).
 
 ## Связанное
