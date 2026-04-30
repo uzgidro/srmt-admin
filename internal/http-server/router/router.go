@@ -172,6 +172,7 @@ import (
 	hrmaccess "srmt-admin/internal/lib/service/hrm/access"
 	gesreporthandler "srmt-admin/internal/http-server/handlers/ges-report"
 	gesgen "srmt-admin/internal/lib/service/excel/ges"
+	ownneedsgen "srmt-admin/internal/lib/service/excel/ownneeds"
 	gesreportsvc "srmt-admin/internal/lib/service/ges-report"
 	hrmanalytics "srmt-admin/internal/lib/service/hrm/analytics"
 	hrmcompetency "srmt-admin/internal/lib/service/hrm/competency"
@@ -217,6 +218,7 @@ type AppDependencies struct {
 	HourlyExcelTemplatePath    string
 	FilterExcelTemplatePath    string
 	GESExcelTemplatePath       string
+	OwnNeedsExcelTemplatePath  string
 	AlarmProcessor             *alarm.Processor
 	HRMPersonnelService        *hrmpersonnel.Service
 	HRMVacationService         *hrmvacation.Service
@@ -615,6 +617,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Group(func(r chi.Router) {
 				r.Use(mwauth.RequireAnyRole("sc", "rais"))
 				r.Get("/export", gesreporthandler.Export(deps.Log, deps.GESReportService, deps.PgRepo, deps.PgRepo, gesgen.New(deps.GESExcelTemplatePath), loc))
+				r.Get("/own-needs/export", gesreporthandler.ExportOwnNeeds(deps.Log, deps.GESReportService, ownneedsgen.New(deps.OwnNeedsExcelTemplatePath), loc))
 				r.Post("/config", gesreporthandler.UpsertConfig(deps.Log, deps.PgRepo))
 				r.Delete("/config", gesreporthandler.DeleteConfig(deps.Log, deps.PgRepo))
 				r.Post("/plans", gesreporthandler.BulkUpsertPlan(deps.Log, deps.PgRepo))
