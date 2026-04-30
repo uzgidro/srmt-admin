@@ -18,6 +18,24 @@ func ptr(v float64) *float64 { return &v }
 
 func approxEqual(a, b float64) bool { return math.Abs(a-b) < 1e-6 }
 
+// isCellBold returns true if the cell's resolved style has a bold font.
+// Used to assert that the cascade-summary row keeps the template's bold
+// formatting and station rows stay non-bold.
+func isCellBold(f *excelize.File, sheet, cell string) (bool, error) {
+	styleID, err := f.GetCellStyle(sheet, cell)
+	if err != nil {
+		return false, err
+	}
+	style, err := f.GetStyle(styleID)
+	if err != nil {
+		return false, err
+	}
+	if style == nil || style.Font == nil {
+		return false, nil
+	}
+	return style.Font.Bold, nil
+}
+
 func mustFloat(t *testing.T, f *excelize.File, sheet, cell string) float64 {
 	t.Helper()
 	s, err := f.GetCellValue(sheet, cell)
@@ -134,12 +152,134 @@ func TestGenerator_OneCascadeTwoStations_ProducesCorrectCells(t *testing.T) {
 		t.Errorf("M8 per-kW: got %v, want 40", v)
 	}
 
-	// Grand total shifted from row 8 to row 8 + (3 body rows - 1) = row 10.
-	if got, _ := f.GetCellValue(sheet, "A10"); !strings.Contains(got, "Ўзбекгидроэнерго") {
-		t.Errorf("A10 grand-total caption: got %q, want contains 'Ўзбекгидроэнерго'", got)
+	// Grand total shifted from row 8 to row 9: one cascade contributes no
+	// extra block rows; one extra station (2 stations - 1) shifts grand by 1.
+	if got, _ := f.GetCellValue(sheet, "A9"); !strings.Contains(got, "Ўзбекгидроэнерго") {
+		t.Errorf("A9 grand-total caption: got %q, want contains 'Ўзбекгидроэнерго'", got)
 	}
-	if v := mustFloat(t, f, sheet, "I10"); !approxEqual(v, 700.0) {
-		t.Errorf("I10 grand-total own_consumption: got %v, want 700", v)
+	if v := mustFloat(t, f, sheet, "I9"); !approxEqual(v, 700.0) {
+		t.Errorf("I9 grand-total own_consumption: got %v, want 700", v)
+	}
+}
+
+// TestGenerator_CascadeRowKeepsBoldStyle verifies that the cascade-summary
+// row (row 6 template) preserves bold formatting from the template, and the
+// station row (row 7 template) stays non-bold. This guards against the older
+// bug where every body row was DuplicateRow'd from row 6, blanket-applying
+// bold to all stations.
+func TestGenerator_CascadeRowKeepsBoldStyle(t *testing.T) {
+	rep := &model.OwnNeedsReport{
+		Date: "2026-04-27",
+		Cascades: []model.OwnNeedsCascade{{
+			CascadeID: 1, CascadeName: "Cascade A",
+			Stations: []model.OwnNeedsStation{{
+				OrganizationID: 1, Name: "Station A",
+				InstalledCapacityMWt: 5.0, OwnConsumptionKWh: ptr(50.0),
+			}},
+			Totals: model.OwnNeedsTotals{InstalledCapacityMWt: 5.0, OwnConsumptionKWh: 50.0},
+		}},
+	}
+	g := New(templatePath)
+	f, err := g.GenerateExcel(Params{Report: rep, Date: time.Date(2026, 4, 27, 0, 0, 0, 0, time.UTC)})
+	if err != nil {
+		t.Fatalf("GenerateExcel: %v", err)
+	}
+	defer f.Close()
+	sheet := f.GetSheetList()[0]
+
+	cascadeBold, err := isCellBold(f, sheet, "A6")
+	if err != nil {
+		t.Fatalf("isCellBold A6: %v", err)
+	}
+	if !cascadeBold {
+		t.Errorf("A6 (cascade row) expected bold, got non-bold")
+	}
+	stationBold, err := isCellBold(f, sheet, "A7")
+	if err != nil {
+		t.Fatalf("isCellBold A7: %v", err)
+	}
+	if stationBold {
+		t.Errorf("A7 (station row) expected non-bold, got bold")
+	}
+}
+
+// TestGenerator_TwoCascadesEachWithStations verifies that the per-cascade
+// (cascade, station) block is reproduced for every cascade so each cascade
+// gets its own bold summary row followed by its station rows in the right
+// order, and grand-total lands at the right shifted row.
+func TestGenerator_TwoCascadesEachWithStations(t *testing.T) {
+	rep := &model.OwnNeedsReport{
+		Date: "2026-04-27",
+		Cascades: []model.OwnNeedsCascade{
+			{
+				CascadeID: 1, CascadeName: "Cascade A",
+				Stations: []model.OwnNeedsStation{
+					{OrganizationID: 100, Name: "A1", InstalledCapacityMWt: 5, OwnConsumptionKWh: ptr(10.0)},
+					{OrganizationID: 101, Name: "A2", InstalledCapacityMWt: 5, OwnConsumptionKWh: ptr(20.0)},
+				},
+				Totals: model.OwnNeedsTotals{InstalledCapacityMWt: 10, OwnConsumptionKWh: 30},
+			},
+			{
+				CascadeID: 2, CascadeName: "Cascade B",
+				Stations: []model.OwnNeedsStation{
+					{OrganizationID: 200, Name: "B1", InstalledCapacityMWt: 7, OwnConsumptionKWh: ptr(40.0)},
+				},
+				Totals: model.OwnNeedsTotals{InstalledCapacityMWt: 7, OwnConsumptionKWh: 40},
+			},
+		},
+		GrandTotal: model.OwnNeedsTotals{InstalledCapacityMWt: 17, OwnConsumptionKWh: 70},
+	}
+	g := New(templatePath)
+	f, err := g.GenerateExcel(Params{Report: rep, Date: time.Date(2026, 4, 27, 0, 0, 0, 0, time.UTC)})
+	if err != nil {
+		t.Fatalf("GenerateExcel: %v", err)
+	}
+	defer f.Close()
+	sheet := f.GetSheetList()[0]
+
+	// Layout: 6=Cascade A, 7=A1, 8=A2, 9=Cascade B, 10=B1, 11=grand.
+	// Inserted rows = (2-1)*2 + (1) extra A2 station + (0) for B = 3.
+	// Grand = 8 + 3 = 11.
+	cases := []struct {
+		cell string
+		want string
+	}{
+		{"A6", "Cascade A"},
+		{"A7", "A1"},
+		{"A8", "A2"},
+		{"A9", "Cascade B"},
+		{"A10", "B1"},
+	}
+	for _, c := range cases {
+		if got, _ := f.GetCellValue(sheet, c.cell); got != c.want {
+			t.Errorf("%s: got %q, want %q", c.cell, got, c.want)
+		}
+	}
+	if got, _ := f.GetCellValue(sheet, "A11"); !strings.Contains(got, "Ўзбекгидроэнерго") {
+		t.Errorf("A11 grand-total caption: got %q, want contains 'Ўзбекгидроэнерго'", got)
+	}
+	if v := mustFloat(t, f, sheet, "I11"); !approxEqual(v, 70.0) {
+		t.Errorf("I11 grand-total own_consumption: got %v, want 70", v)
+	}
+
+	// Each cascade row stays bold; each station row stays non-bold.
+	for _, cell := range []string{"A6", "A9", "A11"} {
+		b, err := isCellBold(f, sheet, cell)
+		if err != nil {
+			t.Fatalf("isCellBold %s: %v", cell, err)
+		}
+		if !b {
+			t.Errorf("%s expected bold", cell)
+		}
+	}
+	for _, cell := range []string{"A7", "A8", "A10"} {
+		b, err := isCellBold(f, sheet, cell)
+		if err != nil {
+			t.Fatalf("isCellBold %s: %v", cell, err)
+		}
+		if b {
+			t.Errorf("%s expected non-bold", cell)
+		}
 	}
 }
 
