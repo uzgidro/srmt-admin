@@ -26,7 +26,6 @@ type DailyDataUpserter interface {
 	GetGESConfigsTotalAggregates(ctx context.Context, orgIDs []int64) (map[int64]int, error)
 	GetGESDailyAggregatesBatch(ctx context.Context, orgIDs []int64, date string) (map[int64]model.AggregateCounts, error)
 	GetGESConfigsMaxDailyProduction(ctx context.Context) (map[int64]float64, error)
-	GetGESDailyProductionsBatch(ctx context.Context, orgIDs []int64, date string) (map[int64]float64, error)
 }
 
 type DailyDataGetter interface {
@@ -242,8 +241,21 @@ func validateAggregates(
 	}
 
 	// 2. Sum check requires totals from ges_config and current DB values for
-	// any field the request omitted. Skip work entirely when no item touches
-	// any aggregate field — nothing can change, so the sum cannot grow.
+	// any aggregate field the request omitted (overlay semantics). When NO
+	// item ships any aggregate field, the sum cannot change — partial
+	// updates of unrelated fields (e.g. own_consumption_kwh) must not be
+	// blocked by historical violations in the row. Skip the lookup entirely.
+	anyAggregateSent := false
+	for _, item := range data {
+		if item.WorkingAggregates.Set || item.RepairAggregates.Set || item.ModernizationAggregates.Set {
+			anyAggregateSent = true
+			break
+		}
+	}
+	if !anyAggregateSent {
+		return 0, "", nil
+	}
+
 	uniqueOrgIDs := uniqueOrgs(data)
 	totals, err := repo.GetGESConfigsTotalAggregates(ctx, uniqueOrgIDs)
 	if err != nil {
@@ -263,6 +275,12 @@ func validateAggregates(
 	}
 
 	for _, item := range data {
+		// Per-item gate: skip items that don't ship any aggregate field —
+		// their sum can't change, so a historical overlay must not block
+		// them even when other items in the same batch DO touch aggregates.
+		if !item.WorkingAggregates.Set && !item.RepairAggregates.Set && !item.ModernizationAggregates.Set {
+			continue
+		}
 		total, hasCap := totals[item.OrganizationID]
 		if !hasCap {
 			// No ges_config row → trigger also skips, so we skip too.
@@ -284,20 +302,39 @@ func validateAggregates(
 }
 
 // validateProductionCap enforces ges_config.max_daily_production_mln_kwh on
-// the effective daily_production_mln_kwh that will land in the row after the
-// upsert. Effective semantics mirror validateAggregates:
-//   - field absent (Set=false)            → preserve current DB value
-//   - field present with non-nil number   → use that number
-//   - field present but null              → COALESCE writes 0
+// the daily_production_mln_kwh value the user actually shipped:
+//   - field absent (Set=false)            → not validated; partial updates
+//                                            that don't touch production are
+//                                            never blocked by this check,
+//                                            even if the historical DB value
+//                                            already exceeds the cap.
+//   - field present with non-nil number   → that number is checked.
+//   - field present but null              → checked as 0 (always passes).
+//
+// This mirrors the principle that partial updates only validate what the
+// caller is changing. Historical violations (e.g. a row written before the
+// cap was lowered) stay in the database silently and do NOT block unrelated
+// partial updates of other fields like own_consumption_kwh.
 //
 // A station without a positive cap (absent from the map per repo contract,
-// which already filters max==0) is unrestricted, preserving backwards
-// compatibility with previously-unconfigured stations.
+// which already filters max==0) is unrestricted.
 func validateProductionCap(
 	ctx context.Context,
 	data []model.UpsertDailyDataRequest,
 	repo DailyDataUpserter,
 ) (int, string, error) {
+	// Skip the lookup entirely when no item ships a production value.
+	anyProductionSent := false
+	for _, item := range data {
+		if item.DailyProductionMlnKWh.Set {
+			anyProductionSent = true
+			break
+		}
+	}
+	if !anyProductionSent {
+		return 0, "", nil
+	}
+
 	maxMap, err := repo.GetGESConfigsMaxDailyProduction(ctx)
 	if err != nil {
 		return http.StatusInternalServerError, "failed to load production caps", err
@@ -306,51 +343,18 @@ func validateProductionCap(
 		return 0, "", nil // no station has a cap → nothing to check
 	}
 
-	// Group by date the orgs that omit the production field AND have a cap —
-	// only those rows need a preserve-DB lookup.
-	preserveByDate := make(map[string][]int64)
-	preserveSeen := make(map[string]map[int64]struct{})
 	for _, item := range data {
-		if _, capped := maxMap[item.OrganizationID]; !capped {
-			continue
+		if !item.DailyProductionMlnKWh.Set {
+			continue // not changing production → not our concern
 		}
-		if item.DailyProductionMlnKWh.Set {
-			continue
-		}
-		s, ok := preserveSeen[item.Date]
-		if !ok {
-			s = make(map[int64]struct{})
-			preserveSeen[item.Date] = s
-		}
-		if _, dup := s[item.OrganizationID]; dup {
-			continue
-		}
-		s[item.OrganizationID] = struct{}{}
-		preserveByDate[item.Date] = append(preserveByDate[item.Date], item.OrganizationID)
-	}
-
-	// Issue one batch query per distinct date.
-	currentProd := make(map[string]map[int64]float64, len(preserveByDate))
-	for date, orgs := range preserveByDate {
-		cur, err := repo.GetGESDailyProductionsBatch(ctx, orgs, date)
-		if err != nil {
-			return http.StatusInternalServerError, "failed to load current production", err
-		}
-		currentProd[date] = cur
-	}
-
-	for _, item := range data {
 		cap, capped := maxMap[item.OrganizationID]
 		if !capped {
 			continue
 		}
 		var effectiveVal float64
-		switch {
-		case !item.DailyProductionMlnKWh.Set:
-			effectiveVal = currentProd[item.Date][item.OrganizationID] // 0 if no row
-		case item.DailyProductionMlnKWh.Value == nil:
-			effectiveVal = 0
-		default:
+		if item.DailyProductionMlnKWh.Value == nil {
+			effectiveVal = 0 // explicit null → COALESCE writes 0 → always passes
+		} else {
 			effectiveVal = *item.DailyProductionMlnKWh.Value
 		}
 		if effectiveVal > cap {

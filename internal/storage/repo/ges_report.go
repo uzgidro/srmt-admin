@@ -196,42 +196,6 @@ func (r *Repo) GetGESConfigsMaxDailyProduction(ctx context.Context) (map[int64]f
 	return out, nil
 }
 
-// GetGESDailyProductionsBatch returns a map of organization_id → current
-// daily_production_mln_kwh stored in ges_daily_data for the given date.
-// Used by the daily_data handler to enforce the production cap when an
-// upsert payload omits the production field (preserve-DB semantics).
-// Stations with no row for the date are absent from the map.
-func (r *Repo) GetGESDailyProductionsBatch(ctx context.Context, orgIDs []int64, date string) (map[int64]float64, error) {
-	const op = "storage.repo.GESReport.GetGESDailyProductionsBatch"
-	if len(orgIDs) == 0 {
-		return map[int64]float64{}, nil
-	}
-	rows, err := r.db.QueryContext(ctx,
-		`SELECT organization_id, daily_production_mln_kwh
-		   FROM ges_daily_data
-		  WHERE organization_id = ANY($1) AND date = $2::date`,
-		pq.Array(orgIDs), date,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("%s: query: %w", op, err)
-	}
-	defer rows.Close()
-
-	out := make(map[int64]float64, len(orgIDs))
-	for rows.Next() {
-		var orgID int64
-		var prod float64
-		if err := rows.Scan(&orgID, &prod); err != nil {
-			return nil, fmt.Errorf("%s: scan: %w", op, err)
-		}
-		out[orgID] = prod
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("%s: rows iter: %w", op, err)
-	}
-	return out, nil
-}
-
 // --- Cascade Config CRUD ---
 
 // UpsertCascadeConfig inserts or updates a cascade config record.

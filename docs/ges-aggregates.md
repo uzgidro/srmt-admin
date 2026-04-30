@@ -47,9 +47,19 @@
 | `"repair_aggregates": null` | пишется `0` (столбец `NOT NULL`) |
 | `"repair_aggregates": 2` | пишется `2` (должно быть `>= 0`) |
 
-Проверка суммы применяется к **эффективному** состоянию строки:
-отсутствующие поля берутся из текущего значения в БД, присутствующие —
-из запроса. Подробнее про контракт `Optional[T]`:
+Проверка суммы (`working + repair + modernization ≤ total_aggregates`)
+работает по правилу «партиал-апдейт валидирует только то, что юзер шлёт»:
+
+- Если в payload **есть хотя бы одно** из `working_aggregates` /
+  `repair_aggregates` / `modernization_aggregates` — применяется overlay:
+  для отсутствующих полей берётся текущее значение из БД, для
+  присутствующих — из payload, и сумма сравнивается с `total_aggregates`.
+- Если в payload **нет ни одного** aggregate-поля — sum-check полностью
+  пропускается. Сумма не может измениться, так что исторические данные
+  в БД (даже если их сумма уже превышает текущий `total_aggregates`)
+  не блокируют partial-update других полей вроде `own_consumption_kwh`.
+
+Подробнее про контракт `Optional[T]`:
 [ges-daily-data-partial-update.md](ges-daily-data-partial-update.md).
 
 ## API

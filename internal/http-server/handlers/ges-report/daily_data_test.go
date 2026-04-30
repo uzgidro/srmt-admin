@@ -519,16 +519,19 @@ func TestUpsertDailyData_NoConfigRow_NoCheck(t *testing.T) {
 	}
 }
 
-// Preserve-DB semantics: payload omits daily_production_mln_kwh; the existing
-// DB value (8.0) already exceeds the cap (5.0). Per the same model used for
-// aggregate sum-check, the handler must overlay the absent field on the
-// current DB value before testing the cap → 400. Today the handler does not
-// check at all → 200 → RED.
-func TestUpsertDailyData_PreserveDBProduction_RespectsMax(t *testing.T) {
+// New semantics: when payload omits daily_production_mln_kwh entirely, the
+// production cap MUST NOT be re-validated against the existing DB value.
+// Historical violations in storage are not the user's problem — partial
+// updates that don't touch production must succeed regardless. This test
+// asserts the contract that lets parsers ship single-field updates (e.g.
+// only own_consumption_kwh) without being blocked by stale rows.
+func TestUpsertDailyData_PreserveDBProduction_NoCheckWhenAbsent(t *testing.T) {
 	const stationOrgID int64 = 1
 	upserter := &captureGESUpserter{
 		maxProd: map[int64]float64{stationOrgID: 5.0},
 		currentProd: map[aggKey]float64{
+			// Existing DB value 8.0 violates the current cap of 5.0 — but the
+			// payload doesn't touch production, so the handler must not care.
 			{OrgID: stationOrgID, Date: "2026-04-13"}: 8.0,
 		},
 	}
@@ -537,19 +540,143 @@ func TestUpsertDailyData_PreserveDBProduction_RespectsMax(t *testing.T) {
 		OrganizationID: 1,
 		Roles:          []string{"sc"},
 	}
-	// Note: daily_production_mln_kwh deliberately omitted to exercise the
-	// preserve-DB branch.
+	// daily_production_mln_kwh deliberately omitted; only working_aggregates
+	// is being changed (and 1 ≤ default total cap → no aggregate-sum issue).
 	body := `[{
 		"organization_id": 1,
 		"date": "2026-04-13",
 		"working_aggregates": 1
 	}]`
 	rr := doGESUpsertWithClaims(upserter, claims, body)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d; body: %s", rr.Code, rr.Body.String())
+	}
+	if len(upserter.last) != 1 {
+		t.Errorf("upserter MUST be called when production field is absent; got %d items", len(upserter.last))
+	}
+}
+
+// Real-world parser scenario that motivated this fix: ges-prod-parser ships
+// only own_consumption_kwh. The production cap and the aggregate-sum check
+// must both be skipped — the user is not modifying any field they cover.
+// Without this, historical data above the cap blocks legitimate partial
+// updates of unrelated fields (the ges-prod-parser bug from 2026-04-30).
+func TestUpsertDailyData_OwnConsumptionOnly_SkipsProductionCap(t *testing.T) {
+	const stationOrgID int64 = 48
+	upserter := &captureGESUpserter{
+		maxProd: map[int64]float64{stationOrgID: 0.004646},
+		currentProd: map[aggKey]float64{
+			{OrgID: stationOrgID, Date: "2026-04-13"}: 0.004718,
+		},
+	}
+	claims := &token.Claims{
+		UserID:         1,
+		OrganizationID: 1,
+		Roles:          []string{"sc"},
+	}
+	body := `[{
+		"organization_id": 48,
+		"date": "2026-04-13",
+		"own_consumption_kwh": 1234.5
+	}]`
+	rr := doGESUpsertWithClaims(upserter, claims, body)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d; body: %s", rr.Code, rr.Body.String())
+	}
+	if len(upserter.last) != 1 {
+		t.Errorf("upserter MUST be called for own_consumption-only payload; got %d items", len(upserter.last))
+	}
+}
+
+// Aggregate-sum check has the same property: when none of working/repair/
+// modernization is in the payload, the sum cannot change — so the historical
+// row state is irrelevant. Skip the lookup and the check entirely.
+func TestUpsertDailyData_OwnConsumptionOnly_SkipsAggregatesSum(t *testing.T) {
+	const stationOrgID int64 = 48
+	upserter := &captureGESUpserter{
+		totals: map[int64]int{stationOrgID: 5},
+		current: map[aggKey]model.AggregateCounts{
+			// Existing DB sum 4+2+1=7 already exceeds total 5 — irrelevant
+			// because the payload doesn't touch any aggregate field.
+			{OrgID: stationOrgID, Date: "2026-04-13"}: {Working: 4, Repair: 2, Modernization: 1},
+		},
+	}
+	claims := &token.Claims{
+		UserID:         1,
+		OrganizationID: 1,
+		Roles:          []string{"sc"},
+	}
+	body := `[{
+		"organization_id": 48,
+		"date": "2026-04-13",
+		"own_consumption_kwh": 1234.5
+	}]`
+	rr := doGESUpsertWithClaims(upserter, claims, body)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d; body: %s", rr.Code, rr.Body.String())
+	}
+	if len(upserter.last) != 1 {
+		t.Errorf("upserter MUST be called for own_consumption-only payload; got %d items", len(upserter.last))
+	}
+}
+
+// When the payload includes ANY single aggregate field, the overlay-with-DB
+// sum check must still run for that item — that's the legitimate use case
+// (form sends one updated count, server checks it against the other two).
+// Current DB has working=3, mod=0; payload sets repair=2; total cap is 4.
+// Effective sum 3+2+0=5 > 4 → must reject. This is the regression line
+// that distinguishes "no aggregates → skip" from "any aggregate → overlay".
+func TestUpsertDailyData_PartialAggregates_OverlayStillApplies(t *testing.T) {
+	const stationOrgID int64 = 10
+	upserter := &captureGESUpserter{
+		totals: map[int64]int{stationOrgID: 4},
+		current: map[aggKey]model.AggregateCounts{
+			{OrgID: stationOrgID, Date: "2026-04-13"}: {Working: 3, Repair: 0, Modernization: 0},
+		},
+	}
+	claims := &token.Claims{
+		UserID:         1,
+		OrganizationID: 1,
+		Roles:          []string{"sc"},
+	}
+	body := `[{
+		"organization_id": 10,
+		"date": "2026-04-13",
+		"repair_aggregates": 2
+	}]`
+	rr := doGESUpsertWithClaims(upserter, claims, body)
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("status: want 400, got %d; body: %s", rr.Code, rr.Body.String())
 	}
 	if len(upserter.last) != 0 {
-		t.Errorf("upserter must NOT be called when validation fails; got %d items", len(upserter.last))
+		t.Errorf("upserter MUST NOT be called when overlay sum exceeds cap; got %d items", len(upserter.last))
+	}
+}
+
+// Regression: legitimate over-cap production explicitly sent in the payload
+// must still be rejected. The fix removes preserve-DB lookup, NOT the cap
+// check itself.
+func TestUpsertDailyData_ExplicitProductionOverCap_StillBadRequest(t *testing.T) {
+	const stationOrgID int64 = 1
+	upserter := &captureGESUpserter{
+		maxProd: map[int64]float64{stationOrgID: 5.0},
+	}
+	claims := &token.Claims{
+		UserID:         1,
+		OrganizationID: 1,
+		Roles:          []string{"sc"},
+	}
+	body := `[{
+		"organization_id": 1,
+		"date": "2026-04-13",
+		"daily_production_mln_kwh": 100.0
+	}]`
+	rr := doGESUpsertWithClaims(upserter, claims, body)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status: want 400, got %d; body: %s", rr.Code, rr.Body.String())
+	}
+	if len(upserter.last) != 0 {
+		t.Errorf("upserter MUST NOT be called when explicit value over cap; got %d items", len(upserter.last))
 	}
 }
 
