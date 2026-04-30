@@ -1,15 +1,20 @@
 // Package ownneeds renders the dedicated own-needs (СН/ХН) GES Excel report
 // from a workbook template.
 //
-// The template (template/own-needs.xlsx) contains:
-//   - rows 2..5: report header (title, date, year, column captions)
-//   - row 6: an empty body row used as the duplication template for cascade
-//     and station rows
-//   - row 8: the grand-total row labelled "«Ўзбекгидроэнерго» АЖ бўйича:"
+// The template (template/own-needs.xlsx) carries two body styles in adjacent
+// rows: row 6 is the cascade-summary template (bold + tinted fills), row 7
+// is the station template (regular weight + neutral fills). The grand-total
+// row at row 8 mirrors the cascade style with a different fill.
 //
-// The generator inserts one row per cascade plus one row per station between
-// the body template (row 6) and the grand total (row 8), then fills each row
-// with the data from model.OwnNeedsReport.
+// For a report with N cascades, the generator:
+//
+//  1. Duplicates the (cascade, station) 2-row block N-1 times so each cascade
+//     has its own pair (rows 6+7, 8+9, 10+11, ...). This preserves the per-row
+//     styling because DuplicateRowTo/DuplicateRow copy formatting verbatim.
+//  2. Within each block, duplicates the station row for every station beyond
+//     the first so the cascade sub-rows have the right station style.
+//  3. Fills the cells in document order, then the (now-shifted) grand-total
+//     row at the end.
 package ownneeds
 
 import (
@@ -30,12 +35,20 @@ const (
 	templateYearRow = 4
 	// templateSubHeaderRow holds the per-column captions (C5..P5).
 	templateSubHeaderRow = 5
-	// templateBodyRow is the source row that gets duplicated for each cascade
-	// and station to create the body of the report.
-	templateBodyRow = 6
+	// templateCascadeRow is the source row that carries the cascade-summary
+	// style (bold + tinted fills). Duplicated as the first row of each
+	// per-cascade 2-row block.
+	templateCascadeRow = 6
+	// templateStationRow is the source row that carries the station style
+	// (regular weight + neutral fills). Duplicated as the second row of each
+	// per-cascade block, plus once more for every additional station.
+	templateStationRow = 7
 	// templateGrandTotalRow is the static grand-total row in the template
 	// before any duplication.
 	templateGrandTotalRow = 8
+	// blockSize is the number of template rows that constitute one cascade
+	// block (cascade summary + first station).
+	blockSize = 2
 	// numColumns is the count of data columns (A..P).
 	numColumns = 16
 )
@@ -115,47 +128,86 @@ func (g *Generator) GenerateExcel(p Params) (*excelize.File, error) {
 		return nil, fmt.Errorf("set D5 cumulative caption: %w", err)
 	}
 
-	bodyRowsNeeded := totalBodyRows(p.Report)
-	// The template already has 1 body row (row 6). Duplicate it (bodyRowsNeeded-1)
-	// extra times to get the required count. DuplicateRow inserts the new row
-	// just below the source, pushing the grand-total down each time.
-	for i := 1; i < bodyRowsNeeded; i++ {
-		if err := f.DuplicateRow(newSheet, templateBodyRow); err != nil {
-			return nil, fmt.Errorf("duplicate body row %d: %w", i, err)
+	cascades := p.Report.Cascades
+	n := len(cascades)
+	if n == 0 {
+		// No cascades — leave the template's two body rows (6, 7) blank and
+		// fill the grand total at its original row 8.
+		fillGrandTotalRow(f, newSheet, templateGrandTotalRow, p.Report.GrandTotal)
+		return f, nil
+	}
+
+	// Phase 1a: clone the (cascade, station) 2-row block for every cascade
+	// past the first. DuplicateRowTo copies each source row to a target
+	// position, preserving the per-row formatting (bold/fills/number formats).
+	// Source rows 6 and 7 stay above every insertion point so they never shift.
+	for i := 1; i < n; i++ {
+		targetBase := templateCascadeRow + i*blockSize
+		for j := 0; j < blockSize; j++ {
+			if err := f.DuplicateRowTo(newSheet, templateCascadeRow+j, targetBase+j); err != nil {
+				return nil, fmt.Errorf("duplicate block %d row %d: %w", i, j, err)
+			}
 		}
 	}
 
-	row := templateBodyRow
-	for _, c := range p.Report.Cascades {
+	// Phase 1b: within each block, duplicate the station row for stations
+	// beyond the first. Track the cumulative row offset introduced by the
+	// inserted station rows so each next block's station-row index is right.
+	offset := 0
+	for i, c := range cascades {
+		extra := len(c.Stations) - 1
+		if extra <= 0 {
+			continue
+		}
+		stationRow := templateCascadeRow + i*blockSize + 1 + offset
+		for j := 0; j < extra; j++ {
+			if err := f.DuplicateRow(newSheet, stationRow); err != nil {
+				return nil, fmt.Errorf("duplicate station row cascade %d: %w", i, err)
+			}
+		}
+		offset += extra
+	}
+
+	// Phase 2: fill cells in document order.
+	row := templateCascadeRow
+	for _, c := range cascades {
 		fillCascadeRow(f, newSheet, row, c)
 		row++
+		if len(c.Stations) == 0 {
+			// Block always reserves one station row; leave it blank but skip.
+			row++
+			continue
+		}
 		for _, st := range c.Stations {
 			fillStationRow(f, newSheet, row, st, c.Totals.InstalledCapacityMWt)
 			row++
 		}
 	}
 
-	// After body insertion, the grand-total row has shifted by (bodyRowsNeeded - 1)
-	// because the original row 6 is now the first body row (no shift) and each
-	// subsequent DuplicateRow on row 6 pushed the grand total down by 1.
-	grandRow := templateGrandTotalRow + bodyRowsNeeded - 1
+	// The grand-total row has been pushed down by all the rows we inserted:
+	// each cascade past the first added blockSize rows; each cascade also
+	// added (len(stations)-1) station rows when present.
+	grandRow := templateGrandTotalRow + insertedRows(cascades)
 	fillGrandTotalRow(f, newSheet, grandRow, p.Report.GrandTotal)
 
 	return f, nil
 }
 
-// totalBodyRows is the count of rows the body needs: one per cascade + one per
-// station across all cascades. A report with no cascades still produces one
-// (empty) body row so the template layout remains valid.
-func totalBodyRows(rep *model.OwnNeedsReport) int {
-	if len(rep.Cascades) == 0 {
-		return 1
+// insertedRows returns the total number of rows DuplicateRow* calls add to
+// the sheet for the given cascades — used to locate the shifted grand-total
+// row. Each cascade past the first contributes `blockSize` (2). Each cascade
+// with K stations contributes max(K-1, 0) extra station rows.
+func insertedRows(cascades []model.OwnNeedsCascade) int {
+	if len(cascades) == 0 {
+		return 0
 	}
-	n := 0
-	for _, c := range rep.Cascades {
-		n += 1 + len(c.Stations)
+	extra := (len(cascades) - 1) * blockSize
+	for _, c := range cascades {
+		if len(c.Stations) > 1 {
+			extra += len(c.Stations) - 1
+		}
 	}
-	return n
+	return extra
 }
 
 // fillCascadeRow writes a cascade-summary row. The cascade name goes in
