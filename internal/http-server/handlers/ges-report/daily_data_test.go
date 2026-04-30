@@ -527,13 +527,13 @@ func TestUpsertDailyData_NoConfigRow_NoCheck(t *testing.T) {
 // only own_consumption_kwh) without being blocked by stale rows.
 func TestUpsertDailyData_PreserveDBProduction_NoCheckWhenAbsent(t *testing.T) {
 	const stationOrgID int64 = 1
+	// Scenario: the row in DB carries daily_production_mln_kwh=8.0, which
+	// exceeds the current cap of 5.0. The mock no longer exposes a way to
+	// load that value because the handler must not load it — the absence of
+	// any production lookup here IS the assertion. The cap map alone is
+	// enough to prove the handler skips work when payload omits the field.
 	upserter := &captureGESUpserter{
 		maxProd: map[int64]float64{stationOrgID: 5.0},
-		currentProd: map[aggKey]float64{
-			// Existing DB value 8.0 violates the current cap of 5.0 — but the
-			// payload doesn't touch production, so the handler must not care.
-			{OrgID: stationOrgID, Date: "2026-04-13"}: 8.0,
-		},
 	}
 	claims := &token.Claims{
 		UserID:         1,
@@ -563,11 +563,13 @@ func TestUpsertDailyData_PreserveDBProduction_NoCheckWhenAbsent(t *testing.T) {
 // updates of unrelated fields (the ges-prod-parser bug from 2026-04-30).
 func TestUpsertDailyData_OwnConsumptionOnly_SkipsProductionCap(t *testing.T) {
 	const stationOrgID int64 = 48
+	// Scenario from the prod ges-prod-parser failure on 2026-04-30: the row
+	// in DB had daily_production_mln_kwh=0.004718 while the cap is 0.004646.
+	// The handler must NOT load that historical value when the payload does
+	// not touch the production field. The mock no longer carries a way to
+	// return DB production values — that is itself the contract.
 	upserter := &captureGESUpserter{
 		maxProd: map[int64]float64{stationOrgID: 0.004646},
-		currentProd: map[aggKey]float64{
-			{OrgID: stationOrgID, Date: "2026-04-13"}: 0.004718,
-		},
 	}
 	claims := &token.Claims{
 		UserID:         1,
