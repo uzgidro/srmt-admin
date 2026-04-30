@@ -131,7 +131,7 @@ func writeOwnNeedsExcel(w http.ResponseWriter, f *excelize.File, date time.Time,
 // exportOwnNeedsPDF converts the workbook to PDF via headless LibreOffice
 // and writes it to the response. The conversion path mirrors exportPDFGes
 // from export.go — the two helpers are kept separate because they differ
-// in print-titles range, page layout (own-needs forces landscape +
+// in print-titles range, page layout (own-needs forces portrait +
 // fit-to-width), and filename. See plan §1.
 func exportOwnNeedsPDF(w http.ResponseWriter, f *excelize.File, date time.Time, log *slog.Logger) error {
 	tempDir, err := os.MkdirTemp("", "own-needs-pdf-*")
@@ -159,16 +159,20 @@ func exportOwnNeedsPDF(w http.ResponseWriter, f *excelize.File, date time.Time, 
 		return fmt.Errorf("set page margins: %w", err)
 	}
 
-	// own-needs has 16 columns (A..P); portrait clips. Force landscape +
-	// fit-to-width so LibreOffice scales the body to one printable width.
-	// We do not rely on the template's own PageSetup because the user could
-	// re-save the xlsx in Excel and silently flip orientation.
-	orientation := "landscape"
-	fit := 1
+	// Force portrait + fit-to-width so the body fills the printable A4 width
+	// instead of being squeezed into a narrow vertical strip (landscape made
+	// the table unreadable — see screenshot in 2026-04-30 review). FitToWidth=1
+	// scales the 16 columns A..P to one printable page width; FitToHeight=0
+	// lets the body span as many pages tall as needed. We set this from code
+	// rather than relying on the template so a user re-saving the xlsx in
+	// Excel cannot silently flip orientation back.
+	orientation := "portrait"
+	fitWidth := 1
+	fitHeight := 0
 	if err := f.SetPageLayout(sheet, &excelize.PageLayoutOptions{
 		Orientation: &orientation,
-		FitToWidth:  &fit,
-		FitToHeight: &fit,
+		FitToWidth:  &fitWidth,
+		FitToHeight: &fitHeight,
 	}); err != nil {
 		return fmt.Errorf("set page layout: %w", err)
 	}

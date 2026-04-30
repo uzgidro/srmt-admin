@@ -66,7 +66,7 @@ PDF собирается через headless LibreOffice (`soffice --convert-to 
 
 Перед конвертацией handler:
 
-- ставит `landscape` ориентацию + `fit-to-width=1` через `excelize.SetPageLayout` (16 колонок A..P не помещаются в portrait);
+- ставит `portrait` ориентацию + `fit-to-width=1` (height=0, многостраничная высота) через `excelize.SetPageLayout` — 16 колонок A..P масштабируются под ширину A4, тело растёт вниз сколько надо;
 - устанавливает поля страницы (top/bottom/left/right=0.3", header=0.1", footer=0");
 - инсталлирует `Print_Titles` для строк 1-5, чтобы заголовок организации + капшены колонок повторялись на каждой странице;
 - удаляет стейл `_xlnm.Print_Area` / `_xlnm._FilterDatabase`, оставшиеся в шаблоне после `SetSheetName` (иначе LibreOffice клипает PDF до одной страницы).
