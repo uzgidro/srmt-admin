@@ -255,6 +255,7 @@ func (s *Service) computeDaySnapshot(
 		ReservoirIncomeM3s:      row.ReservoirIncomeM3s,
 		TotalOutflowM3s:         row.TotalOutflowM3s,
 		GESFlowM3s:              row.GESFlowM3s,
+		OwnConsumptionKWh:       row.OwnConsumptionKWh,
 		IdleDischargeM3s:        idleM3s,
 	}
 }

@@ -659,3 +659,4 @@ export function buildSolarPayload(
 - **`mtd_own_consumption_kwh` / `ytd_own_consumption_kwh`** в response `aggregations` ges-report — additive поля; старый фронт их проигнорирует. До накопления данных за период значения = 0.
 - **MTD/YTD расчёт** перенесён в существующий SQL `GetGESProductionAggregations` (две дополнительные SUM по той же таблице). Производительность изменения незаметна. Никаких новых endpoint'ов или view не появилось.
 - **Solar Excel/PDF export** — отложен на следующую итерацию; в текущей версии нет.
+- **Own-Needs Excel export** — добавлен endpoint `GET /ges-report/own-needs/export?date=...` (sc/rais), отдающий отдельный xlsx-отчёт по СН/ХН с MTD/YTD по `own_consumption_kwh`. Шаблон `template/own-needs.xlsx`. Подробности — [ges-own-needs-export.md](ges-own-needs-export.md).
