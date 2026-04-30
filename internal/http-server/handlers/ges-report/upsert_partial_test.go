@@ -52,11 +52,6 @@ type captureGESUpserter struct {
 	// Per repo contract the repository skips rows where max==0, so absent
 	// keys mean "no cap" (validation must skip the check).
 	maxProd map[int64]float64
-
-	// currentProd controls the response of GetGESDailyProductionsBatch:
-	// per-org existing daily_production_mln_kwh values for a date. Used for
-	// preserve-DB max-cap tests where the request omits the field.
-	currentProd map[aggKey]float64
 }
 
 // aggKey indexes existing aggregate rows by organization+date.
@@ -124,21 +119,6 @@ func (c *captureGESUpserter) GetGESConfigsMaxDailyProduction(_ context.Context) 
 	out := make(map[int64]float64, len(c.maxProd))
 	for k, v := range c.maxProd {
 		out[k] = v
-	}
-	return out, nil
-}
-
-// GetGESDailyProductionsBatch returns current per-org daily_production_mln_kwh
-// values for a given date. Used by preserve-DB max-cap validation when the
-// request omits the production field.
-func (c *captureGESUpserter) GetGESDailyProductionsBatch(_ context.Context, orgIDs []int64, date string) (map[int64]float64, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	out := make(map[int64]float64, len(orgIDs))
-	for _, id := range orgIDs {
-		if v, ok := c.currentProd[aggKey{OrgID: id, Date: date}]; ok {
-			out[id] = v
-		}
 	}
 	return out, nil
 }
