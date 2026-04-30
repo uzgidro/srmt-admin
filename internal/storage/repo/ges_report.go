@@ -666,6 +666,7 @@ func (r *Repo) GetGESDailyDataBatch(ctx context.Context, date string) ([]gesrepo
 			COALESCE(d.modernization_aggregates, 0),
 			d.water_level_m, d.water_volume_mln_m3, d.water_head_m,
 			d.reservoir_income_m3s, d.total_outflow_m3s, d.ges_flow_m3s,
+			d.own_consumption_kwh,
 			c.installed_capacity_mwt, c.total_aggregates, c.has_reservoir, c.sort_order,
 			(d.id IS NOT NULL) AS has_row_for_date
 		FROM ges_config c
@@ -702,6 +703,7 @@ func (r *Repo) GetGESDailyDataBatch(ctx context.Context, date string) ([]gesrepo
 			&row.ReservoirIncomeM3s,
 			&row.TotalOutflowM3s,
 			&row.GESFlowM3s,
+			&row.OwnConsumptionKWh,
 			&row.InstalledCapacityMWt,
 			&row.TotalAggregates,
 			&row.HasReservoir,

@@ -180,6 +180,7 @@ type CurrentData struct {
 	ReservoirIncomeM3s      *float64 `json:"reservoir_income_m3s"`
 	TotalOutflowM3s         *float64 `json:"total_outflow_m3s"`
 	GESFlowM3s              *float64 `json:"ges_flow_m3s"`
+	OwnConsumptionKWh       *float64 `json:"own_consumption_kwh"`
 	IdleDischargeM3s        *float64 `json:"idle_discharge_m3s"`
 }
 
@@ -202,6 +203,7 @@ type PreviousDayData struct {
 	ReservoirIncomeM3s      *float64 `json:"reservoir_income_m3s"`
 	TotalOutflowM3s         *float64 `json:"total_outflow_m3s"`
 	GESFlowM3s              *float64 `json:"ges_flow_m3s"`
+	OwnConsumptionKWh       *float64 `json:"own_consumption_kwh"`
 	IdleDischargeM3s        *float64 `json:"idle_discharge_m3s"`
 }
 
@@ -293,6 +295,7 @@ type RawDailyRow struct {
 	ReservoirIncomeM3s      *float64
 	TotalOutflowM3s         *float64
 	GESFlowM3s              *float64
+	OwnConsumptionKWh       *float64
 	InstalledCapacityMWt    float64
 	TotalAggregates         int
 	HasReservoir            bool
@@ -366,6 +369,56 @@ func SafeDiv(a, b float64) *float64 {
 	}
 	v := a / b
 	return &v
+}
+
+// --- Own-Needs Report ---
+//
+// OwnNeedsReport is a compact projection of DailyReport focused on
+// own/economic consumption (СН/ХН) for the dedicated Excel export.
+// Service builds it by reusing BuildDailyReport and re-shaping the
+// resulting DailyReport — no extra SQL.
+
+type OwnNeedsReport struct {
+	Date       string             `json:"date"`
+	Cascades   []OwnNeedsCascade  `json:"cascades"`
+	GrandTotal OwnNeedsTotals     `json:"grand_total"`
+}
+
+type OwnNeedsCascade struct {
+	CascadeID   int64             `json:"cascade_id"`
+	CascadeName string            `json:"cascade_name"`
+	Stations    []OwnNeedsStation `json:"stations"`
+	Totals      OwnNeedsTotals    `json:"totals"`
+}
+
+type OwnNeedsStation struct {
+	OrganizationID        int64    `json:"organization_id"`
+	Name                  string   `json:"name"`
+	InstalledCapacityMWt  float64  `json:"installed_capacity_mwt"`
+	MonthlyPlanMlnKWh     float64  `json:"monthly_plan_mln_kwh"`
+	CumulativePlanMlnKWh  float64  `json:"cumulative_plan_mln_kwh"`
+	DailyProductionMlnKWh float64  `json:"daily_production_mln_kwh"`
+	DailyProductionDelta  *float64 `json:"daily_production_delta_mln_kwh"`
+	MTDProductionMlnKWh   float64  `json:"mtd_production_mln_kwh"`
+	YTDProductionMlnKWh   float64  `json:"ytd_production_mln_kwh"`
+	OwnConsumptionKWh     *float64 `json:"own_consumption_kwh"`
+	OwnConsumptionDelta   *float64 `json:"own_consumption_delta_kwh"`
+	MTDOwnConsumptionKWh  float64  `json:"mtd_own_consumption_kwh"`
+	YTDOwnConsumptionKWh  float64  `json:"ytd_own_consumption_kwh"`
+}
+
+type OwnNeedsTotals struct {
+	InstalledCapacityMWt  float64 `json:"installed_capacity_mwt"`
+	MonthlyPlanMlnKWh     float64 `json:"monthly_plan_mln_kwh"`
+	CumulativePlanMlnKWh  float64 `json:"cumulative_plan_mln_kwh"`
+	DailyProductionMlnKWh float64 `json:"daily_production_mln_kwh"`
+	DailyProductionDelta  float64 `json:"daily_production_delta_mln_kwh"`
+	MTDProductionMlnKWh   float64 `json:"mtd_production_mln_kwh"`
+	YTDProductionMlnKWh   float64 `json:"ytd_production_mln_kwh"`
+	OwnConsumptionKWh     float64 `json:"own_consumption_kwh"`
+	OwnConsumptionDelta   float64 `json:"own_consumption_delta_kwh"`
+	MTDOwnConsumptionKWh  float64 `json:"mtd_own_consumption_kwh"`
+	YTDOwnConsumptionKWh  float64 `json:"ytd_own_consumption_kwh"`
 }
 
 // --- Frozen Defaults ---
