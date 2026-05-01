@@ -491,6 +491,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Get("/reservoir-summary/export", reservoirsummary.GetExport(
 				deps.Log,
 				deps.PgRepo,
+				deps.ReservoirFetcher,
 				excelgen.New(deps.ExcelTemplatePath),
 			))
 			r.Post("/reservoir-summary", reservoirsummary.New(deps.Log, deps.PgRepo))

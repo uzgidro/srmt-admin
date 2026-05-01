@@ -112,3 +112,51 @@ func (r *Repo) GetVolumeByLevel(ctx context.Context, resID int64, level float64)
 
 	return interpolatedVolume, nil
 }
+
+// GetVolumeByLevelByOrg interpolates volume from the level_volume curve for the
+// given organization. Mirrors GetVolumeByLevel but works on the organization_id
+// schema introduced by migration 000022. Returns ErrLevelVolumeNotConfigured if
+// the table has no rows for the org (caller should fall back), or
+// ErrLevelOutOfCurveRange if the level lies outside the configured curve.
+func (r *Repo) GetVolumeByLevelByOrg(ctx context.Context, orgID int64, level float64) (float64, error) {
+	const op = "storage.reservoir.GetVolumeByLevelByOrg"
+
+	// Distinguish "no curve configured" from "out of range". Without this the
+	// caller can't tell whether to silently fall back (no data) or to log a
+	// data-quality warning (level outside an existing curve).
+	const probeQuery = `SELECT 1 FROM level_volume WHERE organization_id = $1 LIMIT 1`
+	var probe int
+	if err := r.db.QueryRowContext(ctx, probeQuery, orgID).Scan(&probe); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, storage.ErrLevelVolumeNotConfigured
+		}
+		return 0, fmt.Errorf("%s: failed to probe level_volume: %w", op, err)
+	}
+
+	queryBelow := `SELECT level, volume FROM level_volume WHERE organization_id = $1 AND level <= $2 ORDER BY level DESC LIMIT 1`
+	queryAbove := `SELECT level, volume FROM level_volume WHERE organization_id = $1 AND level >= $2 ORDER BY level LIMIT 1`
+
+	var p1, p2 data.Model
+
+	rowBelow := r.db.QueryRowContext(ctx, queryBelow, orgID, level)
+	err1 := rowBelow.Scan(&p1.Level, &p1.Volume)
+
+	rowAbove := r.db.QueryRowContext(ctx, queryAbove, orgID, level)
+	err2 := rowAbove.Scan(&p2.Level, &p2.Volume)
+
+	if err1 != nil || err2 != nil {
+		if errors.Is(err1, sql.ErrNoRows) || errors.Is(err2, sql.ErrNoRows) {
+			return 0, storage.ErrLevelOutOfCurveRange
+		}
+		if err1 != nil {
+			return 0, fmt.Errorf("%s: failed to get lower point: %w", op, err1)
+		}
+		return 0, fmt.Errorf("%s: failed to get upper point: %w", op, err2)
+	}
+
+	if p1.Level == p2.Level {
+		return p1.Volume, nil
+	}
+
+	return p1.Volume + (level-p1.Level)*(p2.Volume-p1.Volume)/(p2.Level-p1.Level), nil
+}
