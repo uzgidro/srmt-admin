@@ -1,9 +1,7 @@
 package repo
 
 import (
-	"context"
 	"database/sql"
-	"srmt-admin/internal/lib/model/data"
 	"srmt-admin/internal/storage"
 )
 
@@ -18,9 +16,4 @@ func New(driver *storage.Driver) *Repo {
 
 func (r *Repo) Close() error {
 	return r.db.Close()
-}
-
-func (r *Repo) SaveData(ctx context.Context, data data.Model) error {
-	//TODO implement me
-	panic("implement me")
 }

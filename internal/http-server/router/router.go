@@ -22,7 +22,6 @@ import (
 	"srmt-admin/internal/http-server/handlers/dashboard/production"
 	productionstats "srmt-admin/internal/http-server/handlers/dashboard/production-stats"
 	"srmt-admin/internal/http-server/handlers/data/analytics"
-	dataSet "srmt-admin/internal/http-server/handlers/data/set"
 	"srmt-admin/internal/http-server/handlers/decrees"
 	departmentAdd "srmt-admin/internal/http-server/handlers/department/add"
 	departmentDelete "srmt-admin/internal/http-server/handlers/department/delete"
@@ -304,7 +303,6 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 		r.Post("/sc/stock", callbackStock.New(deps.Log, deps.MongoRepo))
 		r.Post("/sc/modsnow", callbackModsnow.New(deps.Log, deps.MongoRepo))
 		r.Post("/sc/ges/summary", gessummary.New(deps.Log, deps.PgRepo))
-		r.Post("/data/{id}", dataSet.New(deps.Log, deps.PgRepo))
 	})
 
 	// Token required routes
