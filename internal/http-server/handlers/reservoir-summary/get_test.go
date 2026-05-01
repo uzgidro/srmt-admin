@@ -11,15 +11,27 @@ import (
 
 	"srmt-admin/internal/lib/dto"
 	reservoirsummary "srmt-admin/internal/lib/model/reservoir-summary"
+	"srmt-admin/internal/storage"
 )
 
 type mockSummaryGetter struct {
 	summaries []*reservoirsummary.ResponseModel
 	err       error
+
+	// Curve lookup for level → volume recomputation. Optional: if curveErr/curveVolume
+	// stay zero-valued, behaves as "no curve configured".
+	curveCalls    []curveCall
+	curveVolume   float64
+	curveErr      error
 }
 
 func (m *mockSummaryGetter) GetReservoirSummary(_ context.Context, _ string) ([]*reservoirsummary.ResponseModel, error) {
 	return m.summaries, m.err
+}
+
+func (m *mockSummaryGetter) GetVolumeByLevelByOrg(_ context.Context, orgID int64, level float64) (float64, error) {
+	m.curveCalls = append(m.curveCalls, curveCall{orgID: orgID, level: level})
+	return m.curveVolume, m.curveErr
 }
 
 type mockStaticDataFetcher struct {
@@ -150,6 +162,197 @@ func TestGet_WithAvg_ShouldUseAvgValues(t *testing.T) {
 	}
 	if result[0].Release.Current != avgRelease {
 		t.Errorf("Release.Current: expected %f (avg), got %f", avgRelease, result[0].Release.Current)
+	}
+}
+
+func TestGet_VolumeRecomputedFromLevel(t *testing.T) {
+	orgID := int64(96)
+
+	getter := &mockSummaryGetter{
+		summaries: []*reservoirsummary.ResponseModel{
+			{
+				OrganizationID: ptrInt64(orgID),
+				Level:          reservoirsummary.ValueResponse{Current: 200},
+				Volume:         reservoirsummary.ValueResponse{Current: 0},
+			},
+		},
+		curveVolume: 120.0,
+	}
+
+	fetcher := &mockStaticDataFetcher{data: map[int64]*dto.OrganizationWithData{}}
+
+	log := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	handler := Get(log, getter, fetcher)
+
+	req := httptest.NewRequest(http.MethodGet, "/reservoir-summary?date=2025-01-01", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", rr.Code, rr.Body.String())
+	}
+
+	var result []*reservoirsummary.ResponseModel
+	if err := json.NewDecoder(rr.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if result[0].Volume.Current != 120.0 {
+		t.Errorf("Volume.Current: expected 120 (computed from level), got %f", result[0].Volume.Current)
+	}
+	if result[0].Volume.IsEdited == nil || !*result[0].Volume.IsEdited {
+		t.Errorf("Volume.IsEdited: expected true, got %v", result[0].Volume.IsEdited)
+	}
+	if len(getter.curveCalls) != 1 || getter.curveCalls[0].orgID != orgID || getter.curveCalls[0].level != 200 {
+		t.Errorf("expected one curve call with orgID=%d, level=200; got %+v", orgID, getter.curveCalls)
+	}
+}
+
+func TestGet_VolumeRecomputedFromStaticLevel(t *testing.T) {
+	orgID := int64(96)
+
+	getter := &mockSummaryGetter{
+		summaries: []*reservoirsummary.ResponseModel{
+			{
+				OrganizationID: ptrInt64(orgID),
+				Level:          reservoirsummary.ValueResponse{Current: 0},
+				Volume:         reservoirsummary.ValueResponse{Current: 0},
+			},
+		},
+		curveVolume: 125.0,
+	}
+
+	fetcher := &mockStaticDataFetcher{
+		data: map[int64]*dto.OrganizationWithData{
+			orgID: {
+				OrganizationID: orgID,
+				Data: &dto.ReservoirData{
+					Level:  ptrFloat(205.0),
+					Volume: ptrFloat(80.0), // would be the old fallback; should be ignored when curve succeeds
+				},
+			},
+		},
+	}
+
+	log := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	handler := Get(log, getter, fetcher)
+
+	req := httptest.NewRequest(http.MethodGet, "/reservoir-summary?date=2025-01-01", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	var result []*reservoirsummary.ResponseModel
+	if err := json.NewDecoder(rr.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if result[0].Level.Current != 205.0 {
+		t.Errorf("Level.Current: expected 205 (from static), got %f", result[0].Level.Current)
+	}
+	if result[0].Level.IsEdited == nil || !*result[0].Level.IsEdited {
+		t.Errorf("Level.IsEdited: expected true, got %v", result[0].Level.IsEdited)
+	}
+	if result[0].Volume.Current != 125.0 {
+		t.Errorf("Volume.Current: expected 125 (computed from static level), got %f", result[0].Volume.Current)
+	}
+	if result[0].Volume.IsEdited == nil || !*result[0].Volume.IsEdited {
+		t.Errorf("Volume.IsEdited: expected true, got %v", result[0].Volume.IsEdited)
+	}
+	if len(getter.curveCalls) != 1 || getter.curveCalls[0].level != 205 {
+		t.Errorf("expected one curve call with level=205; got %+v", getter.curveCalls)
+	}
+}
+
+func TestGet_FallbackToStaticVolumeWhenCurveNotConfigured(t *testing.T) {
+	orgID := int64(99)
+
+	getter := &mockSummaryGetter{
+		summaries: []*reservoirsummary.ResponseModel{
+			{
+				OrganizationID: ptrInt64(orgID),
+				Level:          reservoirsummary.ValueResponse{Current: 200},
+				Volume:         reservoirsummary.ValueResponse{Current: 0},
+			},
+		},
+		curveErr: storage.ErrLevelVolumeNotConfigured,
+	}
+
+	fetcher := &mockStaticDataFetcher{
+		data: map[int64]*dto.OrganizationWithData{
+			orgID: {
+				OrganizationID: orgID,
+				Data: &dto.ReservoirData{
+					Volume: ptrFloat(80.0),
+				},
+			},
+		},
+	}
+
+	log := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	handler := Get(log, getter, fetcher)
+
+	req := httptest.NewRequest(http.MethodGet, "/reservoir-summary?date=2025-01-01", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	var result []*reservoirsummary.ResponseModel
+	if err := json.NewDecoder(rr.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if result[0].Volume.Current != 80.0 {
+		t.Errorf("Volume.Current: expected 80 (static fallback), got %f", result[0].Volume.Current)
+	}
+	if result[0].Volume.IsEdited == nil || !*result[0].Volume.IsEdited {
+		t.Errorf("Volume.IsEdited: expected true, got %v", result[0].Volume.IsEdited)
+	}
+}
+
+func TestGet_NoFallbackWhenDBVolumeNonZero(t *testing.T) {
+	orgID := int64(96)
+
+	getter := &mockSummaryGetter{
+		summaries: []*reservoirsummary.ResponseModel{
+			{
+				OrganizationID: ptrInt64(orgID),
+				Level:          reservoirsummary.ValueResponse{Current: 200},
+				Volume:         reservoirsummary.ValueResponse{Current: 200},
+			},
+		},
+		curveVolume: 999.0, // would be applied if curve were called — but it shouldn't be
+	}
+
+	fetcher := &mockStaticDataFetcher{
+		data: map[int64]*dto.OrganizationWithData{
+			orgID: {
+				OrganizationID: orgID,
+				Data: &dto.ReservoirData{
+					Volume: ptrFloat(80.0),
+				},
+			},
+		},
+	}
+
+	log := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	handler := Get(log, getter, fetcher)
+
+	req := httptest.NewRequest(http.MethodGet, "/reservoir-summary?date=2025-01-01", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	var result []*reservoirsummary.ResponseModel
+	if err := json.NewDecoder(rr.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if result[0].Volume.Current != 200 {
+		t.Errorf("Volume.Current: expected 200 (unchanged), got %f", result[0].Volume.Current)
+	}
+	if result[0].Volume.IsEdited != nil {
+		t.Errorf("Volume.IsEdited: expected nil (untouched), got %v", *result[0].Volume.IsEdited)
+	}
+	if len(getter.curveCalls) != 0 {
+		t.Errorf("expected no curve calls when DB Volume non-zero; got %+v", getter.curveCalls)
 	}
 }
 

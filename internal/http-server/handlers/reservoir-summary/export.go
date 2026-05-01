@@ -31,8 +31,12 @@ func shortenName(fullName string) string {
 	return fmt.Sprintf("%c. %s", firstRune, parts[0])
 }
 
-// GetExport returns an HTTP handler for Excel/PDF export
-func GetExport(log *slog.Logger, pgRepo *repo.Repo, generator *excelgen.Generator) http.HandlerFunc {
+// GetExport returns an HTTP handler for Excel/PDF export. The fetcher is used
+// to apply the same static.uz / level-volume fallbacks as the GET handler so
+// the exported file matches what users see in the UI; otherwise Volume in the
+// spreadsheet would silently disagree with the on-screen value for any org
+// where the DB row is zero.
+func GetExport(log *slog.Logger, pgRepo *repo.Repo, fetcher staticDataFetcher, generator *excelgen.Generator) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.reservoirsummary.GetExport"
 		log := log.With(
@@ -78,6 +82,16 @@ func GetExport(log *slog.Logger, pgRepo *repo.Repo, generator *excelgen.Generato
 			render.JSON(w, r, resp.InternalServerError("Failed to fetch reservoir data"))
 			return
 		}
+
+		// Apply the same static.uz + level-volume fallbacks as the GET handler.
+		// A static.uz outage is logged but not fatal — export proceeds with
+		// whatever is in the DB (and the curve recompute still fires for any
+		// rows that already have Level set).
+		dataAtDayBegin, err := fetcher.FetchDataAtDayBegin(r.Context(), dateStr)
+		if err != nil {
+			log.Error("failed to fetch dataAtDayBegin", sl.Err(err))
+		}
+		applyStaticFallbacks(r.Context(), log, data, dataAtDayBegin, pgRepo)
 
 		// Get author short name from JWT claims
 		var authorShort string

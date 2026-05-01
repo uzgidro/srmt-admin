@@ -20,8 +20,9 @@ var (
 	ErrRoleNotFound        = errors.New("role not found")
 	ErrForeignKeyViolation = errors.New("provided id for user or role does not exist")
 
-	ErrIndicatorNotFound    = errors.New("indicator not found")
-	ErrLevelOutOfCurveRange = errors.New("level is outside the defined curve range")
+	ErrIndicatorNotFound         = errors.New("indicator not found")
+	ErrLevelOutOfCurveRange      = errors.New("level is outside the defined curve range")
+	ErrLevelVolumeNotConfigured  = errors.New("level_volume table has no rows for organization")
 
 	ErrDataNotFound      = errors.New("data not found")
 	ErrSnowDataNotFound  = errors.New("snow data not found")

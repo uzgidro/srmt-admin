@@ -15,9 +15,12 @@ import (
 	"github.com/go-chi/render"
 )
 
-// reservoirSummaryGetter defines the interface for retrieving reservoir summaries
+// reservoirSummaryGetter defines the interface for retrieving reservoir
+// summaries. It also provides level→volume curve lookups so the handler can
+// recompute Volume.Current when Volume is missing but Level is known.
 type reservoirSummaryGetter interface {
 	GetReservoirSummary(ctx context.Context, date string) ([]*reservoirsummary.ResponseModel, error)
+	volumeByLevelByOrg
 }
 
 type staticDataFetcher interface {
@@ -65,29 +68,7 @@ func Get(log *slog.Logger, getter reservoirSummaryGetter, fetcher staticDataFetc
 			log.Error("failed to fetch dataAtDayBegin", sl.Err(err))
 		}
 
-		for _, summary := range summaries {
-			if summary.OrganizationID != nil {
-				if val, ok := dataAtDayBegin[*summary.OrganizationID]; ok && val.Data != nil {
-					isEdited := true
-					if summary.Income.Current == 0 && val.Data.AvgIncome != nil {
-						summary.Income.Current = *val.Data.AvgIncome
-						summary.Income.IsEdited = &isEdited
-					}
-					if summary.Release.Current == 0 && val.Data.AvgRelease != nil {
-						summary.Release.Current = *val.Data.AvgRelease
-						summary.Release.IsEdited = &isEdited
-					}
-					if val.Data.Level != nil && *val.Data.Level != 0 && summary.Level.Current == 0 {
-						summary.Level.Current = *val.Data.Level
-						summary.Level.IsEdited = &isEdited
-					}
-					if val.Data.Volume != nil && *val.Data.Volume != 0 && summary.Volume.Current == 0 {
-						summary.Volume.Current = *val.Data.Volume
-						summary.Volume.IsEdited = &isEdited
-					}
-				}
-			}
-		}
+		applyStaticFallbacks(r.Context(), log, summaries, dataAtDayBegin, getter)
 
 		log.Info("successfully retrieved reservoir summaries",
 			slog.Int("count", len(summaries)),
