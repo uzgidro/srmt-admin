@@ -27,6 +27,7 @@ import (
 	"srmt-admin/internal/lib/service/metrics"
 	"srmt-admin/internal/lib/service/reservoir"
 	reservoirhourly "srmt-admin/internal/lib/service/reservoir-hourly"
+	selsvc "srmt-admin/internal/lib/service/sel"
 	"srmt-admin/internal/storage/minio"
 	mngRepo "srmt-admin/internal/storage/mongo"
 	redisRepo "srmt-admin/internal/storage/redis"
@@ -80,6 +81,7 @@ type AppContainer struct {
 	DayRotationService     *dayrotation.Service
 	GESReportService       *gesreportsvc.Service
 	DischargeService       *dischargesvc.Service
+	SelService             *selsvc.Service
 }
 
 // ProvideAppContainer creates the application container
@@ -115,6 +117,7 @@ func ProvideAppContainer(
 	dayRotationSvc *dayrotation.Service,
 	gesReportSvc *gesreportsvc.Service,
 	dischargeSvc *dischargesvc.Service,
+	selSvc *selsvc.Service,
 ) *AppContainer {
 	return &AppContainer{
 		Router:                 r,
@@ -148,6 +151,7 @@ func ProvideAppContainer(
 		DayRotationService:     dayRotationSvc,
 		GESReportService:       gesReportSvc,
 		DischargeService:       dischargeSvc,
+		SelService:             selSvc,
 	}
 }
 
@@ -181,6 +185,7 @@ func ProvideRouter(
 	reservoirHourlySvc *reservoirhourly.Service,
 	gesReportSvc *gesreportsvc.Service,
 	dischargeSvc *dischargesvc.Service,
+	selSvc *selsvc.Service,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -228,6 +233,8 @@ func ProvideRouter(
 		ReservoirHourlyService:     reservoirHourlySvc,
 		GESReportService:           gesReportSvc,
 		DischargeService:           dischargeSvc,
+		SelService:                 selSvc,
+		SelExcelTemplatePath:       cfg.TemplatePath + "/sel.xlsx",
 	}
 
 	router.SetupRoutes(r, deps)
