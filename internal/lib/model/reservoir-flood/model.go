@@ -46,6 +46,9 @@ type HourlyRecord struct {
 	FiltrationM3s    *float64  `json:"filtration_m3s"`
 	IdleDischargeM3s *float64  `json:"idle_discharge_m3s"`
 	DutyName         *string   `json:"duty_name"`
+	CapacityMwt      *float64  `json:"capacity_mwt"`
+	WeatherCondition *string   `json:"weather_condition"`
+	TemperatureC     *float64  `json:"temperature_c"`
 	CreatedByUserID  *int64    `json:"created_by_user_id,omitempty"`
 	UpdatedAt        time.Time `json:"updated_at"`
 }
@@ -68,4 +71,7 @@ type UpsertHourlyRequest struct {
 	FiltrationM3s    optional.Optional[float64] `json:"filtration_m3s"      validate:"omitempty"`
 	IdleDischargeM3s optional.Optional[float64] `json:"idle_discharge_m3s"  validate:"omitempty"`
 	DutyName         optional.Optional[string]  `json:"duty_name"`
+	CapacityMwt      optional.Optional[float64] `json:"capacity_mwt"        validate:"omitempty"`
+	WeatherCondition optional.Optional[string]  `json:"weather_condition"`
+	TemperatureC     optional.Optional[float64] `json:"temperature_c"       validate:"omitempty"`
 }

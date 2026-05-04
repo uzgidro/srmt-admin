@@ -120,21 +120,26 @@ func (r *Repo) UpsertReservoirFloodHourly(ctx context.Context, items []model.Ups
 			organization_id, recorded_at,
 			water_level_m, water_volume_mln_m3, inflow_m3s, outflow_m3s,
 			ges_flow_m3s, filtration_m3s, idle_discharge_m3s, duty_name,
+			capacity_mwt, weather_condition, temperature_c,
 			created_by_user_id, updated_by_user_id, created_at, updated_at
 		)
 		VALUES ($1, $2,
 		        $3, $4, $5, $6,
 		        $7, $8, $9, $10,
-		        $11, $11, NOW(), NOW())
+		        $11, $12, $13,
+		        $14, $14, NOW(), NOW())
 		ON CONFLICT (organization_id, recorded_at) DO UPDATE SET
-			water_level_m       = CASE WHEN $12::boolean THEN EXCLUDED.water_level_m       ELSE reservoir_flood_hourly.water_level_m       END,
-			water_volume_mln_m3 = CASE WHEN $13::boolean THEN EXCLUDED.water_volume_mln_m3 ELSE reservoir_flood_hourly.water_volume_mln_m3 END,
-			inflow_m3s          = CASE WHEN $14::boolean THEN EXCLUDED.inflow_m3s          ELSE reservoir_flood_hourly.inflow_m3s          END,
-			outflow_m3s         = CASE WHEN $15::boolean THEN EXCLUDED.outflow_m3s         ELSE reservoir_flood_hourly.outflow_m3s         END,
-			ges_flow_m3s        = CASE WHEN $16::boolean THEN EXCLUDED.ges_flow_m3s        ELSE reservoir_flood_hourly.ges_flow_m3s        END,
-			filtration_m3s      = CASE WHEN $17::boolean THEN EXCLUDED.filtration_m3s      ELSE reservoir_flood_hourly.filtration_m3s      END,
-			idle_discharge_m3s  = CASE WHEN $18::boolean THEN EXCLUDED.idle_discharge_m3s  ELSE reservoir_flood_hourly.idle_discharge_m3s  END,
-			duty_name           = CASE WHEN $19::boolean THEN EXCLUDED.duty_name           ELSE reservoir_flood_hourly.duty_name           END,
+			water_level_m       = CASE WHEN $15::boolean THEN EXCLUDED.water_level_m       ELSE reservoir_flood_hourly.water_level_m       END,
+			water_volume_mln_m3 = CASE WHEN $16::boolean THEN EXCLUDED.water_volume_mln_m3 ELSE reservoir_flood_hourly.water_volume_mln_m3 END,
+			inflow_m3s          = CASE WHEN $17::boolean THEN EXCLUDED.inflow_m3s          ELSE reservoir_flood_hourly.inflow_m3s          END,
+			outflow_m3s         = CASE WHEN $18::boolean THEN EXCLUDED.outflow_m3s         ELSE reservoir_flood_hourly.outflow_m3s         END,
+			ges_flow_m3s        = CASE WHEN $19::boolean THEN EXCLUDED.ges_flow_m3s        ELSE reservoir_flood_hourly.ges_flow_m3s        END,
+			filtration_m3s      = CASE WHEN $20::boolean THEN EXCLUDED.filtration_m3s      ELSE reservoir_flood_hourly.filtration_m3s      END,
+			idle_discharge_m3s  = CASE WHEN $21::boolean THEN EXCLUDED.idle_discharge_m3s  ELSE reservoir_flood_hourly.idle_discharge_m3s  END,
+			duty_name           = CASE WHEN $22::boolean THEN EXCLUDED.duty_name           ELSE reservoir_flood_hourly.duty_name           END,
+			capacity_mwt        = CASE WHEN $23::boolean THEN EXCLUDED.capacity_mwt        ELSE reservoir_flood_hourly.capacity_mwt        END,
+			weather_condition   = CASE WHEN $24::boolean THEN EXCLUDED.weather_condition   ELSE reservoir_flood_hourly.weather_condition   END,
+			temperature_c       = CASE WHEN $25::boolean THEN EXCLUDED.temperature_c       ELSE reservoir_flood_hourly.temperature_c       END,
 			updated_by_user_id  = EXCLUDED.updated_by_user_id,
 			updated_at          = NOW()`
 
@@ -150,11 +155,15 @@ func (r *Repo) UpsertReservoirFloodHourly(ctx context.Context, items []model.Ups
 			it.InflowM3s.Value, it.OutflowM3s.Value, // $5, $6
 			it.GESFlowM3s.Value, it.FiltrationM3s.Value, // $7, $8
 			it.IdleDischargeM3s.Value, it.DutyName.Value, // $9, $10
-			userID, // $11
-			it.WaterLevelM.Set, it.WaterVolumeMlnM3.Set, // $12, $13
-			it.InflowM3s.Set, it.OutflowM3s.Set, // $14, $15
-			it.GESFlowM3s.Set, it.FiltrationM3s.Set, // $16, $17
-			it.IdleDischargeM3s.Set, it.DutyName.Set, // $18, $19
+			it.CapacityMwt.Value, it.WeatherCondition.Value, // $11, $12
+			it.TemperatureC.Value, // $13
+			userID, // $14
+			it.WaterLevelM.Set, it.WaterVolumeMlnM3.Set, // $15, $16
+			it.InflowM3s.Set, it.OutflowM3s.Set, // $17, $18
+			it.GESFlowM3s.Set, it.FiltrationM3s.Set, // $19, $20
+			it.IdleDischargeM3s.Set, it.DutyName.Set, // $21, $22
+			it.CapacityMwt.Set, it.WeatherCondition.Set, // $23, $24
+			it.TemperatureC.Set, // $25
 		); execErr != nil {
 			if translatedErr := r.translator.Translate(execErr, op); translatedErr != nil {
 				return translatedErr
@@ -187,7 +196,9 @@ func (r *Repo) GetReservoirFloodHourlyRange(ctx context.Context, orgIDs []int64,
 			       h.recorded_at,
 			       h.water_level_m, h.water_volume_mln_m3, h.inflow_m3s, h.outflow_m3s,
 			       h.ges_flow_m3s, h.filtration_m3s, h.idle_discharge_m3s,
-			       h.duty_name, h.created_by_user_id, h.updated_at
+			       h.duty_name,
+			       h.capacity_mwt, h.weather_condition, h.temperature_c,
+			       h.created_by_user_id, h.updated_at
 			FROM reservoir_flood_hourly h
 			JOIN reservoir_flood_config c ON c.organization_id = h.organization_id AND c.is_active = TRUE
 			LEFT JOIN organizations o ON o.id = h.organization_id
@@ -200,7 +211,9 @@ func (r *Repo) GetReservoirFloodHourlyRange(ctx context.Context, orgIDs []int64,
 			       h.recorded_at,
 			       h.water_level_m, h.water_volume_mln_m3, h.inflow_m3s, h.outflow_m3s,
 			       h.ges_flow_m3s, h.filtration_m3s, h.idle_discharge_m3s,
-			       h.duty_name, h.created_by_user_id, h.updated_at
+			       h.duty_name,
+			       h.capacity_mwt, h.weather_condition, h.temperature_c,
+			       h.created_by_user_id, h.updated_at
 			FROM reservoir_flood_hourly h
 			LEFT JOIN organizations o ON o.id = h.organization_id
 			WHERE h.recorded_at >= $1 AND h.recorded_at < $2
@@ -220,6 +233,9 @@ func (r *Repo) GetReservoirFloodHourlyRange(ctx context.Context, orgIDs []int64,
 			waterLevel, waterVolume, inflow, outflow sql.NullFloat64
 			gesFlow, filtration, idleDischarge       sql.NullFloat64
 			dutyName                                 sql.NullString
+			capacityMwt                              sql.NullFloat64
+			weatherCondition                         sql.NullString
+			temperatureC                             sql.NullFloat64
 			createdBy                                sql.NullInt64
 		)
 		if err := rows.Scan(
@@ -227,7 +243,9 @@ func (r *Repo) GetReservoirFloodHourlyRange(ctx context.Context, orgIDs []int64,
 			&rec.RecordedAt,
 			&waterLevel, &waterVolume, &inflow, &outflow,
 			&gesFlow, &filtration, &idleDischarge,
-			&dutyName, &createdBy, &rec.UpdatedAt,
+			&dutyName,
+			&capacityMwt, &weatherCondition, &temperatureC,
+			&createdBy, &rec.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("%s: scan: %w", op, err)
 		}
@@ -262,6 +280,18 @@ func (r *Repo) GetReservoirFloodHourlyRange(ctx context.Context, orgIDs []int64,
 		if dutyName.Valid {
 			s := dutyName.String
 			rec.DutyName = &s
+		}
+		if capacityMwt.Valid {
+			v := capacityMwt.Float64
+			rec.CapacityMwt = &v
+		}
+		if weatherCondition.Valid {
+			s := weatherCondition.String
+			rec.WeatherCondition = &s
+		}
+		if temperatureC.Valid {
+			v := temperatureC.Float64
+			rec.TemperatureC = &v
 		}
 		if createdBy.Valid {
 			i := createdBy.Int64
