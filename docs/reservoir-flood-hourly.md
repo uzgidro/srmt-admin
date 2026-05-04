@@ -28,6 +28,7 @@ Backend уже выкачен (миграция, `/reservoir-flood/*` endpoints,
 | 4 | `POST /reservoir-flood/config` | `sc`, `rais` | Upsert одной строки конфига. |
 | 5 | `DELETE /reservoir-flood/config?organization_id=X` | `sc`, `rais` | Удаление организации из конфига. |
 | 6 | `GET /level-volume?id=&level=` | `sc`, `rais`, `reservoir`, `reservoir_duty` | Уже существующий эндпоинт. Сигнатура **не меняется**. Теперь к нему добавлен доступ для роли `reservoir_duty`. |
+| 7 | `GET /reservoir-flood/export?date=&hour=&format=` | `sc`, `rais` | Excel/PDF отчёт «Тезкор маълумот» по включённым в config водохранилищам. См. [`sel-export.md`](sel-export.md). |
 
 ## Роли и матрица доступа
 
@@ -63,12 +64,21 @@ Backend уже выкачен (миграция, `/reservoir-flood/*` endpoints,
     "ges_flow_m3s": 250.0,
     "filtration_m3s": 5.0,
     "idle_discharge_m3s": 25.0,
-    "duty_name": "Иванов И.И."
+    "duty_name": "Иванов И.И.",
+    "capacity_mwt": 100.5,
+    "weather_condition": "ясно",
+    "temperature_c": -3.5
   }
 ]
 ```
 
 Все метрики — **nullable + Optional** (см. §5). `organization_id` и `recorded_at` обязательны.
+
+**Новые поля (миграция 000077)**:
+
+- `capacity_mwt` — мощность ГЭС в МВт. Numeric, nullable, **CHECK ≥ 0** (отклоняется handler'ом и БД при отрицательном).
+- `weather_condition` — строка, свободный текст состояния погоды («ясно», «облачно», и т.п.). Nullable, без валидации.
+- `temperature_c` — температура в °C. Numeric, nullable, **отрицательные значения валидны** (зимой). Без CHECK на знак.
 
 **Response 200:**
 
@@ -117,6 +127,9 @@ GET /reservoir-flood/hourly?date=2026-04-27&organization_id=42
     "filtration_m3s": 5.0,
     "idle_discharge_m3s": 25.0,
     "duty_name": "Иванов И.И.",
+    "capacity_mwt": 100.5,
+    "weather_condition": "ясно",
+    "temperature_c": -3.5,
     "created_by_user_id": 10,
     "updated_at": "2026-04-27T15:02:11Z"
   }
