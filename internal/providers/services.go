@@ -26,6 +26,7 @@ import (
 	"srmt-admin/internal/lib/service/reservoir"
 	"srmt-admin/internal/lib/service/weather"
 	reservoirhourly "srmt-admin/internal/lib/service/reservoir-hourly"
+	selsvc "srmt-admin/internal/lib/service/sel"
 	"srmt-admin/internal/storage/redis"
 	"srmt-admin/internal/storage/repo"
 	"srmt-admin/internal/token"
@@ -56,6 +57,7 @@ var ServiceProviderSet = wire.NewSet(
 	ProvideHRMPerformanceService,
 	ProvideHRMAnalyticsService,
 	ProvideReservoirHourlyService,
+	ProvideSelService,
 	ProvideWeatherFetcher,
 	ProvideDayRotationService,
 	ProvideGESReportService,
@@ -204,4 +206,10 @@ func ProvideReservoirHourlyService(fetcher *reservoir.Fetcher, pgRepo *repo.Repo
 		return nil
 	}
 	return reservoirhourly.NewService(fetcher, pgRepo, log)
+}
+
+// ProvideSelService creates the sel-export builder service. The same *repo.Repo
+// satisfies both FloodHourlyRepo and FloodConfigRepo interfaces.
+func ProvideSelService(pgRepo *repo.Repo, loc *time.Location, log *slog.Logger) *selsvc.Service {
+	return selsvc.NewService(pgRepo, pgRepo, loc, log)
 }

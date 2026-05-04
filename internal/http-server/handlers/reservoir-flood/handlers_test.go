@@ -418,3 +418,98 @@ func TestGetConfigs_DutyNoOrgID_Forbidden(t *testing.T) {
 		t.Fatalf("status: want 403, got %d, body: %s", rr.Code, rr.Body.String())
 	}
 }
+
+// ===== Wave 2: capacity_mwt / weather_condition / temperature_c =====
+
+// Round-trip: POST /hourly with the three new fields, then verify the captured
+// upsert items carry them through to repo.
+func TestUpsertHourly_NewMetrics_OK(t *testing.T) {
+	repo := &captureRepo{}
+	body := `[{
+		"organization_id": 42,
+		"recorded_at": "2026-04-27T15:00:00Z",
+		"water_level_m": 815.4,
+		"capacity_mwt": 100.5,
+		"weather_condition": "ясно",
+		"temperature_c": -3.5
+	}]`
+	rr := doRequest(t, repo, scClaims(), http.MethodPost, "/reservoir-flood/hourly", body)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d, body: %s", rr.Code, rr.Body.String())
+	}
+	if len(repo.upsertHourlyItems) != 1 {
+		t.Fatalf("repo upsert: want 1 item, got %d", len(repo.upsertHourlyItems))
+	}
+	it := repo.upsertHourlyItems[0]
+	if it.CapacityMwt.Value == nil || *it.CapacityMwt.Value != 100.5 {
+		t.Errorf("capacity_mwt: want 100.5 set, got Value=%v Set=%v", it.CapacityMwt.Value, it.CapacityMwt.Set)
+	}
+	if it.WeatherCondition.Value == nil || *it.WeatherCondition.Value != "ясно" {
+		t.Errorf("weather_condition: want \"ясно\" set, got Value=%v Set=%v", it.WeatherCondition.Value, it.WeatherCondition.Set)
+	}
+	if it.TemperatureC.Value == nil || *it.TemperatureC.Value != -3.5 {
+		t.Errorf("temperature_c: want -3.5 set (negative valid), got Value=%v Set=%v", it.TemperatureC.Value, it.TemperatureC.Set)
+	}
+}
+
+// capacity_mwt < 0 must be rejected (mirrors all other m³/s metrics).
+func TestUpsertHourly_NegativeCapacity_BadRequest(t *testing.T) {
+	repo := &captureRepo{}
+	body := `[{"organization_id": 42, "recorded_at": "2026-04-27T15:00:00Z", "capacity_mwt": -5.0}]`
+	rr := doRequest(t, repo, scClaims(), http.MethodPost, "/reservoir-flood/hourly", body)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status: want 400, got %d, body: %s", rr.Code, rr.Body.String())
+	}
+	if len(repo.upsertHourlyItems) != 0 {
+		t.Errorf("repo MUST NOT be called on negative capacity_mwt; got %d items", len(repo.upsertHourlyItems))
+	}
+}
+
+// temperature_c < 0 is valid (winter). MUST NOT be rejected.
+func TestUpsertHourly_NegativeTemperature_OK(t *testing.T) {
+	repo := &captureRepo{}
+	body := `[{"organization_id": 42, "recorded_at": "2026-04-27T15:00:00Z", "temperature_c": -10.5}]`
+	rr := doRequest(t, repo, scClaims(), http.MethodPost, "/reservoir-flood/hourly", body)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: want 200 (negative temperature is valid), got %d, body: %s", rr.Code, rr.Body.String())
+	}
+}
+
+// GET /hourly must surface the three new fields in the JSON response.
+func TestGetHourly_ReturnsNewMetrics(t *testing.T) {
+	cap := 250.0
+	weather := "облачно"
+	temp := 18.5
+	repo := &captureRepo{
+		hourlyRangeResult: []model.HourlyRecord{
+			{
+				ID:               1,
+				OrganizationID:   42,
+				RecordedAt:       time.Date(2026, 4, 27, 15, 0, 0, 0, time.UTC),
+				CapacityMwt:      &cap,
+				WeatherCondition: &weather,
+				TemperatureC:     &temp,
+			},
+		},
+	}
+	rr := doRequest(t, repo, scClaims(), http.MethodGet, "/reservoir-flood/hourly?date=2026-04-27", "")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d, body: %s", rr.Code, rr.Body.String())
+	}
+	var got []model.HourlyRecord
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("want 1 record, got %d", len(got))
+	}
+	if got[0].CapacityMwt == nil || *got[0].CapacityMwt != 250.0 {
+		t.Errorf("capacity_mwt: want 250.0, got %v", got[0].CapacityMwt)
+	}
+	if got[0].WeatherCondition == nil || *got[0].WeatherCondition != "облачно" {
+		t.Errorf("weather_condition: want \"облачно\", got %v", got[0].WeatherCondition)
+	}
+	if got[0].TemperatureC == nil || *got[0].TemperatureC != 18.5 {
+		t.Errorf("temperature_c: want 18.5, got %v", got[0].TemperatureC)
+	}
+}

@@ -10,13 +10,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/lib/model/filtration"
 	reservoirsummarymodel "srmt-admin/internal/lib/model/reservoir-summary"
+	"srmt-admin/internal/lib/service/auth"
 	filtergen "srmt-admin/internal/lib/service/excel/filter"
 	resSummaryGen "srmt-admin/internal/lib/service/excel/reservoir-summary"
 	mwauth "srmt-admin/internal/http-server/middleware/auth"
@@ -80,7 +80,7 @@ func New(
 		// Get author short name
 		var authorShort string
 		if claims, ok := mwauth.ClaimsFromContext(r.Context()); ok {
-			authorShort = shortenName(claims.Name)
+			authorShort = auth.ShortenName(claims.Name)
 		}
 
 		// Section 1: reservoir summary via existing generator
@@ -332,11 +332,3 @@ func exportPDF(w http.ResponseWriter, excelFile *excelize.File, date time.Time, 
 	return nil
 }
 
-func shortenName(fullName string) string {
-	parts := strings.Fields(fullName)
-	if len(parts) < 2 {
-		return fullName
-	}
-	firstRune := []rune(parts[1])[0]
-	return fmt.Sprintf("%c. %s", firstRune, parts[0])
-}

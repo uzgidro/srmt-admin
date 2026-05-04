@@ -166,6 +166,7 @@ import (
 	dischargeExcelGen "srmt-admin/internal/lib/service/excel/discharge"
 	excelgen "srmt-admin/internal/lib/service/excel/reservoir-summary"
 	reservoirHourlyExcelGen "srmt-admin/internal/lib/service/excel/reservoir-summary-hourly"
+	selExcelGen "srmt-admin/internal/lib/service/excel/sel"
 	filterExcelGen "srmt-admin/internal/lib/service/excel/filter"
 	scExcelGen "srmt-admin/internal/lib/service/excel/sc"
 	hrmaccess "srmt-admin/internal/lib/service/hrm/access"
@@ -188,6 +189,7 @@ import (
 	"srmt-admin/internal/lib/service/metrics"
 	"srmt-admin/internal/lib/service/reservoir"
 	reservoirhourly "srmt-admin/internal/lib/service/reservoir-hourly"
+	selsvc "srmt-admin/internal/lib/service/sel"
 	"srmt-admin/internal/storage/minio"
 	"srmt-admin/internal/storage/mongo"
 	redisRepo "srmt-admin/internal/storage/redis"
@@ -235,6 +237,8 @@ type AppDependencies struct {
 	ReservoirHourlyService     *reservoirhourly.Service
 	GESReportService           *gesreportsvc.Service
 	DischargeService           *dischargesvc.Service
+	SelService                 *selsvc.Service
+	SelExcelTemplatePath       string
 }
 
 func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
@@ -563,6 +567,16 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 				r.Use(mwauth.RequireAnyRole("sc", "rais"))
 				r.Post("/config", reservoirfloodhandler.UpsertConfig(deps.Log, deps.PgRepo))
 				r.Delete("/config", reservoirfloodhandler.DeleteConfig(deps.Log, deps.PgRepo))
+			})
+			// Tier 3: tezkor-maumolot Excel/PDF export — sc/rais only.
+			r.Group(func(r chi.Router) {
+				r.Use(mwauth.RequireAnyRole("sc", "rais"))
+				r.Get("/export", reservoirfloodhandler.GetExport(
+					deps.Log,
+					deps.SelService,
+					selExcelGen.New(deps.SelExcelTemplatePath),
+					loc,
+				))
 			})
 		})
 

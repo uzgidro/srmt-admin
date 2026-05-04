@@ -12,24 +12,15 @@ import (
 
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
+	"srmt-admin/internal/lib/service/auth"
 	excelgen "srmt-admin/internal/lib/service/excel/reservoir-summary"
 	mwauth "srmt-admin/internal/http-server/middleware/auth"
 	"srmt-admin/internal/storage/repo"
-	"strings"
 
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
 	"github.com/xuri/excelize/v2"
 )
-
-func shortenName(fullName string) string {
-	parts := strings.Fields(fullName)
-	if len(parts) < 2 {
-		return fullName
-	}
-	firstRune := []rune(parts[1])[0]
-	return fmt.Sprintf("%c. %s", firstRune, parts[0])
-}
 
 // GetExport returns an HTTP handler for Excel/PDF export. The fetcher is used
 // to apply the same static.uz / level-volume fallbacks as the GET handler so
@@ -96,7 +87,7 @@ func GetExport(log *slog.Logger, pgRepo *repo.Repo, fetcher staticDataFetcher, g
 		// Get author short name from JWT claims
 		var authorShort string
 		if claims, ok := mwauth.ClaimsFromContext(r.Context()); ok {
-			authorShort = shortenName(claims.Name)
+			authorShort = auth.ShortenName(claims.Name)
 		}
 
 		// Generate Excel file
