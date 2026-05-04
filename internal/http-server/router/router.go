@@ -279,6 +279,12 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 		))
 		r.Get("/ges-report/export", gesreporthandler.Export(deps.Log, deps.GESReportService, deps.PgRepo, deps.PgRepo, gesgen.New(deps.GESExcelTemplatePath), loc))
 		r.Get("/ges-report/own-needs/export", gesreporthandler.ExportOwnNeeds(deps.Log, deps.GESReportService, ownneedsgen.New(deps.OwnNeedsExcelTemplatePath), loc))
+		r.Get("/reservoir-flood/export", reservoirfloodhandler.GetExport(
+			deps.Log,
+			deps.SelService,
+			selExcelGen.New(deps.SelExcelTemplatePath),
+			loc,
+		))
 	})
 
 	router.Route("/api/v3", func(r chi.Router) {
