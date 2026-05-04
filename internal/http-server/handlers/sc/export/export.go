@@ -21,8 +21,8 @@ import (
 	"srmt-admin/internal/lib/model/shutdown"
 	"srmt-admin/internal/lib/model/visit"
 	mwauth "srmt-admin/internal/http-server/middleware/auth"
+	"srmt-admin/internal/lib/service/auth"
 	scgen "srmt-admin/internal/lib/service/excel/sc"
-	"strings"
 
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
@@ -72,15 +72,6 @@ type InfraEventGetter interface {
 // InfraEventCategoryGetter defines the interface for fetching infra event categories
 type InfraEventCategoryGetter interface {
 	GetInfraEventCategories(ctx context.Context) ([]*infraeventcategory.Model, error)
-}
-
-func shortenName(fullName string) string {
-	parts := strings.Fields(fullName)
-	if len(parts) < 2 {
-		return fullName
-	}
-	firstRune := []rune(parts[1])[0]
-	return fmt.Sprintf("%c. %s", firstRune, parts[0])
 }
 
 // New returns an HTTP handler for Excel/PDF export of SC reports
@@ -223,7 +214,7 @@ func New(
 		// Get author short name from JWT claims
 		var authorShort string
 		if claims, ok := mwauth.ClaimsFromContext(r.Context()); ok {
-			authorShort = shortenName(claims.Name)
+			authorShort = auth.ShortenName(claims.Name)
 		}
 
 		// Generate Excel file

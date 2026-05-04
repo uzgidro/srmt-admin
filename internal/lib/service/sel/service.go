@@ -54,8 +54,9 @@ func (s *Service) BuildReport(ctx context.Context, date time.Time, hour int, aut
 	if err != nil {
 		return nil, fmt.Errorf("%s: configs: %w", op, err)
 	}
-	// Filter active and sort by SortOrder.
-	active := configs[:0:0]
+	// Filter active and sort by SortOrder. Using a fresh allocation rather
+	// than configs[:0:0] to keep intent obvious to readers.
+	active := make([]floodmodel.Config, 0, len(configs))
 	for _, c := range configs {
 		if c.IsActive {
 			active = append(active, c)
