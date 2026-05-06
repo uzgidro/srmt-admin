@@ -152,11 +152,22 @@ func GetExport(log *slog.Logger, builder SelReportBuilder, generator SelExcelGen
 		defer os.RemoveAll(tempDir)
 
 		sheet := excelFile.GetSheetName(0)
-		mt, mb, ml, mr, mh, mf := 0.5, 0.3, 0.5, 0.5, 0.3, 0.0
+		mt, mb, ml, mr, mh, mf := 0.3, 0.3, 0.3, 0.3, 0.2, 0.0
 		if err := excelFile.SetPageMargins(sheet, &excelize.PageLayoutMarginsOptions{
 			Top: &mt, Bottom: &mb, Left: &ml, Right: &mr, Header: &mh, Footer: &mf,
 		}); err != nil {
 			log.Error("page margins", sl.Err(err))
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, resp.InternalServerError("failed to prepare PDF conversion"))
+			return
+		}
+		// Force fit-to-page so the wide table (19 columns) lands on a single
+		// page even if the template is replaced with one that drops the flag.
+		fitW, fitH := 1, 1
+		if err := excelFile.SetPageLayout(sheet, &excelize.PageLayoutOptions{
+			FitToWidth: &fitW, FitToHeight: &fitH,
+		}); err != nil {
+			log.Error("page layout", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)
 			render.JSON(w, r, resp.InternalServerError("failed to prepare PDF conversion"))
 			return
