@@ -36,7 +36,7 @@ GET /reservoir-flood/export?date=YYYY-MM-DD&hour=HH&format=excel|pdf
 | Колонка | Header (ряд 4) | Значения ряд 6 (час−1 / час) | Источник из БД |
 |---|---|---|---|
 | A | Т/р | порядковый номер | вычисляется генератором (1, 2, 3, …) |
-| B | Сув омборлар номи | имя — одно слово | `organizations.name` через `strings.Fields(name)[0]` |
+| B | Сув омборлар номи | имя резервуара | `organizations.name` целиком |
 | C/D | сатҳ, м +/− | level prev / curr | `reservoir_flood_hourly.water_level_m` |
 | E/F | ҳажм, мlн.м³ +/− | volume prev / curr | `reservoir_flood_hourly.water_volume_mln_m3` |
 | G/H | келиш, м³/с +/− | inflow prev / curr | `reservoir_flood_hourly.inflow_m3s` |

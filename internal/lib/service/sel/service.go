@@ -1,8 +1,7 @@
 // Package sel transforms reservoir-flood-hourly records into a sel-generator
 // Report. It collapses each reservoir's two RecordedAt rows (prev hour and
 // current hour) into one ReservoirRow with paired Prev/Curr fields, ordered
-// by reservoir_flood_config.sort_order, with reservoir names shortened to
-// the first whitespace-separated word ("Чорвоқ сув омбори" → "Чорвоқ").
+// by reservoir_flood_config.sort_order.
 package sel
 
 import (
@@ -10,7 +9,6 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
-	"strings"
 	"time"
 
 	floodmodel "srmt-admin/internal/lib/model/reservoir-flood"
@@ -105,7 +103,7 @@ func (s *Service) BuildReport(ctx context.Context, date time.Time, hour int, aut
 // the current-hour value; if absent, falls back to the previous-hour value.
 // Other fields use their respective hour's record only (no fallback).
 func (s *Service) buildRow(cfg floodmodel.Config, recs []floodmodel.HourlyRecord, tPrev, tCurr time.Time) selgen.ReservoirRow {
-	row := selgen.ReservoirRow{Name: shortName(cfg.OrganizationName)}
+	row := selgen.ReservoirRow{Name: cfg.OrganizationName}
 
 	var prev, curr *floodmodel.HourlyRecord
 	for i := range recs {
@@ -147,14 +145,4 @@ func (s *Service) buildRow(cfg floodmodel.Config, recs []floodmodel.HourlyRecord
 		row.DutyName = *prev.DutyName
 	}
 	return row
-}
-
-// shortName returns the first whitespace-separated word of a name, or "" for
-// empty input. "Чорвоқ сув омбори" → "Чорвоқ".
-func shortName(full string) string {
-	parts := strings.Fields(full)
-	if len(parts) == 0 {
-		return ""
-	}
-	return parts[0]
 }

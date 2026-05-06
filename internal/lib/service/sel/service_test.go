@@ -90,8 +90,8 @@ func TestBuildReport_BothPoints_Hour0(t *testing.T) {
 		t.Fatalf("want 1 reservoir, got %d", len(r.Reservoirs))
 	}
 	row := r.Reservoirs[0]
-	if row.Name != "Чотқол" {
-		t.Errorf("Name shortened: want Чотқол, got %q", row.Name)
+	if row.Name != "Чотқол сув омбори" {
+		t.Errorf("Name verbatim: want %q, got %q", "Чотқол сув омбори", row.Name)
 	}
 	if row.LevelPrev == nil || *row.LevelPrev != 929.57 {
 		t.Errorf("LevelPrev: want 929.57, got %v", row.LevelPrev)
@@ -191,7 +191,7 @@ func TestBuildReport_OrderingFromConfig(t *testing.T) {
 	}
 }
 
-func TestBuildReport_ShortensReservoirName(t *testing.T) {
+func TestBuildReport_PassesReservoirNameVerbatim(t *testing.T) {
 	loc := tashkent(t)
 	cfg := &fakeConfig{out: []floodmodel.Config{
 		{OrganizationID: 1, OrganizationName: "Чорвоқ сув омбори", SortOrder: 1, IsActive: true},
@@ -201,7 +201,7 @@ func TestBuildReport_ShortensReservoirName(t *testing.T) {
 	}}
 	svc := NewService(&fakeHourly{}, cfg, loc, discardLogger())
 	r, _ := svc.BuildReport(context.Background(), time.Date(2026, 5, 4, 0, 0, 0, 0, loc), 0, "")
-	want := []string{"Чорвоқ", "Сардоба", "", "Андижон"}
+	want := []string{"Чорвоқ сув омбори", "Сардоба", "", "  Андижон   сув   омбори  "}
 	for i, w := range want {
 		if r.Reservoirs[i].Name != w {
 			t.Errorf("Reservoirs[%d].Name: want %q, got %q", i, w, r.Reservoirs[i].Name)
