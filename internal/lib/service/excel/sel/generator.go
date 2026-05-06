@@ -185,6 +185,21 @@ func (g *Generator) GenerateExcel(rep *Report) (*excelize.File, error) {
 	}
 	set(fmt.Sprintf("M%d", signerRow), rep.AuthorShort)
 
+	// Phase 4: rebind print_area to the actual last content row. The template
+	// ships with a static A1:S25 (sized for 9 reservoirs) so soffice would
+	// otherwise either clip taller reports or leave a tail of empty rows
+	// when N < 9. SetDefinedName refuses duplicates, so delete first.
+	printAreaRef := fmt.Sprintf("'%s'!$A$1:$S$%d", sheet, signerRow)
+	_ = f.DeleteDefinedName(&excelize.DefinedName{Name: "_xlnm.Print_Area", Scope: sheet})
+	if err := f.SetDefinedName(&excelize.DefinedName{
+		Name:     "_xlnm.Print_Area",
+		RefersTo: printAreaRef,
+		Scope:    sheet,
+	}); err != nil {
+		_ = f.Close()
+		return nil, fmt.Errorf("set print_area: %w", err)
+	}
+
 	if writeErr != nil {
 		_ = f.Close()
 		return nil, writeErr

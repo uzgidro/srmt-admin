@@ -1,6 +1,7 @@
 package sel
 
 import (
+	"fmt"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -243,6 +244,53 @@ func TestGenerator_DuplicateRowPreservesDeltaFormula(t *testing.T) {
 	}
 	if strings.Contains(second, "D6-C6") {
 		t.Errorf("C9 formula MUST NOT still reference D6-C6 (would mean generator forgot to rewrite): got %q", second)
+	}
+}
+
+func TestGenerator_PrintAreaTracksRowCount(t *testing.T) {
+	cases := []struct {
+		name     string
+		count    int
+		wantLast int // signer row = 9 + (count-1)*2
+	}{
+		{"one reservoir", 1, 9},
+		{"three reservoirs", 3, 13},
+		{"nine reservoirs", 9, 25},
+		{"twelve reservoirs", 12, 31}, // larger than template's static A1:S25
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := New(templatePath(t))
+			rows := make([]ReservoirRow, tc.count)
+			for i := range rows {
+				rows[i] = ReservoirRow{Name: fmt.Sprintf("R%d", i+1)}
+			}
+			f, err := g.GenerateExcel(&Report{
+				Date: time.Date(2026, 5, 4, 0, 0, 0, 0, time.UTC),
+				Hour: 0, AuthorShort: "И. Иванов",
+				Reservoirs: rows,
+			})
+			if err != nil {
+				t.Fatalf("GenerateExcel: %v", err)
+			}
+			defer f.Close()
+
+			defined := f.GetDefinedName()
+			var got string
+			for _, dn := range defined {
+				if dn.Name == "_xlnm.Print_Area" {
+					got = dn.RefersTo
+					break
+				}
+			}
+			if got == "" {
+				t.Fatalf("print_area not set; defined names = %+v", defined)
+			}
+			want := fmt.Sprintf("$A$1:$S$%d", tc.wantLast)
+			if !strings.Contains(got, want) {
+				t.Errorf("print_area: want suffix %q, got %q", want, got)
+			}
+		})
 	}
 }
 
