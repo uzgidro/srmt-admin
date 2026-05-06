@@ -247,6 +247,48 @@ func TestGenerator_DuplicateRowPreservesDeltaFormula(t *testing.T) {
 	}
 }
 
+func TestGenerator_ClonedBlocksHaveVerticalMerges(t *testing.T) {
+	// DuplicateRowTo replicates horizontal merges but drops vertical ones,
+	// leaving the name/duty/weather cells in every cloned block one row tall
+	// while block 1's are two rows tall. Generator must restore them.
+	g := New(templatePath(t))
+	rows := make([]ReservoirRow, 9)
+	for i := range rows {
+		rows[i] = ReservoirRow{Name: fmt.Sprintf("R%d", i+1)}
+	}
+	f, err := g.GenerateExcel(&Report{
+		Date: time.Date(2026, 5, 4, 0, 0, 0, 0, time.UTC),
+		Hour: 0, AuthorShort: "И. Иванов",
+		Reservoirs: rows,
+	})
+	if err != nil {
+		t.Fatalf("GenerateExcel: %v", err)
+	}
+	defer f.Close()
+	sheet := f.GetSheetList()[0]
+
+	merges, err := f.GetMergeCells(sheet)
+	if err != nil {
+		t.Fatalf("GetMergeCells: %v", err)
+	}
+	have := make(map[string]bool)
+	for _, m := range merges {
+		have[m.GetStartAxis()+":"+m.GetEndAxis()] = true
+	}
+
+	// Block i (1..8) starts at row 6+i*2; vertical pair spans rows
+	// (valueRow, valueRow+1) for columns A, B, Q, R, S.
+	for i := 1; i < 9; i++ {
+		valueRow := 6 + i*2
+		for _, col := range []string{"A", "B", "Q", "R", "S"} {
+			key := fmt.Sprintf("%s%d:%s%d", col, valueRow, col, valueRow+1)
+			if !have[key] {
+				t.Errorf("missing vertical merge for cloned block %d: %s", i, key)
+			}
+		}
+	}
+}
+
 func TestGenerator_PrintAreaTracksRowCount(t *testing.T) {
 	cases := []struct {
 		name     string

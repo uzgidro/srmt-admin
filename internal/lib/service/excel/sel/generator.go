@@ -151,6 +151,25 @@ func (g *Generator) GenerateExcel(rep *Report) (*excelize.File, error) {
 		}
 	}
 
+	// Phase 1c: re-create vertical merges for cloned blocks. DuplicateRowTo
+	// replicates horizontal merges (the C7:D7 delta-formula cells) but drops
+	// the value-row + delta-row vertical pairs (A6:A7, B6:B7, Q6:Q7, R6:R7,
+	// S6:S7). Without this every name cell in cloned blocks would render as
+	// one row tall while block 1's name spans two rows — visibly broken.
+	verticalMergeCols := []string{"A", "B", "Q", "R", "S"}
+	for i := 1; i < n; i++ {
+		valueRow := templateBlockStartRow + i*templateBlockSize
+		deltaRow := valueRow + 1
+		for _, col := range verticalMergeCols {
+			start := fmt.Sprintf("%s%d", col, valueRow)
+			end := fmt.Sprintf("%s%d", col, deltaRow)
+			if err := f.MergeCell(sheet, start, end); err != nil {
+				_ = f.Close()
+				return nil, fmt.Errorf("merge %s:%s: %w", start, end, err)
+			}
+		}
+	}
+
 	// Phase 2: fill each block's value row.
 	for i, res := range rep.Reservoirs {
 		row := templateBlockStartRow + i*templateBlockSize
