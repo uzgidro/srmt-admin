@@ -152,7 +152,10 @@ func GetExport(log *slog.Logger, builder SelReportBuilder, generator SelExcelGen
 		defer os.RemoveAll(tempDir)
 
 		sheet := excelFile.GetSheetName(0)
-		mt, mb, ml, mr, mh, mf := 0.3, 0.3, 0.3, 0.3, 0.2, 0.0
+		// Side margins zeroed out: the table is 19 columns wide and on
+		// Linux soffice the standard 0.3" L/R margins eat enough horizontal
+		// room that fit-to-width spills column S onto a second page.
+		mt, mb, ml, mr, mh, mf := 0.3, 0.3, 0.0, 0.0, 0.2, 0.0
 		if err := excelFile.SetPageMargins(sheet, &excelize.PageLayoutMarginsOptions{
 			Top: &mt, Bottom: &mb, Left: &ml, Right: &mr, Header: &mh, Footer: &mf,
 		}); err != nil {

@@ -328,9 +328,7 @@ func TestGenerator_PrintAreaTracksRowCount(t *testing.T) {
 			if got == "" {
 				t.Fatalf("print_area not set; defined names = %+v", defined)
 			}
-			// Right edge is T (one column past S) — empty padding so
-			// LibreOffice's fit-to-width honors the table width on Linux.
-			want := fmt.Sprintf("$A$1:$T$%d", tc.wantLast)
+			want := fmt.Sprintf("$A$1:$S$%d", tc.wantLast)
 			if !strings.Contains(got, want) {
 				t.Errorf("print_area: want suffix %q, got %q", want, got)
 			}
