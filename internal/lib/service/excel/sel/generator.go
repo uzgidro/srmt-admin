@@ -208,7 +208,13 @@ func (g *Generator) GenerateExcel(rep *Report) (*excelize.File, error) {
 	// ships with a static A1:S25 (sized for 9 reservoirs) so soffice would
 	// otherwise either clip taller reports or leave a tail of empty rows
 	// when N < 9. SetDefinedName refuses duplicates, so delete first.
-	printAreaRef := fmt.Sprintf("'%s'!$A$1:$S$%d", sheet, signerRow)
+	//
+	// Right edge: extend two columns past S (= U) — empty padding that doesn't
+	// render anything visible but forces LibreOffice's fit-to-width to honor
+	// the full table width. With print_area exactly equal to the data width
+	// (S), some soffice versions on Linux ignore fitToPage and let column S
+	// spill to a second page; the U-padding keeps it on one page.
+	printAreaRef := fmt.Sprintf("'%s'!$A$1:$U$%d", sheet, signerRow)
 	_ = f.DeleteDefinedName(&excelize.DefinedName{Name: "_xlnm.Print_Area", Scope: sheet})
 	if err := f.SetDefinedName(&excelize.DefinedName{
 		Name:     "_xlnm.Print_Area",
