@@ -152,10 +152,9 @@ func GetExport(log *slog.Logger, builder SelReportBuilder, generator SelExcelGen
 		defer os.RemoveAll(tempDir)
 
 		sheet := excelFile.GetSheetName(0)
-		// The template now carries empty A/U padding columns inside the
-		// print_area, so we no longer need the L/R=0 hack: standard 0.3"
-		// margins are fine.
-		mt, mb, ml, mr, mh, mf := 0.3, 0.3, 0.3, 0.3, 0.2, 0.0
+		// Side margins halved (0.3 → 0.15) to maximize printable width for
+		// fit-to-page; top/bottom/header/footer kept as is.
+		mt, mb, ml, mr, mh, mf := 0.3, 0.3, 0.15, 0.15, 0.2, 0.0
 		if err := excelFile.SetPageMargins(sheet, &excelize.PageLayoutMarginsOptions{
 			Top: &mt, Bottom: &mb, Left: &ml, Right: &mr, Header: &mh, Footer: &mf,
 		}); err != nil {
