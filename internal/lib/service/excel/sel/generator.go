@@ -1,18 +1,28 @@
 // Package sel renders the "Тезкор маълумот" (operational flood report) Excel
 // workbook from a parameterized template.
 //
-// The template (template/sel.xlsx) carries one 2-row block (rows 6-7) for a
-// single reservoir: row 6 holds the values, row 7 holds the delta formulas
-// (=IFERROR(D6-C6,"-"), etc.). Rows 1-5 form the header (title, date, time,
-// column captions, and per-column subheaders that derive the prev/curr hour
-// from S2 via =MOD($S$2-1/24,1) and =$S$2). Row 9 carries the signer line
-// (E9:J9 hardcoded, M9:Q9 holds the operator's short name).
+// The template (template/sel.xlsx) keeps two empty padding columns — A on the
+// left and U on the right — so the printable area is wider than the data. This
+// gives soffice's fit-to-page enough breathing room on Linux to reliably shrink
+// the 19-column table onto a single landscape page (without padding, some
+// soffice versions spill the rightmost data column onto a second page).
 //
-// For a report with N reservoirs, the generator clones the 2-row block N-1
-// times via DuplicateRowTo so each reservoir has its own pair (rows 6+7,
-// 8+9, 10+11, ...). The hardcoded signer text and M9:Q9 merge shift down
-// automatically; excelize rewrites the IFERROR formulas to reference the new
-// block's value row.
+// Data lives in B..T:
+//   - B = №,  C = name,  D/E = level prev/curr,  F/G = volume,  H/I = inflow,
+//     J/K = outflow, L/M = ges flow, N/O = capacity, P/Q = idle discharge,
+//     R = weather, S = temperature, T = duty.
+//
+// Header time/date are in T2/T3; per-column subheaders in row 5 derive the
+// prev/curr hour from T2 via =MOD($T$2-TIME(1,0,0),1) and =$T$2.
+//
+// One 2-row block (rows 6-7) per reservoir: row 6 holds values, row 7 holds
+// delta formulas (=IFERROR(E6-D6,"-"), etc.). Row 9 carries the signer line
+// (F9:K9 hardcoded, N9:R9 holds the operator's short name).
+//
+// For N reservoirs, the generator clones the 2-row block N-1 times via
+// DuplicateRowTo (rows 6+7, 8+9, 10+11, …); the signer row shifts down
+// automatically. excelize copies formulas verbatim, so the generator
+// rewrites each cloned block's delta formulas to reference its own value row.
 package sel
 
 import (
@@ -26,7 +36,7 @@ import (
 const (
 	templateBlockStartRow = 6 // first row of the value block
 	templateBlockSize     = 2 // value row + delta-formula row
-	templateSignerRow     = 9 // E9:J9 + M9:Q9 in the original template
+	templateSignerRow     = 9 // F9:K9 + N9:R9 in the original template
 )
 
 // Generator renders the report.
@@ -41,9 +51,9 @@ func New(templatePath string) *Generator {
 
 // Report bundles everything needed to fill the template.
 type Report struct {
-	Date        time.Time      // → S3 (mm-dd-yy)
-	Hour        int            // → S2 (HH:00); also drives C5..O5 via =MOD($S$2-1/24,1)
-	AuthorShort string         // → M9 (or row 9 + (N-1)*2 after cloning)
+	Date        time.Time      // → T3 (mm-dd-yy)
+	Hour        int            // → T2 (HH:00); also drives D5..Q5 via =MOD($T$2-TIME(1,0,0),1)
+	AuthorShort string         // → N9 (or row 9 + (N-1)*2 after cloning)
 	Reservoirs  []ReservoirRow // one entry per reservoir, rendered in order
 }
 
@@ -51,24 +61,24 @@ type Report struct {
 // All numeric fields are nullable; nil → cell becomes "-". Strings: ""
 // → cell becomes "-".
 type ReservoirRow struct {
-	Name              string   // B
-	LevelPrev         *float64 // C
-	LevelCurr         *float64 // D
-	VolumePrev        *float64 // E
-	VolumeCurr        *float64 // F
-	InflowPrev        *float64 // G
-	InflowCurr        *float64 // H
-	OutflowPrev       *float64 // I
-	OutflowCurr       *float64 // J
-	GESFlowPrev       *float64 // K
-	GESFlowCurr       *float64 // L
-	CapacityPrev      *float64 // M
-	CapacityCurr      *float64 // N
-	IdleDischargePrev *float64 // O
-	IdleDischargeCurr *float64 // P
-	WeatherCondition  string   // Q (current hour only)
-	TemperatureC      *float64 // R (current hour only)
-	DutyName          string   // S (current hour only)
+	Name              string   // C
+	LevelPrev         *float64 // D
+	LevelCurr         *float64 // E
+	VolumePrev        *float64 // F
+	VolumeCurr        *float64 // G
+	InflowPrev        *float64 // H
+	InflowCurr        *float64 // I
+	OutflowPrev       *float64 // J
+	OutflowCurr       *float64 // K
+	GESFlowPrev       *float64 // L
+	GESFlowCurr       *float64 // M
+	CapacityPrev      *float64 // N
+	CapacityCurr      *float64 // O
+	IdleDischargePrev *float64 // P
+	IdleDischargeCurr *float64 // Q
+	WeatherCondition  string   // R (current hour only)
+	TemperatureC      *float64 // S (current hour only)
+	DutyName          string   // T (current hour only)
 }
 
 const dash = "-"
@@ -108,18 +118,18 @@ func (g *Generator) GenerateExcel(rep *Report) (*excelize.File, error) {
 		set(cell, v)
 	}
 
-	// Header: S2 (time-of-day) and S3 (date).
+	// Header: T2 (time-of-day) and T3 (date).
 	// excelize writes time.Time under the existing [$-10819]hh:mm;@ format
 	// correctly; the year/month/day are irrelevant — only the hour matters.
-	set("S2", time.Date(2000, 1, 1, rep.Hour, 0, 0, 0, time.UTC))
-	set("S3", rep.Date)
+	set("T2", time.Date(2000, 1, 1, rep.Hour, 0, 0, 0, time.UTC))
+	set("T3", rep.Date)
 
 	// Phase 1: clone the 2-row block for every reservoir past the first.
 	// DuplicateRowTo copies cell values, formulas, AND styling — but it does
-	// NOT rewrite formula cell references (C9 ends up holding the literal
-	// "IFERROR(D6-C6,\"-\")" instead of the expected "IFERROR(D8-C8,\"-\")").
+	// NOT rewrite formula cell references (D9 ends up holding the literal
+	// "IFERROR(E6-D6,\"-\")" instead of the expected "IFERROR(E8-D8,\"-\")").
 	// We fix that in Phase 1b by rewriting each cloned block's delta formulas
-	// with the correct row reference. The signer row 9 (E9:J9 + M9:Q9) does
+	// with the correct row reference. The signer row 9 (F9:K9 + N9:R9) does
 	// shift down automatically because its merge range moves with the rows.
 	n := len(rep.Reservoirs)
 	for i := 1; i < n; i++ {
@@ -133,9 +143,9 @@ func (g *Generator) GenerateExcel(rep *Report) (*excelize.File, error) {
 	}
 
 	// Phase 1b: rewrite delta formulas in the cloned blocks. The 7 delta cells
-	// in row 7 reference adjacent paired columns: C7=D6-C6, E7=F6-E6, etc.
+	// in row 7 reference adjacent paired columns: D7=E6-D6, F7=G6-F6, etc.
 	// Use literal column letters to keep the rewrite explicit.
-	deltaPairs := [][2]string{{"C", "D"}, {"E", "F"}, {"G", "H"}, {"I", "J"}, {"K", "L"}, {"M", "N"}, {"O", "P"}}
+	deltaPairs := [][2]string{{"D", "E"}, {"F", "G"}, {"H", "I"}, {"J", "K"}, {"L", "M"}, {"N", "O"}, {"P", "Q"}}
 	for i := 1; i < n; i++ {
 		valueRow := templateBlockStartRow + i*templateBlockSize
 		deltaRow := valueRow + 1
@@ -152,11 +162,11 @@ func (g *Generator) GenerateExcel(rep *Report) (*excelize.File, error) {
 	}
 
 	// Phase 1c: re-create vertical merges for cloned blocks. DuplicateRowTo
-	// replicates horizontal merges (the C7:D7 delta-formula cells) but drops
-	// the value-row + delta-row vertical pairs (A6:A7, B6:B7, Q6:Q7, R6:R7,
-	// S6:S7). Without this every name cell in cloned blocks would render as
+	// replicates horizontal merges (the D7:E7 delta-formula cells) but drops
+	// the value-row + delta-row vertical pairs (B6:B7, C6:C7, R6:R7, S6:S7,
+	// T6:T7). Without this every name cell in cloned blocks would render as
 	// one row tall while block 1's name spans two rows — visibly broken.
-	verticalMergeCols := []string{"A", "B", "Q", "R", "S"}
+	verticalMergeCols := []string{"B", "C", "R", "S", "T"}
 	for i := 1; i < n; i++ {
 		valueRow := templateBlockStartRow + i*templateBlockSize
 		deltaRow := valueRow + 1
@@ -174,41 +184,44 @@ func (g *Generator) GenerateExcel(rep *Report) (*excelize.File, error) {
 	for i, res := range rep.Reservoirs {
 		row := templateBlockStartRow + i*templateBlockSize
 		rs := fmt.Sprintf("%d", row)
-		set("A"+rs, i+1)
-		setStr("B"+rs, res.Name)
+		set("B"+rs, i+1)
+		setStr("C"+rs, res.Name)
 
-		setNum("C"+rs, res.LevelPrev)
-		setNum("D"+rs, res.LevelCurr)
-		setNum("E"+rs, res.VolumePrev)
-		setNum("F"+rs, res.VolumeCurr)
-		setNum("G"+rs, res.InflowPrev)
-		setNum("H"+rs, res.InflowCurr)
-		setNum("I"+rs, res.OutflowPrev)
-		setNum("J"+rs, res.OutflowCurr)
-		setNum("K"+rs, res.GESFlowPrev)
-		setNum("L"+rs, res.GESFlowCurr)
-		setNum("M"+rs, res.CapacityPrev)
-		setNum("N"+rs, res.CapacityCurr)
-		setNum("O"+rs, res.IdleDischargePrev)
-		setNum("P"+rs, res.IdleDischargeCurr)
+		setNum("D"+rs, res.LevelPrev)
+		setNum("E"+rs, res.LevelCurr)
+		setNum("F"+rs, res.VolumePrev)
+		setNum("G"+rs, res.VolumeCurr)
+		setNum("H"+rs, res.InflowPrev)
+		setNum("I"+rs, res.InflowCurr)
+		setNum("J"+rs, res.OutflowPrev)
+		setNum("K"+rs, res.OutflowCurr)
+		setNum("L"+rs, res.GESFlowPrev)
+		setNum("M"+rs, res.GESFlowCurr)
+		setNum("N"+rs, res.CapacityPrev)
+		setNum("O"+rs, res.CapacityCurr)
+		setNum("P"+rs, res.IdleDischargePrev)
+		setNum("Q"+rs, res.IdleDischargeCurr)
 
-		setStr("Q"+rs, res.WeatherCondition)
-		setNum("R"+rs, res.TemperatureC)
-		setStr("S"+rs, res.DutyName)
+		setStr("R"+rs, res.WeatherCondition)
+		setNum("S"+rs, res.TemperatureC)
+		setStr("T"+rs, res.DutyName)
 	}
 
-	// Phase 3: signer name in the (shifted) M9 merge.
+	// Phase 3: signer name in the (shifted) N9 merge (top-left of N9:R9).
 	signerRow := templateSignerRow
 	if n > 1 {
 		signerRow += (n - 1) * templateBlockSize
 	}
-	set(fmt.Sprintf("M%d", signerRow), rep.AuthorShort)
+	set(fmt.Sprintf("N%d", signerRow), rep.AuthorShort)
 
 	// Phase 4: rebind print_area to the actual last content row. The template
-	// ships with a static A1:S25 (sized for 9 reservoirs) so soffice would
+	// ships with a static $B$1:$U$25 (sized for 9 reservoirs) so soffice would
 	// otherwise either clip taller reports or leave a tail of empty rows
-	// when N < 9. SetDefinedName refuses duplicates, so delete first.
-	printAreaRef := fmt.Sprintf("'%s'!$A$1:$S$%d", sheet, signerRow)
+	// when N < 9. We extend left to A as well — both empty padding columns
+	// (A and U) live in the print area to give soffice's fit-to-page reliable
+	// breathing room on both sides. SetDefinedName refuses duplicates, so
+	// delete first.
+	printAreaRef := fmt.Sprintf("'%s'!$A$1:$U$%d", sheet, signerRow)
 	_ = f.DeleteDefinedName(&excelize.DefinedName{Name: "_xlnm.Print_Area", Scope: sheet})
 	if err := f.SetDefinedName(&excelize.DefinedName{
 		Name:     "_xlnm.Print_Area",
