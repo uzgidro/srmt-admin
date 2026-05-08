@@ -152,9 +152,11 @@ func GetExport(log *slog.Logger, builder SelReportBuilder, generator SelExcelGen
 		defer os.RemoveAll(tempDir)
 
 		sheet := excelFile.GetSheetName(0)
-		// Side margins halved (0.3 → 0.15) to maximize printable width for
-		// fit-to-page; top/bottom/header/footer kept as is.
-		mt, mb, ml, mr, mh, mf := 0.3, 0.3, 0.15, 0.15, 0.2, 0.0
+		// Side margins kept very small (0.075") so fit-to-page has the most
+		// possible printable width for the wide 19-column table; the
+		// no-padding A..S layout depends on this to keep column S on a
+		// single page. Top/bottom/header/footer kept at the standard values.
+		mt, mb, ml, mr, mh, mf := 0.3, 0.3, 0.075, 0.075, 0.2, 0.0
 		if err := excelFile.SetPageMargins(sheet, &excelize.PageLayoutMarginsOptions{
 			Top: &mt, Bottom: &mb, Left: &ml, Right: &mr, Header: &mh, Footer: &mf,
 		}); err != nil {
