@@ -24,11 +24,11 @@ func templatePath(t *testing.T) string {
 
 func ptr(v float64) *float64 { return &v }
 
-func TestGenerator_FillsHeaderT2T3(t *testing.T) {
+func TestGenerator_FillsHeaderS2S3(t *testing.T) {
 	cases := []struct {
 		name   string
 		hour   int
-		wantT2 string // text-formatted value as Excel renders
+		wantS2 string // text-formatted value as Excel renders
 	}{
 		{"hour 0", 0, "00:00"},
 		{"hour 15", 15, "15:00"},
@@ -44,20 +44,20 @@ func TestGenerator_FillsHeaderT2T3(t *testing.T) {
 			}
 			defer f.Close()
 			sheet := f.GetSheetList()[0]
-			gotT2, err := f.GetCellValue(sheet, "T2")
+			gotS2, err := f.GetCellValue(sheet, "S2")
 			if err != nil {
-				t.Fatalf("GetCellValue T2: %v", err)
+				t.Fatalf("GetCellValue S2: %v", err)
 			}
-			if gotT2 != tc.wantT2 {
-				t.Errorf("T2: want %q, got %q", tc.wantT2, gotT2)
+			if gotS2 != tc.wantS2 {
+				t.Errorf("S2: want %q, got %q", tc.wantS2, gotS2)
 			}
-			gotT3, err := f.GetCellValue(sheet, "T3")
+			gotS3, err := f.GetCellValue(sheet, "S3")
 			if err != nil {
-				t.Fatalf("GetCellValue T3: %v", err)
+				t.Fatalf("GetCellValue S3: %v", err)
 			}
-			// T3 format is mm-dd-yy, so "05-04-26".
-			if gotT3 != "05-04-26" {
-				t.Errorf("T3: want %q, got %q", "05-04-26", gotT3)
+			// S3 format is mm-dd-yy, so "05-04-26".
+			if gotS3 != "05-04-26" {
+				t.Errorf("S3: want %q, got %q", "05-04-26", gotS3)
 			}
 		})
 	}
@@ -99,13 +99,13 @@ func TestGenerator_OneRow(t *testing.T) {
 		}
 	}
 
-	expectCell("B6", "1")
-	expectCell("C6", "Чотқол")
-	expectCell("D6", "929.57")
-	expectCell("E6", "929.64")
-	expectCell("T6", "Иванов И.И.")
-	// Signer in N9 (top-left of N9:R9 merge).
-	expectCell("N9", "И. Иванов")
+	expectCell("A6", "1")
+	expectCell("B6", "Чотқол")
+	expectCell("C6", "929.57")
+	expectCell("D6", "929.64")
+	expectCell("S6", "Иванов И.И.")
+	// Signer in M9 (top-left of M9:Q9 merge).
+	expectCell("M9", "И. Иванов")
 }
 
 func TestGenerator_NineRows(t *testing.T) {
@@ -127,22 +127,22 @@ func TestGenerator_NineRows(t *testing.T) {
 	sheet := f.GetSheetList()[0]
 
 	// First block at rows 6-7; ninth block at rows 22-23.
-	v, _ := f.GetCellValue(sheet, "C6")
+	v, _ := f.GetCellValue(sheet, "B6")
 	if v != "Чотқол" {
-		t.Errorf("C6: want Чотқол, got %q", v)
-	}
-	v, _ = f.GetCellValue(sheet, "C22")
-	if v != "Тўполанг" {
-		t.Errorf("C22: want Тўполанг, got %q", v)
+		t.Errorf("B6: want Чотқол, got %q", v)
 	}
 	v, _ = f.GetCellValue(sheet, "B22")
+	if v != "Тўполанг" {
+		t.Errorf("B22: want Тўполанг, got %q", v)
+	}
+	v, _ = f.GetCellValue(sheet, "A22")
 	if v != "9" {
-		t.Errorf("B22: want 9, got %q", v)
+		t.Errorf("A22: want 9, got %q", v)
 	}
 	// Signer row shifted from 9 to 9 + 8*2 = 25.
-	v, _ = f.GetCellValue(sheet, "N25")
+	v, _ = f.GetCellValue(sheet, "M25")
 	if v != "И. Иванов" {
-		t.Errorf("N25 (shifted signer): want И. Иванов, got %q", v)
+		t.Errorf("M25 (shifted signer): want И. Иванов, got %q", v)
 	}
 }
 
@@ -163,7 +163,7 @@ func TestGenerator_NilFieldsAreDash(t *testing.T) {
 	defer f.Close()
 	sheet := f.GetSheetList()[0]
 
-	for _, cell := range []string{"D6", "E6", "F6", "G6", "H6", "I6", "J6", "K6", "L6", "M6", "N6", "O6", "P6", "Q6", "R6", "S6", "T6"} {
+	for _, cell := range []string{"C6", "D6", "E6", "F6", "G6", "H6", "I6", "J6", "K6", "L6", "M6", "N6", "O6", "P6", "Q6", "R6", "S6"} {
 		got, err := f.GetCellValue(sheet, cell)
 		if err != nil {
 			t.Fatalf("GetCellValue %s: %v", cell, err)
@@ -193,18 +193,18 @@ func TestGenerator_DeltaFormulaPresent(t *testing.T) {
 	defer f.Close()
 	sheet := f.GetSheetList()[0]
 
-	formula, err := f.GetCellFormula(sheet, "D7")
+	formula, err := f.GetCellFormula(sheet, "C7")
 	if err != nil {
-		t.Fatalf("GetCellFormula D7: %v", err)
+		t.Fatalf("GetCellFormula C7: %v", err)
 	}
 	// Whitespace inside the formula varies between template-preserved and
 	// generator-rewritten cells (excelize strips spaces on rewrite). Assert
 	// the load-bearing parts: the IFERROR wrapper, the right cell refs, and
 	// the dash literal.
 	if !strings.Contains(formula, "IFERROR") ||
-		!strings.Contains(formula, "E6-D6") ||
+		!strings.Contains(formula, "D6-C6") ||
 		!strings.Contains(formula, `"-"`) {
-		t.Errorf("D7 formula: want IFERROR(E6-D6,...,\"-\"), got %q", formula)
+		t.Errorf("C7 formula: want IFERROR(D6-C6,...,\"-\"), got %q", formula)
 	}
 }
 
@@ -225,25 +225,25 @@ func TestGenerator_DuplicateRowPreservesDeltaFormula(t *testing.T) {
 	defer f.Close()
 	sheet := f.GetSheetList()[0]
 
-	// First block: delta formula in D7 must reference E6-D6 (template default).
-	first, err := f.GetCellFormula(sheet, "D7")
+	// First block: delta formula in C7 must reference D6-C6 (template default).
+	first, err := f.GetCellFormula(sheet, "C7")
 	if err != nil {
-		t.Fatalf("GetCellFormula D7: %v", err)
+		t.Fatalf("GetCellFormula C7: %v", err)
 	}
-	if !strings.Contains(first, "E6-D6") || !strings.Contains(first, "IFERROR") {
-		t.Errorf("D7 formula (block 1): want IFERROR with E6-D6, got %q", first)
+	if !strings.Contains(first, "D6-C6") || !strings.Contains(first, "IFERROR") {
+		t.Errorf("C7 formula (block 1): want IFERROR with D6-C6, got %q", first)
 	}
-	// Second block: delta formula in D9 must reference E8-D8 (rewritten by
+	// Second block: delta formula in C9 must reference D8-C8 (rewritten by
 	// generator after DuplicateRowTo, which copies references verbatim).
-	second, err := f.GetCellFormula(sheet, "D9")
+	second, err := f.GetCellFormula(sheet, "C9")
 	if err != nil {
-		t.Fatalf("GetCellFormula D9: %v", err)
+		t.Fatalf("GetCellFormula C9: %v", err)
 	}
-	if !strings.Contains(second, "E8-D8") {
-		t.Errorf("D9 formula (block 2, generator-rewritten): want IFERROR with E8-D8, got %q", second)
+	if !strings.Contains(second, "D8-C8") {
+		t.Errorf("C9 formula (block 2, generator-rewritten): want IFERROR with D8-C8, got %q", second)
 	}
-	if strings.Contains(second, "E6-D6") {
-		t.Errorf("D9 formula MUST NOT still reference E6-D6 (would mean generator forgot to rewrite): got %q", second)
+	if strings.Contains(second, "D6-C6") {
+		t.Errorf("C9 formula MUST NOT still reference D6-C6 (would mean generator forgot to rewrite): got %q", second)
 	}
 }
 
@@ -277,11 +277,11 @@ func TestGenerator_ClonedBlocksHaveVerticalMerges(t *testing.T) {
 	}
 
 	// Block i (1..8) starts at row 6+i*2; vertical pair spans rows
-	// (valueRow, valueRow+1) for columns B (№), C (Name), R (Weather),
-	// S (Temp), T (Duty).
+	// (valueRow, valueRow+1) for columns A (№), B (Name), Q (Weather),
+	// R (Temp), S (Duty).
 	for i := 1; i < 9; i++ {
 		valueRow := 6 + i*2
-		for _, col := range []string{"B", "C", "R", "S", "T"} {
+		for _, col := range []string{"A", "B", "Q", "R", "S"} {
 			key := fmt.Sprintf("%s%d:%s%d", col, valueRow, col, valueRow+1)
 			if !have[key] {
 				t.Errorf("missing vertical merge for cloned block %d: %s", i, key)
@@ -299,7 +299,7 @@ func TestGenerator_PrintAreaTracksRowCount(t *testing.T) {
 		{"one reservoir", 1, 9},
 		{"three reservoirs", 3, 13},
 		{"nine reservoirs", 9, 25},
-		{"twelve reservoirs", 12, 31}, // larger than template's static $B$1:$U$25
+		{"twelve reservoirs", 12, 31}, // larger than template's static $A$1:$S$25
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -329,11 +329,7 @@ func TestGenerator_PrintAreaTracksRowCount(t *testing.T) {
 			if got == "" {
 				t.Fatalf("print_area not set; defined names = %+v", defined)
 			}
-			// Right edge is U (one empty padding column past data column T)
-			// and left edge is A (left padding column) — symmetrical breathing
-			// room so soffice's fit-to-page reliably shrinks the wide table
-			// onto a single landscape page.
-			want := fmt.Sprintf("$A$1:$U$%d", tc.wantLast)
+			want := fmt.Sprintf("$A$1:$S$%d", tc.wantLast)
 			if !strings.Contains(got, want) {
 				t.Errorf("print_area: want suffix %q, got %q", want, got)
 			}
@@ -361,20 +357,24 @@ func TestGenerator_NewFields(t *testing.T) {
 	defer f.Close()
 	sheet := f.GetSheetList()[0]
 
-	v, _ := f.GetCellValue(sheet, "N6")
+	v, _ := f.GetCellValue(sheet, "M6")
 	if v != "100.5" {
-		t.Errorf("N6 capacity prev: want 100.5, got %q", v)
+		t.Errorf("M6 capacity prev: want 100.5, got %q", v)
 	}
-	v, _ = f.GetCellValue(sheet, "O6")
+	v, _ = f.GetCellValue(sheet, "N6")
 	if v != "98.2" {
-		t.Errorf("O6 capacity curr: want 98.2, got %q", v)
+		t.Errorf("N6 capacity curr: want 98.2, got %q", v)
 	}
-	v, _ = f.GetCellValue(sheet, "R6")
+	v, _ = f.GetCellValue(sheet, "Q6")
 	if v != "облачно" {
-		t.Errorf("R6 weather: want облачно, got %q", v)
+		t.Errorf("Q6 weather: want облачно, got %q", v)
 	}
-	v, _ = f.GetCellValue(sheet, "S6")
-	if v != "-3.5" {
-		t.Errorf("S6 temperature (negative valid): want -3.5, got %q", v)
+	// Temperature cell carries a custom number format ("+0;-0;0") so a
+	// non-integer source value renders rounded to the nearest integer with
+	// an explicit sign: -3.5 → "-4". Negative values are still valid (cold
+	// nights) — that's the load-bearing assertion here.
+	v, _ = f.GetCellValue(sheet, "R6")
+	if v != "-4" {
+		t.Errorf("R6 temperature (rounded by template format): want %q, got %q", "-4", v)
 	}
 }
