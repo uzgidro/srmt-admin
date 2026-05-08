@@ -7,6 +7,7 @@ wire_gen.go
 /.claude
 /.vscode
 /.worktrees
+/prime
 
 # Config files (contain secrets)
 /config/*.yaml
