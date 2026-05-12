@@ -118,6 +118,35 @@ func (g *Generator) GenerateExcel(rep *Report) (*excelize.File, error) {
 	set("S2", time.Date(2000, 1, 1, rep.Hour, 0, 0, 0, time.UTC))
 	set("S3", rep.Date)
 
+	// Row-5 prev/curr-hour subheaders. The template originally carries
+	// =MOD($S$2-TIME(1,0,0),1) for prev and =$S$2 for curr. Excel renders
+	// those as 16:00/17:00 for hour=17, but soffice headless (PDF path)
+	// truncates 16/24 = 0.6666... down to 15:59 instead of rounding to 16:00.
+	// Writing the value directly bypasses the formula-engine difference, and
+	// we already have the hour at hand. Style cell (format hh:mm) is
+	// preserved by SetCellValue.
+	// SetCellValue alone leaves the original <f> formula in place, and the
+	// trailing UpdateLinkedValue() then wipes the cached <v> we just wrote.
+	// Clear the formula explicitly first.
+	clearFormula := func(cell string) {
+		if writeErr != nil {
+			return
+		}
+		if err := f.SetCellFormula(sheet, cell, ""); err != nil {
+			writeErr = fmt.Errorf("clear formula %s: %w", cell, err)
+		}
+	}
+	prevHour := time.Date(2000, 1, 1, (rep.Hour+23)%24, 0, 0, 0, time.UTC)
+	currHour := time.Date(2000, 1, 1, rep.Hour, 0, 0, 0, time.UTC)
+	for _, cell := range []string{"C5", "E5", "G5", "I5", "K5", "M5", "O5"} {
+		clearFormula(cell)
+		set(cell, prevHour)
+	}
+	for _, cell := range []string{"D5", "F5", "H5", "J5", "L5", "N5", "P5"} {
+		clearFormula(cell)
+		set(cell, currHour)
+	}
+
 	// Phase 1: clone the 2-row block for every reservoir past the first.
 	// DuplicateRowTo copies cell values, formulas, AND styling — but it does
 	// NOT rewrite formula cell references (C9 ends up holding the literal

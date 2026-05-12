@@ -63,6 +63,58 @@ func TestGenerator_FillsHeaderS2S3(t *testing.T) {
 	}
 }
 
+// TestGenerator_PrevHourSubheaders pins the row-5 prev-hour subheader cells
+// to a known string. The template originally carried =MOD($S$2-TIME(1,0,0),1)
+// which Excel renders as 16:00 for hour=17, but soffice headless (PDF path)
+// renders the same formula as 15:59 due to floating-point time truncation.
+// The generator now writes the value directly so both engines agree.
+func TestGenerator_PrevHourSubheaders(t *testing.T) {
+	prevSubheaderCells := []string{"C5", "E5", "G5", "I5", "K5", "M5", "O5"}
+	currSubheaderCells := []string{"D5", "F5", "H5", "J5", "L5", "N5", "P5"}
+
+	cases := []struct {
+		hour     int
+		wantPrev string
+		wantCurr string
+	}{
+		{0, "23:00", "00:00"},
+		{1, "00:00", "01:00"},
+		{17, "16:00", "17:00"},
+		{23, "22:00", "23:00"},
+	}
+	for _, tc := range cases {
+		t.Run(fmt.Sprintf("hour_%02d", tc.hour), func(t *testing.T) {
+			g := New(templatePath(t))
+			date := time.Date(2026, 5, 12, 0, 0, 0, 0, time.UTC)
+			f, err := g.GenerateExcel(&Report{Date: date, Hour: tc.hour, AuthorShort: "И. Иванов"})
+			if err != nil {
+				t.Fatalf("GenerateExcel: %v", err)
+			}
+			defer f.Close()
+			sheet := f.GetSheetList()[0]
+
+			for _, cell := range prevSubheaderCells {
+				got, err := f.GetCellValue(sheet, cell)
+				if err != nil {
+					t.Fatalf("GetCellValue %s: %v", cell, err)
+				}
+				if got != tc.wantPrev {
+					t.Errorf("%s (prev hour): want %q, got %q", cell, tc.wantPrev, got)
+				}
+			}
+			for _, cell := range currSubheaderCells {
+				got, err := f.GetCellValue(sheet, cell)
+				if err != nil {
+					t.Fatalf("GetCellValue %s: %v", cell, err)
+				}
+				if got != tc.wantCurr {
+					t.Errorf("%s (curr hour): want %q, got %q", cell, tc.wantCurr, got)
+				}
+			}
+		})
+	}
+}
+
 func TestGenerator_OneRow(t *testing.T) {
 	g := New(templatePath(t))
 	row := ReservoirRow{
