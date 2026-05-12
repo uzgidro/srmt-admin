@@ -20,27 +20,48 @@ type HourlyGetter interface {
 	GetReservoirFloodHourlyRange(ctx context.Context, orgIDs []int64, start, end time.Time) ([]model.HourlyRecord, error)
 }
 
-func GetHourly(log *slog.Logger, repo HourlyGetter) http.HandlerFunc {
+func GetHourly(log *slog.Logger, repo HourlyGetter, loc *time.Location) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.reservoir-flood.GetHourly"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
 
-		// Parse `date` (YYYY-MM-DD).
+		// Parse `date` (YYYY-MM-DD) in the configured local timezone, NOT UTC.
+		// Pre-fix this used time.Parse which silently treats the input as UTC,
+		// so on Asia/Tashkent (UTC+5) records stored at local midnight (UTC
+		// 19:00 of the previous day) fell outside "today's" window.
 		dateStr := r.URL.Query().Get("date")
 		if dateStr == "" {
 			render.Status(r, http.StatusBadRequest)
 			render.JSON(w, r, resp.BadRequest("date query parameter required (YYYY-MM-DD)"))
 			return
 		}
-		day, err := time.Parse("2006-01-02", dateStr)
+		day, err := time.ParseInLocation("2006-01-02", dateStr, loc)
 		if err != nil {
 			render.Status(r, http.StatusBadRequest)
 			render.JSON(w, r, resp.BadRequest("invalid date format, expected YYYY-MM-DD"))
 			return
 		}
-		// Day window in UTC (24 hours starting from midnight UTC of the given date).
+		// Default window: full local day [00:00 today, 00:00 next day) → UTC.
+		// time.Date(d+1) is DST-safe; +24h would skip/double an hour on DST
+		// transitions in zones that have them (Tashkent doesn't, but the rule
+		// stays correct for any future loc change).
 		start := day.UTC()
-		end := start.Add(24 * time.Hour)
+		end := time.Date(day.Year(), day.Month(), day.Day()+1, 0, 0, 0, 0, loc).UTC()
+
+		// Optional ?hour= narrows the window to one local hour [hh:00, hh+1:00).
+		// strconv.Atoi accepts both "0" and "00" — frontend may zero-pad.
+		// Validation runs BEFORE the repo so a bad hour never fires a query.
+		if s := r.URL.Query().Get("hour"); s != "" {
+			h, err := strconv.Atoi(s)
+			if err != nil || h < 0 || h > 23 {
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest("invalid hour, expected integer in [0,23]"))
+				return
+			}
+			hourStart := time.Date(day.Year(), day.Month(), day.Day(), h, 0, 0, 0, loc)
+			start = hourStart.UTC()
+			end = hourStart.Add(time.Hour).UTC()
+		}
 
 		// Optional org_id filter from query.
 		var orgIDs []int64

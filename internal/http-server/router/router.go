@@ -564,7 +564,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			// Tier 1: read + write hourly data + read config.
 			r.Group(func(r chi.Router) {
 				r.Use(mwauth.RequireAnyRole("sc", "rais", "reservoir_duty"))
-				r.Get("/hourly", reservoirfloodhandler.GetHourly(deps.Log, deps.PgRepo))
+				r.Get("/hourly", reservoirfloodhandler.GetHourly(deps.Log, deps.PgRepo, loc))
 				r.Post("/hourly", reservoirfloodhandler.UpsertHourly(deps.Log, deps.PgRepo))
 				r.Get("/config", reservoirfloodhandler.GetConfigs(deps.Log, deps.PgRepo))
 			})

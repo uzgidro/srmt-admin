@@ -38,8 +38,11 @@ type captureRepo struct {
 	upsertHourlyErr    error
 
 	// GetReservoirFloodHourlyRange recording.
-	hourlyRangeResult []model.HourlyRecord
-	hourlyRangeErr    error
+	hourlyRangeResult    []model.HourlyRecord
+	hourlyRangeStart     time.Time // last [start, end) window passed by handler
+	hourlyRangeEnd       time.Time
+	hourlyRangeCallCount int   // total calls to GetReservoirFloodHourlyRange
+	hourlyRangeErr       error
 
 	// Config CRUD recording.
 	upsertConfigReq    model.UpsertConfigRequest
@@ -58,10 +61,27 @@ func (c *captureRepo) UpsertReservoirFloodHourly(_ context.Context, items []mode
 	return c.upsertHourlyErr
 }
 
-func (c *captureRepo) GetReservoirFloodHourlyRange(_ context.Context, _ []int64, _, _ time.Time) ([]model.HourlyRecord, error) {
+// GetReservoirFloodHourlyRange records the [start, end) window the handler
+// passed and returns ONLY the records that fall inside it. This keeps the
+// regression for the timezone-window bug honest: if the handler computes a
+// wrong window, the mock will silently drop records and the assertion will
+// fail. Tests can still inject any fixture data via hourlyRangeResult.
+func (c *captureRepo) GetReservoirFloodHourlyRange(_ context.Context, _ []int64, start, end time.Time) ([]model.HourlyRecord, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.hourlyRangeResult, c.hourlyRangeErr
+	c.hourlyRangeCallCount++
+	c.hourlyRangeStart = start
+	c.hourlyRangeEnd = end
+	if c.hourlyRangeErr != nil {
+		return nil, c.hourlyRangeErr
+	}
+	out := make([]model.HourlyRecord, 0, len(c.hourlyRangeResult))
+	for _, rec := range c.hourlyRangeResult {
+		if !rec.RecordedAt.Before(start) && rec.RecordedAt.Before(end) {
+			out = append(out, rec)
+		}
+	}
+	return out, nil
 }
 
 func (c *captureRepo) UpsertReservoirFloodConfig(_ context.Context, req model.UpsertConfigRequest) error {
@@ -90,21 +110,32 @@ func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-func newRouter(repo *captureRepo, claims *token.Claims) http.Handler {
+// tashkentLoc is the timezone fixture for new tests that exercise the
+// local-day window. Using FixedZone avoids any tzdata-on-CI flakiness.
+var tashkentLoc = time.FixedZone("Asia/Tashkent", 5*3600)
+
+func newRouterInLoc(repo *captureRepo, claims *token.Claims, loc *time.Location) http.Handler {
 	r := chi.NewRouter()
 	r.Use(mwauth.Authenticator(&mockTokenVerifier{claims: claims}))
 	log := discardLogger()
 	r.Post("/reservoir-flood/hourly", UpsertHourly(log, repo))
-	r.Get("/reservoir-flood/hourly", GetHourly(log, repo))
+	r.Get("/reservoir-flood/hourly", GetHourly(log, repo, loc))
 	r.Post("/reservoir-flood/config", UpsertConfig(log, repo))
 	r.Get("/reservoir-flood/config", GetConfigs(log, repo))
 	r.Delete("/reservoir-flood/config", DeleteConfig(log, repo))
 	return r
 }
 
-func doRequest(t *testing.T, repo *captureRepo, claims *token.Claims, method, target, body string) *httptest.ResponseRecorder {
+// newRouter is the historical wrapper for tests that don't care about TZ.
+// Passing time.UTC keeps their behavior identical to the pre-fix code
+// (date string → midnight UTC window).
+func newRouter(repo *captureRepo, claims *token.Claims) http.Handler {
+	return newRouterInLoc(repo, claims, time.UTC)
+}
+
+func doRequestInLoc(t *testing.T, repo *captureRepo, claims *token.Claims, loc *time.Location, method, target, body string) *httptest.ResponseRecorder {
 	t.Helper()
-	r := newRouter(repo, claims)
+	r := newRouterInLoc(repo, claims, loc)
 	var bodyReader *bytes.Buffer
 	if body == "" {
 		bodyReader = bytes.NewBuffer(nil)
@@ -117,6 +148,10 @@ func doRequest(t *testing.T, repo *captureRepo, claims *token.Claims, method, ta
 	rr := httptest.NewRecorder()
 	r.ServeHTTP(rr, req)
 	return rr
+}
+
+func doRequest(t *testing.T, repo *captureRepo, claims *token.Claims, method, target, body string) *httptest.ResponseRecorder {
+	return doRequestInLoc(t, repo, claims, time.UTC, method, target, body)
 }
 
 func scClaims() *token.Claims {
@@ -511,5 +546,190 @@ func TestGetHourly_ReturnsNewMetrics(t *testing.T) {
 	}
 	if got[0].TemperatureC == nil || *got[0].TemperatureC != 18.5 {
 		t.Errorf("temperature_c: want 18.5, got %v", got[0].TemperatureC)
+	}
+}
+
+// Regression: a record stored at local midnight in Tashkent (UTC+5) must be
+// returned when the client requests THAT local day, not the day before.
+// Pre-fix the GET handler interpreted "?date=YYYY-MM-DD" as a UTC midnight
+// window, so a record at 2026-05-11T19:00:00Z (= 2026-05-12 00:00 local)
+// fell outside the [2026-05-12 00:00 UTC, 2026-05-13 00:00 UTC) window and
+// was silently dropped — users saw "saved successfully" then an empty list.
+func TestGetHourly_LocalDateBoundary(t *testing.T) {
+	// 2026-05-12 00:00:00 Asia/Tashkent == 2026-05-11 19:00:00 UTC.
+	midnightLocalUTC := time.Date(2026, 5, 11, 19, 0, 0, 0, time.UTC)
+
+	repo := &captureRepo{
+		hourlyRangeResult: []model.HourlyRecord{
+			{ID: 1, OrganizationID: 42, RecordedAt: midnightLocalUTC},
+		},
+	}
+
+	// Asking for the day THE RECORD BELONGS TO (12-th in local TZ): the
+	// handler MUST translate that to a UTC window that contains the record.
+	rr := doRequestInLoc(t, repo, scClaims(), tashkentLoc, http.MethodGet,
+		"/reservoir-flood/hourly?date=2026-05-12", "")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d, body: %s", rr.Code, rr.Body.String())
+	}
+	var got []model.HourlyRecord
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got) != 1 {
+		t.Errorf("want 1 record for the local day the midnight belongs to, got %d", len(got))
+	}
+
+	// Verify the window the handler actually computed — defence against a
+	// regression where the handler returns the right rows but for the wrong
+	// reason (e.g. the mock filter happens to admit them by accident).
+	wantStart := time.Date(2026, 5, 11, 19, 0, 0, 0, time.UTC) // 2026-05-12 00:00 +05:00
+	wantEnd := time.Date(2026, 5, 12, 19, 0, 0, 0, time.UTC)   // 2026-05-13 00:00 +05:00
+	if !repo.hourlyRangeStart.Equal(wantStart) {
+		t.Errorf("window start: want %s, got %s", wantStart, repo.hourlyRangeStart)
+	}
+	if !repo.hourlyRangeEnd.Equal(wantEnd) {
+		t.Errorf("window end: want %s, got %s", wantEnd, repo.hourlyRangeEnd)
+	}
+
+	// Counter-check: the previous local day (11-th) MUST NOT include this
+	// record — its end boundary is the half-open exclusive 19:00 UTC, exactly
+	// the record's timestamp.
+	repo.hourlyRangeStart, repo.hourlyRangeEnd = time.Time{}, time.Time{}
+	rr = doRequestInLoc(t, repo, scClaims(), tashkentLoc, http.MethodGet,
+		"/reservoir-flood/hourly?date=2026-05-11", "")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d", rr.Code)
+	}
+	var prev []model.HourlyRecord
+	_ = json.Unmarshal(rr.Body.Bytes(), &prev)
+	if len(prev) != 0 {
+		t.Errorf("previous local day must NOT include the midnight record, got %d", len(prev))
+	}
+}
+
+// Optional ?hour= narrows the window to one local hour. With three records
+// scattered across 2026-05-12 local (00:00, 08:00, 15:00), each hour query
+// must match exactly the corresponding record (and no others), and the
+// no-hour case must still return all three. A fresh captureRepo is built per
+// subtest so window-tracking fields can't leak between iterations — keeps the
+// table robust to reordering or future t.Parallel().
+func TestGetHourly_HourFilter(t *testing.T) {
+	hour00LocalUTC := time.Date(2026, 5, 11, 19, 0, 0, 0, time.UTC) // 12-th 00:00 local
+	hour08LocalUTC := time.Date(2026, 5, 12, 3, 0, 0, 0, time.UTC)  // 12-th 08:00 local
+	hour15LocalUTC := time.Date(2026, 5, 12, 10, 0, 0, 0, time.UTC) // 12-th 15:00 local
+
+	fixture := []model.HourlyRecord{
+		{ID: 1, OrganizationID: 42, RecordedAt: hour00LocalUTC},
+		{ID: 2, OrganizationID: 42, RecordedAt: hour08LocalUTC},
+		{ID: 3, OrganizationID: 42, RecordedAt: hour15LocalUTC},
+	}
+
+	cases := []struct {
+		name      string
+		query     string
+		wantLen   int
+		wantID    int64
+		wantStart time.Time
+		wantEnd   time.Time
+	}{
+		{
+			name: "hour 0 picks midnight", query: "?date=2026-05-12&hour=0",
+			wantLen: 1, wantID: 1,
+			wantStart: hour00LocalUTC, wantEnd: hour00LocalUTC.Add(time.Hour),
+		},
+		{
+			name: "hour 8 picks the morning record", query: "?date=2026-05-12&hour=8",
+			wantLen: 1, wantID: 2,
+			wantStart: hour08LocalUTC, wantEnd: hour08LocalUTC.Add(time.Hour),
+		},
+		{
+			name: "hour 12 returns nothing", query: "?date=2026-05-12&hour=12",
+			wantLen:   0,
+			wantStart: time.Date(2026, 5, 12, 7, 0, 0, 0, time.UTC),
+			wantEnd:   time.Date(2026, 5, 12, 8, 0, 0, 0, time.UTC),
+		},
+		{
+			name: "no hour returns the full local day", query: "?date=2026-05-12",
+			wantLen:   3,
+			wantStart: time.Date(2026, 5, 11, 19, 0, 0, 0, time.UTC),
+			wantEnd:   time.Date(2026, 5, 12, 19, 0, 0, 0, time.UTC),
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &captureRepo{hourlyRangeResult: fixture}
+			rr := doRequestInLoc(t, repo, scClaims(), tashkentLoc, http.MethodGet,
+				"/reservoir-flood/hourly"+tc.query, "")
+			if rr.Code != http.StatusOK {
+				t.Fatalf("status: want 200, got %d, body: %s", rr.Code, rr.Body.String())
+			}
+			var got []model.HourlyRecord
+			if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			if len(got) != tc.wantLen {
+				t.Errorf("len: want %d, got %d", tc.wantLen, len(got))
+			}
+			if tc.wantLen == 1 && len(got) == 1 && got[0].ID != tc.wantID {
+				t.Errorf("ID: want %d, got %d", tc.wantID, got[0].ID)
+			}
+			if !repo.hourlyRangeStart.Equal(tc.wantStart) {
+				t.Errorf("window start: want %s, got %s", tc.wantStart, repo.hourlyRangeStart)
+			}
+			if !repo.hourlyRangeEnd.Equal(tc.wantEnd) {
+				t.Errorf("window end: want %s, got %s", tc.wantEnd, repo.hourlyRangeEnd)
+			}
+		})
+	}
+}
+
+// Bad ?hour= values must yield 400 BEFORE the repo is touched. Asserting on
+// hourlyRangeCallCount (not on hourlyRangeStart.IsZero) catches a hypothetical
+// regression where the handler calls the repo and then ignores the error —
+// the start field would still be populated by the mock, but the call count
+// would be 1 instead of 0.
+func TestGetHourly_BadHour(t *testing.T) {
+	cases := []struct {
+		name, query string
+	}{
+		{"hour 24 out of range", "?date=2026-05-12&hour=24"},
+		{"hour -1 out of range", "?date=2026-05-12&hour=-1"},
+		{"hour abc not an integer", "?date=2026-05-12&hour=abc"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &captureRepo{}
+			rr := doRequestInLoc(t, repo, scClaims(), tashkentLoc, http.MethodGet,
+				"/reservoir-flood/hourly"+tc.query, "")
+			if rr.Code != http.StatusBadRequest {
+				t.Fatalf("status: want 400, got %d, body: %s", rr.Code, rr.Body.String())
+			}
+			if repo.hourlyRangeCallCount != 0 {
+				t.Errorf("repo MUST NOT be called on bad hour; got %d calls", repo.hourlyRangeCallCount)
+			}
+		})
+	}
+}
+
+// Sanity: strconv.Atoi accepts leading zeros, so ?hour=08 is equivalent to
+// ?hour=8. Frontend may send either depending on whether it formats local
+// hour-of-day as zero-padded.
+func TestGetHourly_HourWithLeadingZero(t *testing.T) {
+	rec := time.Date(2026, 5, 12, 3, 0, 0, 0, time.UTC) // 12-th 08:00 local
+	repo := &captureRepo{
+		hourlyRangeResult: []model.HourlyRecord{
+			{ID: 99, OrganizationID: 42, RecordedAt: rec},
+		},
+	}
+	rr := doRequestInLoc(t, repo, scClaims(), tashkentLoc, http.MethodGet,
+		"/reservoir-flood/hourly?date=2026-05-12&hour=08", "")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d, body: %s", rr.Code, rr.Body.String())
+	}
+	var got []model.HourlyRecord
+	_ = json.Unmarshal(rr.Body.Bytes(), &got)
+	if len(got) != 1 || got[0].ID != 99 {
+		t.Errorf("hour=08 should match the 08:00-local record; got %+v", got)
 	}
 }
