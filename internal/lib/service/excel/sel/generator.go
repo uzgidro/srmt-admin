@@ -55,8 +55,9 @@ type Report struct {
 // All numeric fields are nullable; nil → cell becomes "-". Strings: ""
 // → cell becomes "-".
 type ReservoirRow struct {
-	Name              string   // B
-	LevelPrev         *float64 // C
+	Name              string     // B
+	PrevAt            *time.Time // local time of the prev record; nil = no prev
+	LevelPrev         *float64   // C
 	LevelCurr         *float64 // D
 	VolumePrev        *float64 // E
 	VolumeCurr        *float64 // F
@@ -136,12 +137,29 @@ func (g *Generator) GenerateExcel(rep *Report) (*excelize.File, error) {
 			writeErr = fmt.Errorf("clear formula %s: %w", cell, err)
 		}
 	}
-	prevHour := time.Date(2000, 1, 1, (rep.Hour+23)%24, 0, 0, 0, time.UTC)
-	currHour := time.Date(2000, 1, 1, rep.Hour, 0, 0, 0, time.UTC)
+	// Row-5 prev cells now reflect the actual prev times across all rows
+	// (computed by formatPrevRow5). Stored as TEXT — the unioned date+time
+	// string would otherwise be parsed by LibreOffice under русская локаль.
+	// A new "@" (text) style overrides the template's [$-10819]hh:mm;@ format.
+	textStyle, err := f.NewStyle(&excelize.Style{NumFmt: 49}) // 49 = "@" text format
+	if err != nil {
+		_ = f.Close()
+		return nil, fmt.Errorf("text style: %w", err)
+	}
+	prevLabel := formatPrevRow5(rep.Reservoirs, rep.Date)
 	for _, cell := range []string{"C5", "E5", "G5", "I5", "K5", "M5", "O5"} {
 		clearFormula(cell)
-		set(cell, prevHour)
+		if writeErr != nil {
+			break
+		}
+		if err := f.SetCellStyle(sheet, cell, cell, textStyle); err != nil {
+			_ = f.Close()
+			return nil, fmt.Errorf("set style %s: %w", cell, err)
+		}
+		set(cell, prevLabel)
 	}
+
+	currHour := time.Date(2000, 1, 1, rep.Hour, 0, 0, 0, time.UTC)
 	for _, cell := range []string{"D5", "F5", "H5", "J5", "L5", "N5", "P5"} {
 		clearFormula(cell)
 		set(cell, currHour)
@@ -262,4 +280,66 @@ func (g *Generator) GenerateExcel(rep *Report) (*excelize.File, error) {
 		return nil, fmt.Errorf("recalculate formulas: %w", err)
 	}
 	return f, nil
+}
+
+// formatPrevRow5 builds the row-5 prev-hour label from per-row PrevAt values.
+//
+// Rules (see docs/plans/feature-reservoir-flood-prev-flex.md):
+//   - If no row has PrevAt → "-".
+//   - min..max time across all non-nil PrevAt.
+//   - If min == max (single distinct time across all rows) → render only one side.
+//   - Side's date is prepended ("02.01 ") only when that side's date differs
+//     from reportDate. So all-yesterday at 23:00 + reportDate=today → "12.05 23:00";
+//     mixed yesterday/today → "12.05 23:00–13.05 14:00"; same-day-only → "11:00–14:00".
+//
+// PrevAt values are expected to already be in the operator-facing location
+// (set by the builder via .In(loc)). reportDate's Y/M/D are interpreted in
+// PrevAt's location for the comparison; the location of reportDate's tzinfo
+// is irrelevant.
+func formatPrevRow5(rows []ReservoirRow, reportDate time.Time) string {
+	var minT, maxT *time.Time
+	for i := range rows {
+		t := rows[i].PrevAt
+		if t == nil {
+			continue
+		}
+		if minT == nil || t.Before(*minT) {
+			minT = t
+		}
+		if maxT == nil || t.After(*maxT) {
+			maxT = t
+		}
+	}
+	if minT == nil {
+		return dash
+	}
+
+	// Use minT's location as the reference frame so the Y/M/D comparison
+	// happens in the operator-facing timezone. Decompose reportDate via the
+	// same loc so a non-UTC reportDate (defensive — callers currently pass
+	// UTC midnight) wouldn't shift the calendar boundary.
+	loc := minT.Location()
+	rd := reportDate.In(loc)
+	reportYMD := time.Date(rd.Year(), rd.Month(), rd.Day(), 0, 0, 0, 0, loc)
+
+	sameAsReport := func(t time.Time) bool {
+		t = t.In(loc)
+		return t.Year() == reportYMD.Year() && t.Month() == reportYMD.Month() && t.Day() == reportYMD.Day()
+	}
+
+	// If EITHER side of the range is off-report-date, render both sides with
+	// the date prefix so the cell is unambiguous. Otherwise both sides are
+	// time-only.
+	showDate := !sameAsReport(*minT) || !sameAsReport(*maxT)
+	layout := "15:04"
+	if showDate {
+		layout = "02.01 15:04"
+	}
+
+	minStr := minT.In(loc).Format(layout)
+	maxStr := maxT.In(loc).Format(layout)
+	if minStr == maxStr {
+		return minStr
+	}
+	return minStr + "–" + maxStr // en dash U+2013
 }
