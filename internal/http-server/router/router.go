@@ -471,7 +471,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Get("/discharges", dischargeGet.New(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
 			r.Get("/discharges/current", dischargeGetCurrent.New(deps.Log, deps.PgRepo, deps.MinioRepo))
 			r.Get("/discharges/flat", dischargeGetFlat.New(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
-			r.Post("/discharges", dischargeAdd.New(deps.Log, deps.PgRepo, deps.DischargeService))
+			r.Post("/discharges", dischargeAdd.New(deps.Log, deps.PgRepo, deps.DischargeService, deps.PgRepo, loc))
 			r.Patch("/discharges/{id}", dischargePatch.New(deps.Log, deps.PgRepo, deps.PgRepo))
 			r.Delete("/discharges/{id}", dischargeDelete.New(deps.Log, deps.PgRepo, deps.PgRepo))
 			r.Get("/discharges/export", dischargeExport.New(
@@ -609,7 +609,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 		// (own org or its direct children). sc/rais keep full access.
 		r.Group(func(r chi.Router) {
 			r.Use(mwauth.RequireAnyRole("sc", "rais", "cascade"))
-			r.Post("/shutdowns", shutdowns.Add(deps.Log, deps.PgRepo))
+			r.Post("/shutdowns", shutdowns.Add(deps.Log, deps.PgRepo, loc))
 			r.Patch("/shutdowns/{id}", shutdowns.Edit(deps.Log, deps.PgRepo))
 			r.Delete("/shutdowns/{id}", shutdowns.Delete(deps.Log, deps.PgRepo))
 			r.Patch("/shutdowns/{id}/viewed", shutdowns.MarkViewed(deps.Log, deps.PgRepo))

@@ -32,7 +32,7 @@ func (m *mockShutdownAdder) LinkShutdownFiles(ctx context.Context, shutdownID in
 	return nil
 }
 
-func (m *mockShutdownAdder) AddShutdown(ctx context.Context, req dto.AddShutdownRequest) (int64, error) {
+func (m *mockShutdownAdder) AddShutdown(ctx context.Context, req dto.AddShutdownRequest, _ *time.Location) (int64, error) {
 	m.addCalls++
 	if m.addFunc != nil {
 		return m.addFunc(ctx, req)
@@ -252,7 +252,7 @@ func TestAdd(t *testing.T) {
 			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 			// Call handler
-			handler := Add(logger, mock)
+			handler := Add(logger, mock, time.UTC)
 			handler.ServeHTTP(rr, req)
 
 			// Check status code
@@ -300,7 +300,7 @@ func TestAdd_NoUserID(t *testing.T) {
 
 	rr := httptest.NewRecorder()
 
-	handler := Add(logger, mock)
+	handler := Add(logger, mock, time.UTC)
 	handler.ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusUnauthorized {
@@ -333,7 +333,7 @@ func runAddWithCtx(t *testing.T, mock *mockShutdownAdder, ctx context.Context, b
 
 	rr := httptest.NewRecorder()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	handler := Add(logger, mock)
+	handler := Add(logger, mock, time.UTC)
 	handler.ServeHTTP(rr, req)
 	return rr
 }

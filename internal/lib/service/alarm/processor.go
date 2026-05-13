@@ -11,7 +11,7 @@ import (
 
 // ShutdownManager provides methods to manage shutdowns
 type ShutdownManager interface {
-	AddShutdown(ctx context.Context, req dto.AddShutdownRequest) (int64, error)
+	AddShutdown(ctx context.Context, req dto.AddShutdownRequest, loc *time.Location) (int64, error)
 	EditShutdown(ctx context.Context, id int64, req dto.EditShutdownRequest) error
 }
 
@@ -118,7 +118,9 @@ func (p *Processor) createShutdown(ctx context.Context, stationDBID int64, env *
 		CreatedByUserID: SystemUserID,
 	}
 
-	return p.shutdownRepo.AddShutdown(ctx, req)
+	// loc=nil disables backdate rotation. ASUTP-driven shutdowns use time.Now()
+	// for start_time, so backdate rotation is never applicable.
+	return p.shutdownRepo.AddShutdown(ctx, req, nil)
 }
 
 // closeShutdown sets the end time on an existing shutdown

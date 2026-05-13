@@ -23,7 +23,7 @@ type mockShutdownManager struct {
 	}
 }
 
-func (m *mockShutdownManager) AddShutdown(ctx context.Context, req dto.AddShutdownRequest) (int64, error) {
+func (m *mockShutdownManager) AddShutdown(ctx context.Context, req dto.AddShutdownRequest, _ *time.Location) (int64, error) {
 	m.addCalls = append(m.addCalls, req)
 	if m.addShutdownFunc != nil {
 		return m.addShutdownFunc(ctx, req)
