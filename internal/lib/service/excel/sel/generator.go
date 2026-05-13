@@ -137,25 +137,15 @@ func (g *Generator) GenerateExcel(rep *Report) (*excelize.File, error) {
 			writeErr = fmt.Errorf("clear formula %s: %w", cell, err)
 		}
 	}
-	// Row-5 prev cells now reflect the actual prev times across all rows
-	// (computed by formatPrevRow5). Stored as TEXT — the unioned date+time
-	// string would otherwise be parsed by LibreOffice under русская локаль.
-	// A new "@" (text) style overrides the template's [$-10819]hh:mm;@ format.
-	textStyle, err := f.NewStyle(&excelize.Style{NumFmt: 49}) // 49 = "@" text format
-	if err != nil {
-		_ = f.Close()
-		return nil, fmt.Errorf("text style: %w", err)
-	}
+	// Row-5 prev cells: write the range as plain text. The template carries
+	// the right style (text format @, wrap text, centered borders) for these
+	// cells, so we just clear the formula and call set() — SetCellValue
+	// preserves the existing cell style. Do NOT call SetCellStyle here:
+	// constructing a fresh style would wipe alignment/borders/font from the
+	// template.
 	prevLabel := formatPrevRow5(rep.Reservoirs, rep.Date)
 	for _, cell := range []string{"C5", "E5", "G5", "I5", "K5", "M5", "O5"} {
 		clearFormula(cell)
-		if writeErr != nil {
-			break
-		}
-		if err := f.SetCellStyle(sheet, cell, cell, textStyle); err != nil {
-			_ = f.Close()
-			return nil, fmt.Errorf("set style %s: %w", cell, err)
-		}
 		set(cell, prevLabel)
 	}
 
