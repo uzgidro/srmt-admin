@@ -55,8 +55,9 @@ type Report struct {
 // All numeric fields are nullable; nil → cell becomes "-". Strings: ""
 // → cell becomes "-".
 type ReservoirRow struct {
-	Name              string   // B
-	LevelPrev         *float64 // C
+	Name              string     // B
+	PrevAt            *time.Time // local time of the prev record; nil = no prev
+	LevelPrev         *float64   // C
 	LevelCurr         *float64 // D
 	VolumePrev        *float64 // E
 	VolumeCurr        *float64 // F

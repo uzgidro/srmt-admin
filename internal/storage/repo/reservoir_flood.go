@@ -228,74 +228,149 @@ func (r *Repo) GetReservoirFloodHourlyRange(ctx context.Context, orgIDs []int64,
 
 	out := make([]model.HourlyRecord, 0)
 	for rows.Next() {
-		var rec model.HourlyRecord
-		var (
-			waterLevel, waterVolume, inflow, outflow sql.NullFloat64
-			gesFlow, filtration, idleDischarge       sql.NullFloat64
-			dutyName                                 sql.NullString
-			capacityMwt                              sql.NullFloat64
-			weatherCondition                         sql.NullString
-			temperatureC                             sql.NullFloat64
-			createdBy                                sql.NullInt64
-		)
-		if err := rows.Scan(
-			&rec.ID, &rec.OrganizationID, &rec.OrganizationName,
-			&rec.RecordedAt,
-			&waterLevel, &waterVolume, &inflow, &outflow,
-			&gesFlow, &filtration, &idleDischarge,
-			&dutyName,
-			&capacityMwt, &weatherCondition, &temperatureC,
-			&createdBy, &rec.UpdatedAt,
-		); err != nil {
+		rec, err := scanHourlyRecord(rows)
+		if err != nil {
 			return nil, fmt.Errorf("%s: scan: %w", op, err)
 		}
-		if waterLevel.Valid {
-			v := waterLevel.Float64
-			rec.WaterLevelM = &v
-		}
-		if waterVolume.Valid {
-			v := waterVolume.Float64
-			rec.WaterVolumeMlnM3 = &v
-		}
-		if inflow.Valid {
-			v := inflow.Float64
-			rec.InflowM3s = &v
-		}
-		if outflow.Valid {
-			v := outflow.Float64
-			rec.OutflowM3s = &v
-		}
-		if gesFlow.Valid {
-			v := gesFlow.Float64
-			rec.GESFlowM3s = &v
-		}
-		if filtration.Valid {
-			v := filtration.Float64
-			rec.FiltrationM3s = &v
-		}
-		if idleDischarge.Valid {
-			v := idleDischarge.Float64
-			rec.IdleDischargeM3s = &v
-		}
-		if dutyName.Valid {
-			s := dutyName.String
-			rec.DutyName = &s
-		}
-		if capacityMwt.Valid {
-			v := capacityMwt.Float64
-			rec.CapacityMwt = &v
-		}
-		if weatherCondition.Valid {
-			s := weatherCondition.String
-			rec.WeatherCondition = &s
-		}
-		if temperatureC.Valid {
-			v := temperatureC.Float64
-			rec.TemperatureC = &v
-		}
-		if createdBy.Valid {
-			i := createdBy.Int64
-			rec.CreatedByUserID = &i
+		out = append(out, rec)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: rows: %w", op, err)
+	}
+	return out, nil
+}
+
+// scanHourlyRecord reads a single hourly row from rows. The column order must
+// match the SELECT lists in GetReservoirFloodHourlyRange and
+// GetReservoirFloodHourlyLatestBefore: id, organization_id, name, recorded_at,
+// water_level_m, water_volume_mln_m3, inflow_m3s, outflow_m3s, ges_flow_m3s,
+// filtration_m3s, idle_discharge_m3s, duty_name, capacity_mwt,
+// weather_condition, temperature_c, created_by_user_id, updated_at.
+func scanHourlyRecord(rows *sql.Rows) (model.HourlyRecord, error) {
+	var rec model.HourlyRecord
+	var (
+		waterLevel, waterVolume, inflow, outflow sql.NullFloat64
+		gesFlow, filtration, idleDischarge       sql.NullFloat64
+		dutyName                                 sql.NullString
+		capacityMwt                              sql.NullFloat64
+		weatherCondition                         sql.NullString
+		temperatureC                             sql.NullFloat64
+		createdBy                                sql.NullInt64
+	)
+	if err := rows.Scan(
+		&rec.ID, &rec.OrganizationID, &rec.OrganizationName,
+		&rec.RecordedAt,
+		&waterLevel, &waterVolume, &inflow, &outflow,
+		&gesFlow, &filtration, &idleDischarge,
+		&dutyName,
+		&capacityMwt, &weatherCondition, &temperatureC,
+		&createdBy, &rec.UpdatedAt,
+	); err != nil {
+		return rec, err
+	}
+	if waterLevel.Valid {
+		v := waterLevel.Float64
+		rec.WaterLevelM = &v
+	}
+	if waterVolume.Valid {
+		v := waterVolume.Float64
+		rec.WaterVolumeMlnM3 = &v
+	}
+	if inflow.Valid {
+		v := inflow.Float64
+		rec.InflowM3s = &v
+	}
+	if outflow.Valid {
+		v := outflow.Float64
+		rec.OutflowM3s = &v
+	}
+	if gesFlow.Valid {
+		v := gesFlow.Float64
+		rec.GESFlowM3s = &v
+	}
+	if filtration.Valid {
+		v := filtration.Float64
+		rec.FiltrationM3s = &v
+	}
+	if idleDischarge.Valid {
+		v := idleDischarge.Float64
+		rec.IdleDischargeM3s = &v
+	}
+	if dutyName.Valid {
+		s := dutyName.String
+		rec.DutyName = &s
+	}
+	if capacityMwt.Valid {
+		v := capacityMwt.Float64
+		rec.CapacityMwt = &v
+	}
+	if weatherCondition.Valid {
+		s := weatherCondition.String
+		rec.WeatherCondition = &s
+	}
+	if temperatureC.Valid {
+		v := temperatureC.Float64
+		rec.TemperatureC = &v
+	}
+	if createdBy.Valid {
+		i := createdBy.Int64
+		rec.CreatedByUserID = &i
+	}
+	return rec, nil
+}
+
+// GetReservoirFloodHourlyLatestBefore returns at most one record per org —
+// the most recent row with recorded_at < before. Used by the sel report
+// builder to pick the "previous snapshot" when intervals between
+// observations vary (e.g. hourly at night, every 3h during day, with skips).
+//
+// SQL uses LATERAL + LIMIT 1 to coerce the planner into N index seeks against
+// (organization_id, recorded_at DESC) rather than a Bitmap+Sort over the full
+// history per org. Without the LIMIT 1, DISTINCT ON would force PG to sort
+// the entire matching set first — fine for a few rows, expensive once the
+// table accumulates years of history.
+//
+// orgIDs empty/nil → returns (nil, nil) without touching the DB. This is an
+// explicit guard rather than a comment because future callers may pass an
+// unfiltered slice.
+func (r *Repo) GetReservoirFloodHourlyLatestBefore(ctx context.Context, orgIDs []int64, before time.Time) ([]model.HourlyRecord, error) {
+	const op = "storage.repo.ReservoirFlood.GetHourlyLatestBefore"
+
+	if len(orgIDs) == 0 {
+		return nil, nil
+	}
+
+	const query = `
+		SELECT h.id, h.organization_id, COALESCE(o.name, ''),
+		       h.recorded_at,
+		       h.water_level_m, h.water_volume_mln_m3, h.inflow_m3s, h.outflow_m3s,
+		       h.ges_flow_m3s, h.filtration_m3s, h.idle_discharge_m3s,
+		       h.duty_name,
+		       h.capacity_mwt, h.weather_condition, h.temperature_c,
+		       h.created_by_user_id, h.updated_at
+		FROM unnest($1::bigint[]) AS orgs(organization_id)
+		JOIN LATERAL (
+		    SELECT *
+		    FROM reservoir_flood_hourly hh
+		    WHERE hh.organization_id = orgs.organization_id
+		      AND hh.recorded_at < $2
+		    ORDER BY hh.recorded_at DESC
+		    LIMIT 1
+		) h ON TRUE
+		LEFT JOIN organizations o ON o.id = h.organization_id
+		ORDER BY h.organization_id`
+
+	rows, err := r.db.QueryContext(ctx, query, pq.Array(orgIDs), before)
+	if err != nil {
+		return nil, fmt.Errorf("%s: query: %w", op, err)
+	}
+	defer rows.Close()
+
+	out := make([]model.HourlyRecord, 0, len(orgIDs))
+	for rows.Next() {
+		rec, err := scanHourlyRecord(rows)
+		if err != nil {
+			return nil, fmt.Errorf("%s: scan: %w", op, err)
 		}
 		out = append(out, rec)
 	}
