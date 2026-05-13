@@ -12,6 +12,7 @@ import (
 	"srmt-admin/internal/lib/dto"
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/lib/service/auth"
+	"srmt-admin/internal/lib/service/dayrotation/cutoffs"
 	"srmt-admin/internal/storage"
 	"time"
 )
@@ -35,12 +36,12 @@ type addResponse struct {
 }
 
 type ShutdownAdder interface {
-	AddShutdown(ctx context.Context, req dto.AddShutdownRequest) (int64, error)
+	AddShutdown(ctx context.Context, req dto.AddShutdownRequest, loc *time.Location) (int64, error)
 	LinkShutdownFiles(ctx context.Context, shutdownID int64, fileIDs []int64) error
 	GetOrganizationParentID(ctx context.Context, orgID int64) (*int64, error)
 }
 
-func Add(log *slog.Logger, adder ShutdownAdder) http.HandlerFunc {
+func Add(log *slog.Logger, adder ShutdownAdder, loc *time.Location) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.shutdown.Add"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
@@ -111,7 +112,7 @@ func Add(log *slog.Logger, adder ShutdownAdder) http.HandlerFunc {
 			FileIDs:                       req.FileIDs,
 		}
 
-		id, err := adder.AddShutdown(r.Context(), storageReq)
+		id, err := adder.AddShutdown(r.Context(), storageReq, loc)
 		if err != nil {
 			if errors.Is(err, storage.ErrOngoingDischargeExists) || errors.Is(err, storage.ErrDuplicate) {
 				log.Warn("ongoing discharge exists", "org_id", req.OrganizationID)
@@ -129,6 +130,12 @@ func Add(log *slog.Logger, adder ShutdownAdder) http.HandlerFunc {
 				log.Warn("FK violation (org or contact not found)")
 				render.Status(r, http.StatusBadRequest)
 				render.JSON(w, r, resp.BadRequest("Invalid organization_id or reported_by_contact_id"))
+				return
+			}
+			if errors.Is(err, cutoffs.ErrBackdateTooOld) {
+				log.Warn("start_time too far in the past", "start_time", req.StartTime)
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest("start_time is more than 90 days in the past"))
 				return
 			}
 			log.Error("failed to add shutdown", sl.Err(err))

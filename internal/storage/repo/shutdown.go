@@ -9,6 +9,7 @@ import (
 	"srmt-admin/internal/lib/model/file"
 	"srmt-admin/internal/lib/model/shutdown"
 	"srmt-admin/internal/lib/model/user"
+	"srmt-admin/internal/lib/service/dayrotation/cutoffs"
 	"srmt-admin/internal/storage"
 	"strings"
 	"time"
@@ -50,7 +51,16 @@ func (r *Repo) GetShutdownCreatedByUserID(ctx context.Context, id int64) (sql.Nu
 	return owner, nil
 }
 
-func (r *Repo) AddShutdown(ctx context.Context, req dto.AddShutdownRequest) (int64, error) {
+// AddShutdown creates a shutdown row and (optionally) a linked
+// idle_water_discharges row inside one transaction. If req.StartTime
+// predates one or more 05:00 cutoffs in `loc`, the linked discharge is
+// rotated chain-style (close+clone per cutoff, no file_link copy)
+// symmetric with the dayrotation ticker — the shutdown stays pointing at
+// the original (now closed) discharge by design.
+//
+// loc=nil disables backdate rotation (caller-side opt-out used by tests
+// that don't care about the timezone-dependent path).
+func (r *Repo) AddShutdown(ctx context.Context, req dto.AddShutdownRequest, loc *time.Location) (int64, error) {
 	const op = "storage.repo.AddShutdown"
 
 	tx, err := r.db.BeginTx(ctx, nil)
@@ -139,6 +149,19 @@ func (r *Repo) AddShutdown(ctx context.Context, req dto.AddShutdownRequest) (int
 			return 0, translatedErr
 		}
 		return 0, fmt.Errorf("%s: failed to insert shutdown: %w", op, err)
+	}
+
+	// Backdate rotation for the linked discharge, if any. Mirrors the linked
+	// path of the dayrotation ticker (no file_links copy; shutdown stays on
+	// original). loc=nil disables this (test opt-out).
+	if idleDischargeID != nil && loc != nil {
+		cuts, cerr := cutoffs.Compute(req.StartTime, time.Now(), 5, loc)
+		if cerr != nil {
+			return 0, fmt.Errorf("%s: compute cutoffs: %w", op, cerr)
+		}
+		if _, rerr := rotateBackdatedDischargeChainTx(ctx, tx, *idleDischargeID, cuts, false /*copyFiles*/, op); rerr != nil {
+			return 0, rerr
+		}
 	}
 
 	return id, tx.Commit()
