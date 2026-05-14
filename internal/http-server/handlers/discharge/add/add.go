@@ -11,6 +11,7 @@ import (
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/lib/service/auth"
+	"srmt-admin/internal/lib/service/dayrotation/cutoffs"
 	"srmt-admin/internal/storage"
 	"time"
 )
@@ -39,7 +40,14 @@ type OngoingChecker interface {
 	EnsureNoOngoingDischarge(ctx context.Context, orgID int64, force bool, newStartTime time.Time) error
 }
 
-func New(log *slog.Logger, adder DischargeAdder, checker OngoingChecker) http.HandlerFunc {
+// BackdateRotator emulates the dayrotation ticker for a freshly created
+// discharge whose start_time predates one or more 05:00 cutoffs. Returns the
+// final clone's ID; if cutoffs is empty, returns the input ID unchanged.
+type BackdateRotator interface {
+	RotateBackdatedDischarge(ctx context.Context, dischargeID int64, cutoffs []time.Time) (int64, error)
+}
+
+func New(log *slog.Logger, adder DischargeAdder, checker OngoingChecker, rotator BackdateRotator, loc *time.Location) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.discharge.add.New"
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
@@ -98,6 +106,24 @@ func New(log *slog.Logger, adder DischargeAdder, checker OngoingChecker) http.Ha
 			return
 		}
 
+		// Pre-compute backdate cutoffs from started_at. This is a pure
+		// computation (no DB) — running it BEFORE AddDischarge ensures the
+		// ErrBackdateTooOld case rejects the request without leaving an
+		// orphan ongoing discharge in the DB.
+		cuts, err := cutoffs.Compute(req.StartedAt, time.Now(), 5, loc)
+		if err != nil {
+			if errors.Is(err, cutoffs.ErrBackdateTooOld) {
+				log.Warn("started_at too far in the past", "started_at", req.StartedAt)
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequest("started_at is more than 90 days in the past"))
+				return
+			}
+			log.Error("failed to compute cutoffs", sl.Err(err))
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, resp.InternalServerError("Failed to compute backdate cutoffs"))
+			return
+		}
+
 		// Create discharge
 		id, err := adder.AddDischarge(r.Context(), req.OrganizationID, userID, req.StartedAt, req.EndedAt, req.FlowRate, req.Reason)
 		if err != nil {
@@ -125,6 +151,28 @@ func New(log *slog.Logger, adder DischargeAdder, checker OngoingChecker) http.Ha
 				log.Error("failed to link files", sl.Err(err))
 				// Don't fail the request, just log the error
 			}
+		}
+
+		// Backdate rotation: if started_at predates one or more 05:00 local
+		// cutoffs, emulate the dayrotation ticker for each missed cutoff so
+		// the record is split per operational day. Mirrors what the scheduled
+		// job does daily (RotateDayBoundary). The handler returns the final
+		// clone's ID — that's the row that remains "current ongoing" and is
+		// what the frontend will see at GET /discharges/current.
+		if len(cuts) > 0 {
+			finalID, err := rotator.RotateBackdatedDischarge(r.Context(), id, cuts)
+			if err != nil {
+				log.Error("failed to rotate backdated discharge", sl.Err(err), slog.Int64("original_id", id), slog.Int("cutoffs", len(cuts)))
+				render.Status(r, http.StatusInternalServerError)
+				render.JSON(w, r, resp.InternalServerError("Failed to rotate backdated discharge"))
+				return
+			}
+			log.Info("backdate rotation applied",
+				slog.Int64("original_id", id),
+				slog.Int64("final_id", finalID),
+				slog.Int("cutoffs", len(cuts)),
+			)
+			id = finalID
 		}
 
 		log.Info("discharge added successfully",
