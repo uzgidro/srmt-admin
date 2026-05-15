@@ -173,7 +173,6 @@ func hourlyBody(orgID int64, recordedAt string) string {
 		"inflow_m3s": 250.0,
 		"outflow_m3s": 200.0,
 		"ges_flow_m3s": 180.0,
-		"filtration_m3s": 5.0,
 		"idle_discharge_m3s": 15.0,
 		"duty_name": "Иванов И.И., смена 1"
 	}]`

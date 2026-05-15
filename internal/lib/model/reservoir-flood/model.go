@@ -43,7 +43,6 @@ type HourlyRecord struct {
 	InflowM3s        *float64  `json:"inflow_m3s"`
 	OutflowM3s       *float64  `json:"outflow_m3s"`
 	GESFlowM3s       *float64  `json:"ges_flow_m3s"`
-	FiltrationM3s    *float64  `json:"filtration_m3s"`
 	IdleDischargeM3s *float64  `json:"idle_discharge_m3s"`
 	DutyName         *string   `json:"duty_name"`
 	CapacityMwt      *float64  `json:"capacity_mwt"`
@@ -68,7 +67,6 @@ type UpsertHourlyRequest struct {
 	InflowM3s        optional.Optional[float64] `json:"inflow_m3s"          validate:"omitempty"`
 	OutflowM3s       optional.Optional[float64] `json:"outflow_m3s"         validate:"omitempty"`
 	GESFlowM3s       optional.Optional[float64] `json:"ges_flow_m3s"        validate:"omitempty"`
-	FiltrationM3s    optional.Optional[float64] `json:"filtration_m3s"      validate:"omitempty"`
 	IdleDischargeM3s optional.Optional[float64] `json:"idle_discharge_m3s"  validate:"omitempty"`
 	DutyName         optional.Optional[string]  `json:"duty_name"`
 	CapacityMwt      optional.Optional[float64] `json:"capacity_mwt"        validate:"omitempty"`
