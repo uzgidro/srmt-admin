@@ -64,11 +64,14 @@ func validateConsumptionAgainstIdle(rows []model.RawDailyRow) *ReportValidationE
 		idle := *row.TotalOutflowM3s - *row.GESFlowM3s
 		cons := *row.ConsumptionM3s
 		if cons > idle {
+			// Round to match what computeDaySnapshot would have rendered, so
+			// the figure shown in the structured 400 matches the figure the
+			// frontend would otherwise have seen in current.idle_discharge_m3s.
 			violations = append(violations, ConsumptionViolation{
 				OrganizationID:   row.OrganizationID,
 				OrganizationName: row.OrganizationName,
 				Date:             row.Date,
-				IdleM3s:          idle,
+				IdleM3s:          roundTo2(idle),
 				ConsumptionM3s:   cons,
 			})
 		}

@@ -2,7 +2,7 @@
 
 This page describes the structured-error envelope returned by the GES daily-report endpoints, the catalog of stable error codes, and the new `consumption_m3_s` field on `ges_daily_data`.
 
-Audience: frontend developers integrating with `POST /ges/daily-data`, `GET /ges/daily-data`, `GET /ges/daily-report`, and `POST /ges/daily-report/export`.
+Audience: frontend developers integrating with `POST /ges/daily-data`, `GET /ges/daily-data`, `GET /ges/daily-report`, and `GET /ges/daily-report/export`.
 
 ## 1. Response envelope
 
@@ -47,7 +47,7 @@ The field uses the same three-state partial-update semantics as every other opti
 | `"consumption_m3_s": null` | Explicitly clear — write SQL NULL. |
 | `"consumption_m3_s": 1.5` | Write the value. Must be ≥ 0 or 400 with `code = save.field_negative`. |
 
-### Report semantics (GET /ges/daily-report, POST /ges/daily-report/export)
+### Report semantics (GET /ges/daily-report, GET /ges/daily-report/export)
 
 For the operational day being rendered, every station with a non-null `consumption_m3_s` MUST satisfy:
 
@@ -68,7 +68,7 @@ When `total_outflow_m3s` OR `ges_flow_m3s` is null, idle is uncomputable and the
 | `save.field_negative` | 400 | POST /ges/daily-data | A numeric field was sent with a negative value. Applies to `working_aggregates`, `repair_aggregates`, `modernization_aggregates`, `own_consumption_kwh`, `consumption_m3_s`. |
 | `save.aggregates_exceed_total` | 400 | POST /ges/daily-data | `working + repair + modernization` (after merging the request with the current DB row) exceeds the configured `ges_config.total_aggregates`. |
 | `save.production_exceeds_max` | 400 | POST /ges/daily-data | `daily_production_mln_kwh` exceeds the configured `ges_config.max_daily_production_mln_kwh` for the station. |
-| `report.consumption_exceeds_idle` | 400 | GET /ges/daily-report, POST /ges/daily-report/export | One or more stations have `consumption_m3_s > (total_outflow_m3s - ges_flow_m3s)` for the requested day. |
+| `report.consumption_exceeds_idle` | 400 | GET /ges/daily-report, GET /ges/daily-report/export | One or more stations have `consumption_m3_s > (total_outflow_m3s - ges_flow_m3s)` for the requested day. |
 
 Other 4xx/5xx responses (validation tag failures, missing date, auth, internal errors) currently return only `error` — no `code` / `details`. Treat the absence of `code` as "generic error, show the `error` text as-is."
 
