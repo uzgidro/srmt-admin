@@ -65,6 +65,7 @@ type DailyData struct {
 	TotalOutflowM3s         *float64 `json:"total_outflow_m3s"`
 	GESFlowM3s              *float64 `json:"ges_flow_m3s"`
 	OwnConsumptionKWh       *float64 `json:"own_consumption_kwh"`
+	ConsumptionM3s          *float64 `json:"consumption_m3_s"`
 }
 
 type UpsertDailyDataRequest struct {
@@ -81,6 +82,7 @@ type UpsertDailyDataRequest struct {
 	TotalOutflowM3s         optional.Optional[float64] `json:"total_outflow_m3s"`
 	GESFlowM3s              optional.Optional[float64] `json:"ges_flow_m3s"`
 	OwnConsumptionKWh       optional.Optional[float64] `json:"own_consumption_kwh"`
+	ConsumptionM3s          optional.Optional[float64] `json:"consumption_m3_s"`
 }
 
 // UpsertCascadeDailyWeatherRequest is the body item for manual weather corrections
@@ -181,6 +183,7 @@ type CurrentData struct {
 	TotalOutflowM3s         *float64 `json:"total_outflow_m3s"`
 	GESFlowM3s              *float64 `json:"ges_flow_m3s"`
 	OwnConsumptionKWh       *float64 `json:"own_consumption_kwh"`
+	ConsumptionM3s          *float64 `json:"consumption_m3_s"`
 	IdleDischargeM3s        *float64 `json:"idle_discharge_m3s"`
 }
 
@@ -204,6 +207,7 @@ type PreviousDayData struct {
 	TotalOutflowM3s         *float64 `json:"total_outflow_m3s"`
 	GESFlowM3s              *float64 `json:"ges_flow_m3s"`
 	OwnConsumptionKWh       *float64 `json:"own_consumption_kwh"`
+	ConsumptionM3s          *float64 `json:"consumption_m3_s"`
 	IdleDischargeM3s        *float64 `json:"idle_discharge_m3s"`
 }
 
@@ -296,6 +300,7 @@ type RawDailyRow struct {
 	TotalOutflowM3s         *float64
 	GESFlowM3s              *float64
 	OwnConsumptionKWh       *float64
+	ConsumptionM3s          *float64
 	InstalledCapacityMWt    float64
 	TotalAggregates         int
 	HasReservoir            bool
