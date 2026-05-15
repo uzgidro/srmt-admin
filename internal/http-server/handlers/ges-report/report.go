@@ -11,6 +11,7 @@ import (
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
 	model "srmt-admin/internal/lib/model/ges-report"
+	gesreportservice "srmt-admin/internal/lib/service/ges-report"
 	"srmt-admin/internal/storage"
 
 	"github.com/go-chi/chi/v5/middleware"
@@ -19,6 +20,24 @@ import (
 
 type ReportBuilder interface {
 	BuildDailyReport(ctx context.Context, date string, cascadeOrgID *int64) (*model.DailyReport, error)
+}
+
+// consumptionViolationsToDetails converts the typed service-side violation
+// slice into the open-ended []resp.Detail shape the structured error helper
+// expects. Each entry mirrors the field names from the plan's API contract
+// (organization_id, organization_name, date, idle_m3_s, consumption_m3_s).
+func consumptionViolationsToDetails(vs []gesreportservice.ConsumptionViolation) []resp.Detail {
+	out := make([]resp.Detail, 0, len(vs))
+	for _, v := range vs {
+		out = append(out, resp.Detail{
+			"organization_id":   v.OrganizationID,
+			"organization_name": v.OrganizationName,
+			"date":              v.Date,
+			"idle_m3_s":         v.IdleM3s,
+			"consumption_m3_s":  v.ConsumptionM3s,
+		})
+	}
+	return out
 }
 
 func GetReport(log *slog.Logger, svc ReportBuilder) http.HandlerFunc {
@@ -59,6 +78,19 @@ func GetReport(log *slog.Logger, svc ReportBuilder) http.HandlerFunc {
 			if errors.Is(err, storage.ErrNotFound) {
 				render.Status(r, http.StatusNotFound)
 				render.JSON(w, r, resp.NotFound("report data not found"))
+				return
+			}
+			var rve *gesreportservice.ReportValidationError
+			if errors.As(err, &rve) {
+				log.Warn("report validation rejected build",
+					slog.String("code", rve.Code),
+					slog.Int("violations", len(rve.Violations)))
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequestStructured(
+					rve.Code,
+					rve.Error(),
+					consumptionViolationsToDetails(rve.Violations),
+				))
 				return
 			}
 			log.Error("failed to build daily report", sl.Err(err))

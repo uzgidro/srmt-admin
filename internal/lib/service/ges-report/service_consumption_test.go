@@ -199,6 +199,46 @@ func TestBuildDailyReport_ConsumptionNil_IdleUnchanged(t *testing.T) {
 	}
 }
 
+// Historical violation in yesterday's data must NOT surface as negative idle
+// in PreviousDayData. validateConsumptionAgainstIdle only runs over today's
+// rows; yesterday's idle is clamped to >= 0 in computeDaySnapshot. This pins
+// the contract that a buggy historical row never produces a negative number
+// in the rendered report.
+func TestBuildDailyReport_YesterdayConsumptionExceedsIdle_Clamped(t *testing.T) {
+	repo := &mockRepo{
+		todayDate:     "2026-04-22",
+		yesterdayDate: "2026-04-21",
+		// Today: clean (idle=5, consumption=2 → adjusted=3)
+		todayData: []model.RawDailyRow{
+			makeStation(100, "Station A", 1, "Cascade X",
+				ptr(10.0), ptr(5.0), ptr(2.0)),
+		},
+		// Yesterday: consumption (10) > idle (2) — historically broken row
+		yesterdayData: []model.RawDailyRow{
+			makeStation(100, "Station A", 1, "Cascade X",
+				ptr(10.0), ptr(8.0), ptr(10.0)),
+		},
+	}
+	svc := NewService(repo, mustLoc("Asia/Tashkent"), discardLogger())
+	report, err := svc.BuildDailyReport(context.Background(), "2026-04-22", nil)
+	if err != nil {
+		t.Fatalf("BuildDailyReport must not fail on yesterday's historical violation: %v", err)
+	}
+	st := report.Cascades[0].Stations[0]
+	if st.PreviousDay == nil {
+		t.Fatal("PreviousDay must be set when yesterday's row exists")
+	}
+	if st.PreviousDay.IdleDischargeM3s == nil {
+		t.Fatal("PreviousDay.IdleDischargeM3s must be set when outflow+ges_flow present")
+	}
+	if *st.PreviousDay.IdleDischargeM3s < 0 {
+		t.Errorf("PreviousDay.IdleDischargeM3s must be clamped to >= 0, got %v", *st.PreviousDay.IdleDischargeM3s)
+	}
+	if !approxEqual(*st.PreviousDay.IdleDischargeM3s, 0.0) {
+		t.Errorf("PreviousDay.IdleDischargeM3s: want 0.0 (clamped from -8), got %v", *st.PreviousDay.IdleDischargeM3s)
+	}
+}
+
 // CurrentData carries ConsumptionM3s verbatim so the frontend can display
 // the value separately from the (already-adjusted) idle.
 func TestBuildDailyReport_ConsumptionPropagatedToSnapshot(t *testing.T) {
