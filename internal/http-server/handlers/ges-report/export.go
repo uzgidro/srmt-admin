@@ -17,6 +17,8 @@ import (
 	"srmt-admin/internal/lib/logger/sl"
 	model "srmt-admin/internal/lib/model/ges-report"
 	gesgen "srmt-admin/internal/lib/service/excel/ges"
+	gesreportservice "srmt-admin/internal/lib/service/ges-report"
+	"srmt-admin/internal/storage"
 
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
@@ -110,6 +112,24 @@ func Export(
 		// so no separate "reserve >= 0" handler-level validation is required.
 		report, err := reportSvc.BuildDailyReport(r.Context(), dateStr, nil)
 		if err != nil {
+			if errors.Is(err, storage.ErrNotFound) {
+				render.Status(r, http.StatusNotFound)
+				render.JSON(w, r, resp.NotFound("report data not found"))
+				return
+			}
+			var rve *gesreportservice.ReportValidationError
+			if errors.As(err, &rve) {
+				log.Warn("report validation rejected export",
+					slog.String("code", rve.Code),
+					slog.Int("violations", len(rve.Violations)))
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, resp.BadRequestStructured(
+					rve.Code,
+					rve.Error(),
+					consumptionViolationsToDetails(rve.Violations),
+				))
+				return
+			}
 			log.Error("failed to build daily report", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)
 			render.JSON(w, r, resp.InternalServerError("failed to build report"))

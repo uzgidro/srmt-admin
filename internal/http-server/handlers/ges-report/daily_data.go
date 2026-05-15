@@ -108,17 +108,18 @@ func UpsertDailyData(log *slog.Logger, repo DailyDataUpserter) http.HandlerFunc 
 
 		// Aggregate validation: per-field non-negative + sum ≤ ges_config.total.
 		// Run after auth so foreign-org probes can't inspect cap values via 400s.
-		if status, msg, err := validateAggregates(r.Context(), data, repo); status != 0 {
-			if err != nil {
-				log.Error("aggregate validation lookup failed", sl.Err(err))
+		if vr := validateAggregates(r.Context(), data, repo); vr.status != 0 {
+			if vr.err != nil {
+				log.Error("aggregate validation lookup failed", sl.Err(vr.err))
 			} else {
-				log.Warn("aggregate validation rejected request", slog.String("reason", msg))
+				log.Warn("aggregate validation rejected request",
+					slog.String("code", vr.code), slog.String("reason", vr.msg))
 			}
-			render.Status(r, status)
-			if status == http.StatusInternalServerError {
-				render.JSON(w, r, resp.InternalServerError(msg))
+			render.Status(r, vr.status)
+			if vr.status == http.StatusInternalServerError {
+				render.JSON(w, r, resp.InternalServerError(vr.msg))
 			} else {
-				render.JSON(w, r, resp.BadRequest(msg))
+				render.JSON(w, r, resp.BadRequestStructured(vr.code, vr.msg, vr.details))
 			}
 			return
 		}
@@ -127,17 +128,18 @@ func UpsertDailyData(log *slog.Logger, repo DailyDataUpserter) http.HandlerFunc 
 		// ges_config.max_daily_production_mln_kwh. Stations without a positive
 		// cap (absent from the map) are unconstrained. Runs after auth for the
 		// same probe-resistance reason as validateAggregates.
-		if status, msg, err := validateProductionCap(r.Context(), data, repo); status != 0 {
-			if err != nil {
-				log.Error("production cap validation lookup failed", sl.Err(err))
+		if vr := validateProductionCap(r.Context(), data, repo); vr.status != 0 {
+			if vr.err != nil {
+				log.Error("production cap validation lookup failed", sl.Err(vr.err))
 			} else {
-				log.Warn("production cap validation rejected request", slog.String("reason", msg))
+				log.Warn("production cap validation rejected request",
+					slog.String("code", vr.code), slog.String("reason", vr.msg))
 			}
-			render.Status(r, status)
-			if status == http.StatusInternalServerError {
-				render.JSON(w, r, resp.InternalServerError(msg))
+			render.Status(r, vr.status)
+			if vr.status == http.StatusInternalServerError {
+				render.JSON(w, r, resp.InternalServerError(vr.msg))
 			} else {
-				render.JSON(w, r, resp.BadRequest(msg))
+				render.JSON(w, r, resp.BadRequestStructured(vr.code, vr.msg, vr.details))
 			}
 			return
 		}
@@ -208,35 +210,61 @@ func GetDailyData(log *slog.Logger, repo DailyDataGetter) http.HandlerFunc {
 	}
 }
 
+// validationResult is what validate* helpers return to the handler. status==0
+// means OK (proceed). Otherwise the handler renders status with msg/code/details
+// for 400, or msg only (no code) for 5xx where err carries the underlying cause.
+type validationResult struct {
+	status  int
+	code    string
+	msg     string
+	details []resp.Detail
+	err     error
+}
+
+func okResult() validationResult { return validationResult{} }
+
+func internalResult(msg string, err error) validationResult {
+	return validationResult{status: http.StatusInternalServerError, msg: msg, err: err}
+}
+
+func badResult(code, msg string, details []resp.Detail) validationResult {
+	return validationResult{
+		status:  http.StatusBadRequest,
+		code:    code,
+		msg:     msg,
+		details: details,
+	}
+}
+
 // validateAggregates enforces two rules on UpsertDailyData payloads:
-//   1. each provided working/repair/modernization value is non-negative
-//      (Set==true && Value!=nil && *Value < 0 → 400);
+//   1. each provided working/repair/modernization/own_consumption_kwh/
+//      consumption_m3_s value is non-negative (Set==true && Value!=nil &&
+//      *Value < 0 → 400 with code save.field_negative);
 //   2. for every (organization_id, date) tuple, the effective aggregate sum
 //      after applying the request onto the existing DB row does not exceed
-//      ges_config.total_aggregates (when configured).
-//
-// Returns a (status, message, err) triple where status==0 means OK. status
-// http.StatusBadRequest carries the user-facing message; status
-// http.StatusInternalServerError carries a generic message and a non-nil err
-// for logging.
+//      ges_config.total_aggregates (when configured) → 400 with code
+//      save.aggregates_exceed_total.
 func validateAggregates(
 	ctx context.Context,
 	data []model.UpsertDailyDataRequest,
 	repo DailyDataUpserter,
-) (int, string, error) {
+) validationResult {
 	// 1. Per-field non-negative check on what was actually provided.
 	for _, item := range data {
-		if msg, ok := checkNonNegative("working_aggregates", item.OrganizationID, item.WorkingAggregates); !ok {
-			return http.StatusBadRequest, msg, nil
+		if r := checkNonNegativeInt("working_aggregates", item.OrganizationID, item.WorkingAggregates); r.status != 0 {
+			return r
 		}
-		if msg, ok := checkNonNegative("repair_aggregates", item.OrganizationID, item.RepairAggregates); !ok {
-			return http.StatusBadRequest, msg, nil
+		if r := checkNonNegativeInt("repair_aggregates", item.OrganizationID, item.RepairAggregates); r.status != 0 {
+			return r
 		}
-		if msg, ok := checkNonNegative("modernization_aggregates", item.OrganizationID, item.ModernizationAggregates); !ok {
-			return http.StatusBadRequest, msg, nil
+		if r := checkNonNegativeInt("modernization_aggregates", item.OrganizationID, item.ModernizationAggregates); r.status != 0 {
+			return r
 		}
-		if msg, ok := checkNonNegativeFloat("own_consumption_kwh", item.OrganizationID, item.OwnConsumptionKWh); !ok {
-			return http.StatusBadRequest, msg, nil
+		if r := checkNonNegativeFloatField("own_consumption_kwh", item.OrganizationID, item.OwnConsumptionKWh); r.status != 0 {
+			return r
+		}
+		if r := checkNonNegativeFloatField("consumption_m3_s", item.OrganizationID, item.ConsumptionM3s); r.status != 0 {
+			return r
 		}
 	}
 
@@ -253,13 +281,13 @@ func validateAggregates(
 		}
 	}
 	if !anyAggregateSent {
-		return 0, "", nil
+		return okResult()
 	}
 
 	uniqueOrgIDs := uniqueOrgs(data)
 	totals, err := repo.GetGESConfigsTotalAggregates(ctx, uniqueOrgIDs)
 	if err != nil {
-		return http.StatusInternalServerError, "failed to load aggregate caps", err
+		return internalResult("failed to load aggregate caps", err)
 	}
 
 	// Group orgIDs by date so we issue one current-values query per distinct
@@ -269,7 +297,7 @@ func validateAggregates(
 	for date, orgs := range byDate {
 		cur, err := repo.GetGESDailyAggregatesBatch(ctx, orgs, date)
 		if err != nil {
-			return http.StatusInternalServerError, "failed to load current aggregates", err
+			return internalResult("failed to load current aggregates", err)
 		}
 		currents[date] = cur
 	}
@@ -292,37 +320,34 @@ func validateAggregates(
 		mod := effective(item.ModernizationAggregates, cur.Modernization)
 		sum := w + rep + mod
 		if sum > total {
-			return http.StatusBadRequest, fmt.Sprintf(
-				"aggregates sum exceeds total for organization_id=%d: %d+%d+%d=%d > %d",
-				item.OrganizationID, w, rep, mod, sum, total,
-			), nil
+			return badResult(
+				"save.aggregates_exceed_total",
+				fmt.Sprintf("aggregates sum exceeds total for organization_id=%d: %d+%d+%d=%d > %d",
+					item.OrganizationID, w, rep, mod, sum, total),
+				[]resp.Detail{{
+					"organization_id": item.OrganizationID,
+					"date":            item.Date,
+					"working":         w,
+					"repair":          rep,
+					"modernization":   mod,
+					"sum":             sum,
+					"total":           total,
+				}},
+			)
 		}
 	}
-	return 0, "", nil
+	return okResult()
 }
 
 // validateProductionCap enforces ges_config.max_daily_production_mln_kwh on
-// the daily_production_mln_kwh value the user actually shipped:
-//   - field absent (Set=false)            → not validated; partial updates
-//                                            that don't touch production are
-//                                            never blocked by this check,
-//                                            even if the historical DB value
-//                                            already exceeds the cap.
-//   - field present with non-nil number   → that number is checked.
-//   - field present but null              → checked as 0 (always passes).
-//
-// This mirrors the principle that partial updates only validate what the
-// caller is changing. Historical violations (e.g. a row written before the
-// cap was lowered) stay in the database silently and do NOT block unrelated
-// partial updates of other fields like own_consumption_kwh.
-//
-// A station without a positive cap (absent from the map per repo contract,
-// which already filters max==0) is unrestricted.
+// the daily_production_mln_kwh value the user actually shipped. Same partial-
+// update semantics as validateAggregates: absent → no check, null → 0 (passes),
+// value → checked.
 func validateProductionCap(
 	ctx context.Context,
 	data []model.UpsertDailyDataRequest,
 	repo DailyDataUpserter,
-) (int, string, error) {
+) validationResult {
 	// Skip the lookup entirely when no item ships a production value.
 	anyProductionSent := false
 	for _, item := range data {
@@ -332,39 +357,47 @@ func validateProductionCap(
 		}
 	}
 	if !anyProductionSent {
-		return 0, "", nil
+		return okResult()
 	}
 
 	maxMap, err := repo.GetGESConfigsMaxDailyProduction(ctx)
 	if err != nil {
-		return http.StatusInternalServerError, "failed to load production caps", err
+		return internalResult("failed to load production caps", err)
 	}
 	if len(maxMap) == 0 {
-		return 0, "", nil // no station has a cap → nothing to check
+		return okResult() // no station has a cap → nothing to check
 	}
 
 	for _, item := range data {
 		if !item.DailyProductionMlnKWh.Set {
-			continue // not changing production → not our concern
+			continue
 		}
-		cap, capped := maxMap[item.OrganizationID]
+		capValue, capped := maxMap[item.OrganizationID]
 		if !capped {
 			continue
 		}
 		var effectiveVal float64
 		if item.DailyProductionMlnKWh.Value == nil {
-			effectiveVal = 0 // explicit null → COALESCE writes 0 → always passes
+			effectiveVal = 0
 		} else {
 			effectiveVal = *item.DailyProductionMlnKWh.Value
 		}
-		if effectiveVal > cap {
-			return http.StatusBadRequest, fmt.Sprintf(
-				"daily_production_mln_kwh exceeds max for organization_id=%d: %g > %g",
-				item.OrganizationID, effectiveVal, cap,
-			), nil
+		if effectiveVal > capValue {
+			return badResult(
+				"save.production_exceeds_max",
+				fmt.Sprintf("daily_production_mln_kwh exceeds max for organization_id=%d: %g > %g",
+					item.OrganizationID, effectiveVal, capValue),
+				[]resp.Detail{{
+					"organization_id": item.OrganizationID,
+					"date":            item.Date,
+					"field":           "daily_production_mln_kwh",
+					"value":           effectiveVal,
+					"max":             capValue,
+				}},
+			)
 		}
 	}
-	return 0, "", nil
+	return okResult()
 }
 
 // effective returns the value the upsert will actually write for an aggregate
@@ -383,29 +416,48 @@ func effective(o optional.Optional[int], current int) int {
 	return *o.Value
 }
 
-// checkNonNegative returns (msg, false) when the field carries an explicit
-// negative number; otherwise (empty, true). Absent fields and explicit nulls
-// pass — they cannot represent a negative value.
-func checkNonNegative(field string, orgID int64, o optional.Optional[int]) (string, bool) {
+// checkNonNegativeInt returns a 400 validationResult when the field carries
+// an explicit negative integer; otherwise okResult. Absent fields and
+// explicit nulls pass — they cannot represent a negative value. Code is
+// save.field_negative for frontend localization; details carry
+// organization_id, field name, and the offending value.
+func checkNonNegativeInt(field string, orgID int64, o optional.Optional[int]) validationResult {
 	if !o.Set || o.Value == nil {
-		return "", true
+		return okResult()
 	}
 	if *o.Value < 0 {
-		return fmt.Sprintf("%s must be >= 0 for organization_id=%d, got %d", field, orgID, *o.Value), false
+		return badResult(
+			"save.field_negative",
+			fmt.Sprintf("%s must be >= 0 for organization_id=%d, got %d", field, orgID, *o.Value),
+			[]resp.Detail{{
+				"organization_id": orgID,
+				"field":           field,
+				"value":           *o.Value,
+			}},
+		)
 	}
-	return "", true
+	return okResult()
 }
 
-// checkNonNegativeFloat is the float64 analog of checkNonNegative, used by
-// own_consumption_kwh. Absent and null pass through.
-func checkNonNegativeFloat(field string, orgID int64, o optional.Optional[float64]) (string, bool) {
+// checkNonNegativeFloatField is the float64 analog of checkNonNegativeInt,
+// used by own_consumption_kwh and consumption_m3_s. Same code/details shape
+// so the frontend handles both uniformly.
+func checkNonNegativeFloatField(field string, orgID int64, o optional.Optional[float64]) validationResult {
 	if !o.Set || o.Value == nil {
-		return "", true
+		return okResult()
 	}
 	if *o.Value < 0 {
-		return fmt.Sprintf("%s must be >= 0 for organization_id=%d, got %g", field, orgID, *o.Value), false
+		return badResult(
+			"save.field_negative",
+			fmt.Sprintf("%s must be >= 0 for organization_id=%d, got %g", field, orgID, *o.Value),
+			[]resp.Detail{{
+				"organization_id": orgID,
+				"field":           field,
+				"value":           *o.Value,
+			}},
+		)
 	}
-	return "", true
+	return okResult()
 }
 
 // uniqueOrgs returns the distinct organization IDs across the request,

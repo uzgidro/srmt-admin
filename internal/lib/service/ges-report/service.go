@@ -110,6 +110,24 @@ func (s *Service) BuildDailyReport(ctx context.Context, date string, cascadeOrgI
 	yesterdayData = applyFrozenSlice(yesterdayData, frozenMap)
 	prevYearData = applyFrozenSlice(prevYearData, frozenMap)
 
+	// Refuse to build the report when any station's useful consumption exceeds
+	// its idle discharge for today — the math (idle = outflow - ges_flow -
+	// consumption) would land negative, which is meaningless. Returning the
+	// typed error lets the handler map every violation onto a structured
+	// 400 with code report.consumption_exceeds_idle.
+	//
+	// NOTE: this runs AFTER applyFrozenSlice intentionally — frozen defaults
+	// can fill in nil outflow/ges_flow, and the idle figure shown to the
+	// frontend in any subsequent error reflects those frozen values. Do not
+	// reorder unless you also change ConsumptionViolation semantics.
+	//
+	// Yesterday's data is NOT validated here (computeDaySnapshot clamps its
+	// adjusted idle to >= 0 instead) so a historical violation never blocks
+	// today's report.
+	if vErr := validateConsumptionAgainstIdle(todayData); vErr != nil {
+		return nil, vErr
+	}
+
 	// Collect unique cascade org IDs from todayData for batch weather lookup.
 	cascadeOrgIDSet := make(map[int64]struct{})
 	cascadeOrgIDs := make([]int64, 0)
@@ -218,10 +236,23 @@ func (s *Service) computeDaySnapshot(
 	// Power from daily production.
 	power := row.DailyProductionMlnKWh * 1000.0 / 24.0
 
-	// Idle discharge = totalOutflow - gesFlow (both nullable).
+	// Idle discharge = totalOutflow - gesFlow - consumption (consumption is
+	// useful water diverted to irrigation/drinking water; subtracted so the
+	// "idle" figure reflects only truly-wasted water). For today's snapshot
+	// validateConsumptionAgainstIdle guarantees the raw result is >= 0; for
+	// previous_day / previous_year snapshots no such validation runs, so
+	// clamp here to avoid surfacing negative values (a historical row with
+	// consumption > idle stays in the database silently).
 	var idleM3s *float64
 	if row.TotalOutflowM3s != nil && row.GESFlowM3s != nil {
-		v := roundTo2(*row.TotalOutflowM3s - *row.GESFlowM3s)
+		raw := *row.TotalOutflowM3s - *row.GESFlowM3s
+		if row.ConsumptionM3s != nil {
+			raw -= *row.ConsumptionM3s
+		}
+		if raw < 0 {
+			raw = 0
+		}
+		v := roundTo2(raw)
 		idleM3s = &v
 	}
 
@@ -256,6 +287,7 @@ func (s *Service) computeDaySnapshot(
 		TotalOutflowM3s:         row.TotalOutflowM3s,
 		GESFlowM3s:              row.GESFlowM3s,
 		OwnConsumptionKWh:       row.OwnConsumptionKWh,
+		ConsumptionM3s:          row.ConsumptionM3s,
 		IdleDischargeM3s:        idleM3s,
 	}
 }
