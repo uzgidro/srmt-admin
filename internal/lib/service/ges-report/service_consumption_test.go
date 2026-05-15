@@ -208,6 +208,7 @@ func TestBuildDailyReport_YesterdayConsumptionExceedsIdle_Clamped(t *testing.T) 
 	repo := &mockRepo{
 		todayDate:     "2026-04-22",
 		yesterdayDate: "2026-04-21",
+		prevYearDate:  "2025-04-22",
 		// Today: clean (idle=5, consumption=2 → adjusted=3)
 		todayData: []model.RawDailyRow{
 			makeStation(100, "Station A", 1, "Cascade X",
@@ -218,6 +219,7 @@ func TestBuildDailyReport_YesterdayConsumptionExceedsIdle_Clamped(t *testing.T) 
 			makeStation(100, "Station A", 1, "Cascade X",
 				ptr(10.0), ptr(8.0), ptr(10.0)),
 		},
+		// prevYearData intentionally nil — we don't assert anything on it.
 	}
 	svc := NewService(repo, mustLoc("Asia/Tashkent"), discardLogger())
 	report, err := svc.BuildDailyReport(context.Background(), "2026-04-22", nil)
