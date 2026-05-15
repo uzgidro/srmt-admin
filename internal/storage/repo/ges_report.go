@@ -818,14 +818,27 @@ func (r *Repo) GetGESPlansForReport(ctx context.Context, year int, months []int)
 	return result, nil
 }
 
-// GetIdleDischargesForDate returns all idle water discharges active during the
-// given operational day window [start, end).
+// GetIdleDischargesForDate returns idle water discharges overlapping the
+// window [start, end). The reported VolumeMlnM3 is CLIPPED to the window —
+// only the portion of each discharge that falls inside [start, end) counts.
+// This is intentionally not delegated to v_idle_water_discharges_with_volume
+// (which sums the full duration) so a discharge spanning midnight is split
+// correctly between the two days that touch it.
 func (r *Repo) GetIdleDischargesForDate(ctx context.Context, start, end time.Time) ([]gesreport.IdleDischargeRow, error) {
 	const op = "storage.repo.GESReport.GetIdleDischargesForDate"
 
+	// Volume = (LEAST(end_or_now, $2) - GREATEST(start_time, $1)) * flow / 1M.
+	// The WHERE clause guarantees the difference is strictly positive.
 	const query = `
-		SELECT organization_id, flow_rate_m3_s, total_volume_mln_m3, reason, is_ongoing
-		FROM v_idle_water_discharges_with_volume
+		SELECT
+			organization_id,
+			flow_rate_m3_s,
+			EXTRACT(EPOCH FROM (
+				LEAST(COALESCE(end_time, NOW()), $2) - GREATEST(start_time, $1)
+			)) * flow_rate_m3_s / 1000000 AS clipped_volume_mln_m3,
+			reason,
+			(end_time IS NULL) AS is_ongoing
+		FROM idle_water_discharges
 		WHERE start_time < $2 AND (end_time > $1 OR end_time IS NULL)`
 
 	rows, err := r.db.QueryContext(ctx, query, start, end)

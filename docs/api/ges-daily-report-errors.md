@@ -218,3 +218,27 @@ function showLocalizedError(code: string, details: Record<string, unknown>[]) {
 ```
 
 `idle_discharge_m3s` is post-adjustment. The frontend can recompute pre-adjustment idle as `total_outflow - ges_flow` if needed for display.
+
+## 7. Idle-discharge totals: time window & clipping
+
+The cascade-/station-level `idle_discharge.flow_rate_m3s` and `idle_discharge.volume_mln_m3` shown in the daily report are aggregated from `idle_water_discharges` rows over the **calendar day** in `Asia/Tashkent`:
+
+```text
+window = [date 00:00:00 +05, date+1 00:00:00 +05)
+```
+
+This is independent of the `dayrotation` ticker, which still cuts the **operational** day at 05:00 (rotation is a separate concern from reporting).
+
+A discharge that crosses a midnight boundary contributes to **both** days touched, but only for the portion that overlaps with each day's window. Concretely, the per-row contribution is:
+
+```text
+volume_mln_m3 = (LEAST(end_or_now, window_end) - GREATEST(start_time, window_start))
+                * flow_rate_m3_s / 1_000_000
+```
+
+Example: a discharge with `start_time = 2026-04-21 18:00 +05`, `end_time = 2026-04-22 06:00 +05`, `flow_rate_m3_s = 10` is counted as
+
+- 6 hours on the `2026-04-21` report (18:00 → 24:00)
+- 6 hours on the `2026-04-22` report (00:00 → 06:00)
+
+Per-station `flow_rate_m3s` in the report is derived as `volume_mln_m3 / 0.0864` — the **average** over the 24 h window. The instantaneous `flow_rate_m3_s` from the underlying record is not surfaced directly in the report response.

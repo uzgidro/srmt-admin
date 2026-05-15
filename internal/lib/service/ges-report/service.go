@@ -68,8 +68,11 @@ func (s *Service) BuildDailyReport(ctx context.Context, date string, cascadeOrgI
 	month := int(t.Month())
 	quarterMonths := model.QuarterMonths(month)
 
-	// 2. Operational day boundaries: 05:00 today → 05:00 tomorrow.
-	dayStart := time.Date(t.Year(), t.Month(), t.Day(), 5, 0, 0, 0, s.loc)
+	// 2. Calendar day boundaries: 00:00 today → 00:00 tomorrow in s.loc.
+	// This window drives only the idle-discharge totals on the report — the
+	// dayrotation ticker remains on its 05:00 operational cutoff (separate
+	// concern). Repo clips overlapping discharges to this window.
+	dayStart := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, s.loc)
 	dayEnd := dayStart.Add(24 * time.Hour)
 
 	// 3. Fetch all data in parallel (sequentially for simplicity; repos are DB-bound).
