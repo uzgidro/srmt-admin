@@ -140,9 +140,6 @@ func negativeMetric(it model.UpsertHourlyRequest) string {
 	if v := it.GESFlowM3s.Value; v != nil && *v < 0 {
 		return "ges_flow_m3s"
 	}
-	if v := it.FiltrationM3s.Value; v != nil && *v < 0 {
-		return "filtration_m3s"
-	}
 	if v := it.IdleDischargeM3s.Value; v != nil && *v < 0 {
 		return "idle_discharge_m3s"
 	}
