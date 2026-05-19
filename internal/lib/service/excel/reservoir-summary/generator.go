@@ -36,11 +36,16 @@ func (g *Generator) GenerateExcel(date string, data []*reservoirsummarymodel.Res
 		return nil, fmt.Errorf("failed to parse date: %w", err)
 	}
 
-	// Filter out summary row (where OrganizationID == nil)
+	// Split per-org rows from the ИТОГО summary row (OrganizationID == nil).
+	// Per-org rows go into the positional slot arrays below; the summary row
+	// is written separately into the C18:M19 "Жами" band of the new template.
 	var filteredData []*reservoirsummarymodel.ResponseModel
+	var totalRow *reservoirsummarymodel.ResponseModel
 	for _, item := range data {
 		if item.OrganizationID != nil {
 			filteredData = append(filteredData, item)
+		} else {
+			totalRow = item
 		}
 	}
 
@@ -90,10 +95,6 @@ func (g *Generator) GenerateExcel(date string, data []*reservoirsummarymodel.Res
 
 	// Populate cells with volume data
 	for i := 0; i < maxVolumeIndex; i++ {
-		// Pskom skip volume
-		if i == 6 {
-			continue
-		}
 		org := filteredData[i]
 		set(currentVolumeCells[i], org.Volume.Current)
 		set(volumeDifferenceCells[i], org.Volume.Current-org.Volume.Previous)
@@ -118,10 +119,6 @@ func (g *Generator) GenerateExcel(date string, data []*reservoirsummarymodel.Res
 		org := filteredData[i]
 		set(currentIncomeCells[i], org.Income.Current)
 		set(incomeDifferenceCells[i], org.Income.Current-org.Income.Previous)
-		// Pskom skip past years income
-		if i == 6 {
-			continue
-		}
 		set(pastYearIncomeCells[i], org.Income.YearAgo)
 		set(twoYearsAgoIncomeCells[i], org.Income.TwoYearsAgo)
 	}
@@ -143,10 +140,6 @@ func (g *Generator) GenerateExcel(date string, data []*reservoirsummarymodel.Res
 		org := filteredData[i]
 		set(currentReleaseCells[i], org.Release.Current)
 		set(releaseDifferenceCells[i], org.Release.Current-org.Release.Previous)
-		// Pskom skip past years release
-		if i == 6 {
-			continue
-		}
 		set(pastYearReleaseCells[i], org.Release.YearAgo)
 		set(twoYearsAgoReleaseCells[i], org.Release.TwoYearsAgo)
 	}
@@ -163,10 +156,6 @@ func (g *Generator) GenerateExcel(date string, data []*reservoirsummarymodel.Res
 
 	// Populate cells with incoming volume data
 	for i := 0; i < maxIncomingVolumeIndex; i++ {
-		// Pskom skip past years income
-		if i == 6 {
-			continue
-		}
 		org := filteredData[i]
 		set(currentYearIncomingVolumeCells[i], org.IncomingVolume)
 		set(pastYearIncomingVolumeCells[i], org.IncomingVolumePrevYear)
@@ -191,6 +180,29 @@ func (g *Generator) GenerateExcel(date string, data []*reservoirsummarymodel.Res
 		org := filteredData[i]
 		set(currentYearModsnowCells[i], org.Modsnow.Current)
 		set(pastYearModsnowCells[i], org.Modsnow.YearAgo)
+	}
+
+	// Populate the "Жами" (ИТОГО) band at rows 18-19. The summary row is
+	// produced by the SQL UNION ALL and arrives with OrganizationID == nil.
+	// Layout (per template): row 18 holds current/year-ago/two-years-ago,
+	// row 19 holds the day-over-day difference. Level + modsnow cells are
+	// intentionally absent from the totals row in the template.
+	if totalRow != nil {
+		set("C18", totalRow.Volume.Current)
+		set("D18", totalRow.Volume.YearAgo)
+		set("E18", totalRow.Volume.TwoYearsAgo)
+		set("F18", totalRow.Income.Current)
+		set("G18", totalRow.Income.YearAgo)
+		set("H18", totalRow.Income.TwoYearsAgo)
+		set("I18", totalRow.Release.Current)
+		set("J18", totalRow.Release.YearAgo)
+		set("K18", totalRow.Release.TwoYearsAgo)
+		set("L18", totalRow.IncomingVolume)
+		set("M18", totalRow.IncomingVolumePrevYear)
+
+		set("C19", totalRow.Volume.Current-totalRow.Volume.Previous)
+		set("F19", totalRow.Income.Current-totalRow.Income.Previous)
+		set("I19", totalRow.Release.Current-totalRow.Release.Previous)
 	}
 
 	set("K25", authorShortName)
