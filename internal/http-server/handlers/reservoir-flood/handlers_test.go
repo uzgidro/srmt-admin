@@ -295,6 +295,47 @@ func TestUpsertHourly_TimeNormalization(t *testing.T) {
 	}
 }
 
+// Clearing a field: an explicit JSON null must reach the repo as
+// Optional{Set:true, Value:nil} — "set this column to NULL" — while a field
+// absent from the body must stay Set:false — "leave this column alone". This
+// is the partial-update clear contract the SQL ON CONFLICT DO UPDATE relies
+// on. Regression for the reservoir-flood-hourly clear-field bug: the symptom
+// (cleared field not persisted) was a DB trigger issue, but a unit test on
+// the handler→repo boundary is the cheapest guard against the Go side ever
+// regressing the three-state semantics.
+func TestUpsertHourly_ClearFieldReachesRepo(t *testing.T) {
+	repo := &captureRepo{}
+	body := `[{
+		"organization_id": 42,
+		"recorded_at": "2026-05-21T16:00:00+05:00",
+		"water_volume_mln_m3": null
+	}]`
+	rr := doRequest(t, repo, scClaims(), http.MethodPost, "/reservoir-flood/hourly", body)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d, body: %s", rr.Code, rr.Body.String())
+	}
+	if len(repo.upsertHourlyItems) != 1 {
+		t.Fatalf("repo upsert: want 1 item, got %d", len(repo.upsertHourlyItems))
+	}
+	it := repo.upsertHourlyItems[0]
+
+	// water_volume_mln_m3: null → Set=true (field present), Value=nil (it's null).
+	if !it.WaterVolumeMlnM3.Set {
+		t.Errorf("WaterVolumeMlnM3.Set: want true (field present as null), got false")
+	}
+	if it.WaterVolumeMlnM3.Value != nil {
+		t.Errorf("WaterVolumeMlnM3.Value: want nil (explicit null), got %v", *it.WaterVolumeMlnM3.Value)
+	}
+	// water_level_m absent from JSON → Set=false → SQL keeps the existing value.
+	if it.WaterLevelM.Set {
+		t.Errorf("WaterLevelM.Set: want false (absent field), got true")
+	}
+	// inflow_m3s absent too — same contract.
+	if it.InflowM3s.Set {
+		t.Errorf("InflowM3s.Set: want false (absent field), got true")
+	}
+}
+
 // ===== Hourly GET tests =====
 
 func TestGetHourly_SCSeesAll(t *testing.T) {
