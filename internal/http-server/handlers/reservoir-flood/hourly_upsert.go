@@ -87,7 +87,7 @@ func UpsertHourly(log *slog.Logger, repo HourlyUpserter) http.HandlerFunc {
 		}
 
 		// Org-bound access check on EVERY item.
-		// sc/rais bypass via auth.CheckOrgAccess; reservoir_duty must match own org.
+		// sc/rais bypass via auth.CheckOrgAccess; reservoir_flood must match own org.
 		// Mixed-batch behavior: if ANY item is foreign, the whole batch is rejected
 		// (no partial writes). This is enforced by failing the whole request before
 		// the repo is called.

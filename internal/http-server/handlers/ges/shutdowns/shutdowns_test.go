@@ -55,7 +55,7 @@ func int64Ptr(i int64) *int64 {
 func ctxWithClaims(userID, orgID int64, role string) context.Context {
 	claims := &token.Claims{
 		UserID:         userID,
-		OrganizationID: orgID,
+		OrganizationIDs: []int64{orgID},
 		Name:           "Test User",
 		Roles:          []string{role},
 	}

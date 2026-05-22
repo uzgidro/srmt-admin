@@ -82,12 +82,12 @@ func GetData(log *slog.Logger, getter ComparisonDataGetterV2) http.HandlerFunc {
 				return
 			}
 		} else {
-			if claims.OrganizationID == 0 {
+			if len(claims.OrganizationIDs) == 0 {
 				render.Status(r, http.StatusForbidden)
 				render.JSON(w, r, resp.Forbidden("No organization assigned"))
 				return
 			}
-			orgIDs = []int64{claims.OrganizationID}
+			orgIDs = claims.OrganizationIDs
 		}
 
 		result := make([]filtration.OrgComparisonV2, 0, len(orgIDs))

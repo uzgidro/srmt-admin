@@ -7,6 +7,7 @@ import (
 	"fmt"
 	// Импортируем ваш пакет middleware, чтобы получить доступ к функции извлечения claims
 	mwauth "srmt-admin/internal/http-server/middleware/auth"
+	"srmt-admin/internal/storage"
 )
 
 var (
@@ -23,12 +24,24 @@ func GetUserID(ctx context.Context) (int64, error) {
 	return claims.UserID, nil
 }
 
-func GetOrganizationID(ctx context.Context) (int64, error) {
+// GetOrganizationIDs returns the full list of organizations the user belongs
+// to. Empty slice means the user has no organization assigned.
+func GetOrganizationIDs(ctx context.Context) ([]int64, error) {
 	claims, ok := mwauth.ClaimsFromContext(ctx)
 	if !ok || claims == nil {
-		return 0, ErrClaimsNotFound
+		return nil, ErrClaimsNotFound
 	}
-	return claims.OrganizationID, nil
+	return claims.OrganizationIDs, nil
+}
+
+// ContainsOrg reports whether id is in the user's organization list.
+func ContainsOrg(ids []int64, id int64) bool {
+	for _, v := range ids {
+		if v == id {
+			return true
+		}
+	}
+	return false
 }
 
 // CheckOrgAccessBatch checks access for multiple organization IDs.
@@ -48,7 +61,8 @@ func CheckOrgAccessBatch(ctx context.Context, orgIDs []int64) error {
 }
 
 // CheckOrgAccess returns nil if the user has access to the given organization.
-// sc/rais roles have full access; reservoir role is limited to own org only.
+// sc/rais roles have full access; other roles are limited to organizations in
+// their own list (claims.OrganizationIDs).
 func CheckOrgAccess(ctx context.Context, resourceOrgID int64) error {
 	claims, ok := mwauth.ClaimsFromContext(ctx)
 	if !ok || claims == nil {
@@ -65,10 +79,10 @@ func CheckOrgAccess(ctx context.Context, resourceOrgID int64) error {
 		}
 	}
 
-	if claims.OrganizationID == 0 {
+	if len(claims.OrganizationIDs) == 0 {
 		return ErrNoOrganization
 	}
-	if claims.OrganizationID != resourceOrgID {
+	if !ContainsOrg(claims.OrganizationIDs, resourceOrgID) {
 		return ErrForbidden
 	}
 	return nil
@@ -81,12 +95,17 @@ type CascadeChecker interface {
 
 // CheckCascadeStationAccess verifies that a user can access a station.
 // sc/rais: full access.
-// cascade: station must belong to user's cascade (parent_org_id == claims.OrganizationID).
+// cascade: station org (or its parent cascade) must be in the user's
+// organization list (claims.OrganizationIDs).
 // Others: falls back to CheckOrgAccess.
 func CheckCascadeStationAccess(ctx context.Context, stationOrgID int64, checker CascadeChecker) error {
 	claims, ok := mwauth.ClaimsFromContext(ctx)
 	if !ok || claims == nil {
 		return ErrClaimsNotFound
+	}
+
+	if stationOrgID == 0 {
+		return ErrNoOrganization
 	}
 
 	for _, role := range claims.Roles {
@@ -97,17 +116,22 @@ func CheckCascadeStationAccess(ctx context.Context, stationOrgID int64, checker 
 
 	for _, role := range claims.Roles {
 		if role == "cascade" {
-			if claims.OrganizationID == 0 {
+			if len(claims.OrganizationIDs) == 0 {
 				return ErrNoOrganization
 			}
-			if stationOrgID == claims.OrganizationID {
+			if ContainsOrg(claims.OrganizationIDs, stationOrgID) {
 				return nil
 			}
 			parentID, err := checker.GetOrganizationParentID(ctx, stationOrgID)
 			if err != nil {
+				// A station org with no registry entry is simply inaccessible
+				// to a cascade user — surface it as access denied, not 404.
+				if errors.Is(err, storage.ErrNotFound) {
+					return ErrForbidden
+				}
 				return fmt.Errorf("check parent: %w", err)
 			}
-			if parentID != nil && *parentID == claims.OrganizationID {
+			if parentID != nil && ContainsOrg(claims.OrganizationIDs, *parentID) {
 				return nil
 			}
 			return ErrForbidden

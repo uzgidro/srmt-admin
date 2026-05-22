@@ -72,13 +72,13 @@ func GetDailyData(log *slog.Logger, repo DailyDataGetter) http.HandlerFunc {
 			// repo: returning 200 with [] would silently mask a misconfigured
 			// user. Symmetric with the upsert path which uses CheckOrgAccessBatch.
 			claims, ok := mwauth.ClaimsFromContext(r.Context())
-			if !ok || claims == nil || claims.OrganizationID == 0 {
+			if !ok || claims == nil || len(claims.OrganizationIDs) == 0 {
 				log.Warn("non-admin caller without organization id")
 				render.Status(r, http.StatusForbidden)
 				render.JSON(w, r, resp.Forbidden("user has no organization assigned"))
 				return
 			}
-			orgIDs = []int64{claims.OrganizationID}
+			orgIDs = claims.OrganizationIDs
 		}
 
 		records, err := repo.GetSolarDailyDataRange(r.Context(), orgIDs, start, end)

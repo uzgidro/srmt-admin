@@ -48,7 +48,7 @@ func TestGet(t *testing.T) {
 	// Claims for a user with "sc" role (full access)
 	scClaims := &token.Claims{
 		UserID:         1,
-		OrganizationID: 0,
+		OrganizationIDs: nil,
 		Roles:          []string{"sc"},
 	}
 
@@ -134,7 +134,7 @@ func TestGetOrgAccess(t *testing.T) {
 			url:  "/filtration/locations?organization_id=5",
 			claims: &token.Claims{
 				UserID:         1,
-				OrganizationID: 0,
+				OrganizationIDs: nil,
 				Roles:          []string{"sc"},
 			},
 			wantStatusCode: http.StatusOK,
@@ -144,7 +144,7 @@ func TestGetOrgAccess(t *testing.T) {
 			url:  "/filtration/locations?organization_id=5",
 			claims: &token.Claims{
 				UserID:         2,
-				OrganizationID: 5,
+				OrganizationIDs: []int64{5},
 				Roles:          []string{"reservoir"},
 			},
 			wantStatusCode: http.StatusOK,
@@ -154,7 +154,7 @@ func TestGetOrgAccess(t *testing.T) {
 			url:  "/filtration/locations?organization_id=5",
 			claims: &token.Claims{
 				UserID:         3,
-				OrganizationID: 10,
+				OrganizationIDs: []int64{10},
 				Roles:          []string{"reservoir"},
 			},
 			wantStatusCode: http.StatusForbidden,
@@ -164,7 +164,7 @@ func TestGetOrgAccess(t *testing.T) {
 			url:  "/filtration/locations?organization_id=5",
 			claims: &token.Claims{
 				UserID:         4,
-				OrganizationID: 0,
+				OrganizationIDs: nil,
 				Roles:          []string{"reservoir"},
 			},
 			wantStatusCode: http.StatusForbidden,
@@ -174,7 +174,7 @@ func TestGetOrgAccess(t *testing.T) {
 			url:  "/filtration/locations?organization_id=5",
 			claims: &token.Claims{
 				UserID:         5,
-				OrganizationID: 0,
+				OrganizationIDs: nil,
 				Roles:          []string{"rais"},
 			},
 			wantStatusCode: http.StatusOK,

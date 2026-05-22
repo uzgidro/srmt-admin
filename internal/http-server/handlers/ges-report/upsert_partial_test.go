@@ -127,9 +127,9 @@ func newGESTestRouter(upserter *captureGESUpserter) http.Handler {
 	log := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := UpsertDailyData(log, upserter)
 	verifier := &mockTokenVerifier{claims: &token.Claims{
-		UserID:         1,
-		OrganizationID: 1,
-		Roles:          []string{"sc"},
+		UserID:          1,
+		OrganizationIDs: []int64{1},
+		Roles:           []string{"sc"},
 	}}
 	r := chi.NewRouter()
 	r.Use(mwauth.Authenticator(verifier))

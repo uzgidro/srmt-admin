@@ -86,7 +86,7 @@ func doConfigGet(getter ConfigGetter, claims *token.Claims) *httptest.ResponseRe
 // scClaims returns a minimal sc-role claims set so the cascade filter
 // fast-paths the test scenarios.
 func scClaims() *token.Claims {
-	return &token.Claims{UserID: 1, OrganizationID: 1, Roles: []string{"sc"}}
+	return &token.Claims{UserID: 1, OrganizationIDs: []int64{1}, Roles: []string{"sc"}}
 }
 
 // --- max_daily_production_mln_kwh tests ---

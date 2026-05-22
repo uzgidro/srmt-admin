@@ -26,8 +26,8 @@ const layout = "2006-01-02" // YYYY-MM-DD
 // fetchShutdownsForCaller returns shutdowns visible to the caller for the
 // given day plus an audit-log scope label. sc/rais and roles other than
 // "cascade" see everything. A "cascade" caller sees only shutdowns of
-// their own cascade and its direct stations. A cascade caller without
-// an OrganizationID sees an empty list (no leak, no error).
+// their own cascade(s) and their direct stations. A cascade caller without
+// any OrganizationIDs sees an empty list (no leak, no error).
 func fetchShutdownsForCaller(
 	ctx context.Context,
 	getter shutdownGetter,
@@ -47,14 +47,32 @@ func fetchShutdownsForCaller(
 		}
 	}
 
-	// cascade — restricted to own cascade.
+	// cascade — restricted to own cascade(s).
 	for _, role := range claims.Roles {
 		if role == "cascade" {
-			if claims.OrganizationID == 0 {
+			if len(claims.OrganizationIDs) == 0 {
 				return []*shutdown.ResponseModel{}, "empty-no-org", claims.UserID, nil
 			}
-			list, err := getter.GetShutdownsByCascade(ctx, day, claims.OrganizationID)
-			return list, "cascade", claims.UserID, err
+			// GetShutdownsByCascade takes a single org, so query each of
+			// the caller's cascades and concatenate. Dedup by shutdown ID:
+			// cascades rarely share a station, but if they do the same
+			// shutdown would otherwise appear twice in the response.
+			merged := make([]*shutdown.ResponseModel, 0)
+			seen := make(map[int64]struct{})
+			for _, orgID := range claims.OrganizationIDs {
+				list, err := getter.GetShutdownsByCascade(ctx, day, orgID)
+				if err != nil {
+					return nil, "cascade", claims.UserID, err
+				}
+				for _, s := range list {
+					if _, dup := seen[s.ID]; dup {
+						continue
+					}
+					seen[s.ID] = struct{}{}
+					merged = append(merged, s)
+				}
+			}
+			return merged, "cascade", claims.UserID, nil
 		}
 	}
 

@@ -9,6 +9,7 @@ import (
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
 	model "srmt-admin/internal/lib/model/reservoir-flood"
+	"srmt-admin/internal/lib/service/auth"
 
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
@@ -28,7 +29,7 @@ func GetConfigs(log *slog.Logger, repo ConfigGetter) http.HandlerFunc {
 		// mask a misconfigured user.
 		if !callerIsAdmin(r.Context()) {
 			claims, ok := mwauth.ClaimsFromContext(r.Context())
-			if !ok || claims == nil || claims.OrganizationID == 0 {
+			if !ok || claims == nil || len(claims.OrganizationIDs) == 0 {
 				log.Warn("non-admin caller without organization id")
 				render.Status(r, http.StatusForbidden)
 				render.JSON(w, r, resp.Forbidden("user has no organization assigned"))
@@ -44,7 +45,7 @@ func GetConfigs(log *slog.Logger, repo ConfigGetter) http.HandlerFunc {
 			return
 		}
 
-		// Filter for reservoir_duty: only their own org.
+		// Filter for reservoir_flood: only their own org.
 		configs = filterConfigsForCaller(r.Context(), configs)
 
 		render.Status(r, http.StatusOK)
@@ -54,8 +55,9 @@ func GetConfigs(log *slog.Logger, repo ConfigGetter) http.HandlerFunc {
 
 // filterConfigsForCaller restricts the response to configs the caller is
 // allowed to see. sc/rais see everything. Other roles (typically
-// reservoir_duty) see only their own org's config. The handler MUST have
-// already enforced claims.OrganizationID != 0 for non-admins — see GetConfigs.
+// reservoir_flood) see only configs for orgs in their assigned org set. The
+// handler MUST have already enforced a non-empty claims.OrganizationIDs for
+// non-admins — see GetConfigs.
 func filterConfigsForCaller(ctx context.Context, list []model.Config) []model.Config {
 	claims, ok := mwauth.ClaimsFromContext(ctx)
 	if !ok || claims == nil {
@@ -68,7 +70,7 @@ func filterConfigsForCaller(ctx context.Context, list []model.Config) []model.Co
 	}
 	out := make([]model.Config, 0, len(list))
 	for _, c := range list {
-		if c.OrganizationID == claims.OrganizationID {
+		if auth.ContainsOrg(claims.OrganizationIDs, c.OrganizationID) {
 			out = append(out, c)
 		}
 	}

@@ -29,7 +29,7 @@ func UpsertConfig(log *slog.Logger, repo ConfigUpserter) http.HandlerFunc {
 		log := log.With(slog.String("op", op), slog.String("request_id", middleware.GetReqID(r.Context())))
 
 		// Defence-in-depth: route-level Tier 2 (sc/rais) is the primary gate,
-		// but reject reservoir_duty here too in case wiring drifts.
+		// but reject reservoir_flood here too in case wiring drifts.
 		if !callerIsAdmin(r.Context()) {
 			userID, _ := auth.GetUserID(r.Context())
 			log.Warn("non-admin attempted config upsert",

@@ -75,12 +75,12 @@ func GetSimilarDates(log *slog.Logger, getter SimilarDatesGetter) http.HandlerFu
 				return
 			}
 		} else {
-			if claims.OrganizationID == 0 {
+			if len(claims.OrganizationIDs) == 0 {
 				render.Status(r, http.StatusForbidden)
 				render.JSON(w, r, resp.Forbidden("No organization assigned"))
 				return
 			}
-			orgIDs = []int64{claims.OrganizationID}
+			orgIDs = claims.OrganizationIDs
 		}
 
 		result := make([]filtration.OrgSimilarDates, 0, len(orgIDs))

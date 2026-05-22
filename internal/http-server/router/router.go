@@ -152,6 +152,7 @@ import (
 	usersEdit "srmt-admin/internal/http-server/handlers/users/edit"
 	usersGet "srmt-admin/internal/http-server/handlers/users/get"
 	usersGetById "srmt-admin/internal/http-server/handlers/users/get-by-id"
+	usersOrganizations "srmt-admin/internal/http-server/handlers/users/organizations"
 	revokeRole "srmt-admin/internal/http-server/handlers/users/revoke-role"
 	infraEventHandler "srmt-admin/internal/http-server/handlers/infra-event"
 	infraEventCategoryHandler "srmt-admin/internal/http-server/handlers/infra-event-category"
@@ -434,6 +435,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Delete("/users/{userID}", usersDelete.New(deps.Log, deps.PgRepo))
 			r.Post("/users/{userID}/roles", assignRole.New(deps.Log, deps.PgRepo))
 			r.Delete("/users/{userID}/roles/{roleID}", revokeRole.New(deps.Log, deps.PgRepo))
+			r.Put("/users/{userID}/organizations", usersOrganizations.New(deps.Log, deps.PgRepo))
 		})
 
 		// SC endpoints
@@ -553,9 +555,9 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			))
 		})
 
-		// Level Volume — sc/rais plus reservoir/reservoir_duty (read-only).
+		// Level Volume — sc/rais plus reservoir/reservoir_flood (read-only).
 		r.Group(func(r chi.Router) {
-			r.Use(mwauth.RequireAnyRole("sc", "rais", "reservoir", "reservoir_duty"))
+			r.Use(mwauth.RequireAnyRole("sc", "rais", "reservoir", "reservoir_flood"))
 			r.Get("/level-volume", levelVolumeGet.New(deps.Log, deps.PgRepo))
 		})
 
@@ -563,7 +565,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 		r.Route("/reservoir-flood", func(r chi.Router) {
 			// Tier 1: read + write hourly data + read config.
 			r.Group(func(r chi.Router) {
-				r.Use(mwauth.RequireAnyRole("sc", "rais", "reservoir_duty"))
+				r.Use(mwauth.RequireAnyRole("sc", "rais", "reservoir_flood"))
 				r.Get("/hourly", reservoirfloodhandler.GetHourly(deps.Log, deps.PgRepo, loc))
 				r.Post("/hourly", reservoirfloodhandler.UpsertHourly(deps.Log, deps.PgRepo))
 				r.Get("/config", reservoirfloodhandler.GetConfigs(deps.Log, deps.PgRepo))

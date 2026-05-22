@@ -51,7 +51,7 @@ func TestDeleteOrgAccess(t *testing.T) {
 			name: "sc role - access to any org",
 			claims: &token.Claims{
 				Roles: []string{"sc"},
-				OrganizationID: 1,
+				OrganizationIDs: []int64{1},
 			},
 			resourceOrganizationID:  999,
 			expectedStatus: http.StatusOK,
@@ -60,7 +60,7 @@ func TestDeleteOrgAccess(t *testing.T) {
 			name: "reservoir role - own org",
 			claims: &token.Claims{
 				Roles: []string{"reservoir"},
-				OrganizationID: 5,
+				OrganizationIDs: []int64{5},
 			},
 			resourceOrganizationID:  5,
 			expectedStatus: http.StatusOK,
@@ -69,7 +69,7 @@ func TestDeleteOrgAccess(t *testing.T) {
 			name: "reservoir role - foreign org",
 			claims: &token.Claims{
 				Roles: []string{"reservoir"},
-				OrganizationID: 5,
+				OrganizationIDs: []int64{5},
 			},
 			resourceOrganizationID:  10,
 			expectedStatus: http.StatusForbidden,

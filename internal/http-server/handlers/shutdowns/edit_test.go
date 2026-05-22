@@ -95,10 +95,10 @@ func contextWithUserClaims(ctx context.Context, userID int64) context.Context {
 // contextWithEditRoleClaims creates context with arbitrary role/orgID for RBAC tests.
 func contextWithEditRoleClaims(ctx context.Context, userID, orgID int64, role string) context.Context {
 	claims := &token.Claims{
-		UserID:         userID,
-		OrganizationID: orgID,
-		Name:           "Test User",
-		Roles:          []string{role},
+		UserID:          userID,
+		OrganizationIDs: []int64{orgID},
+		Name:            "Test User",
+		Roles:           []string{role},
 	}
 	return mwauth.ContextWithClaims(ctx, claims)
 }

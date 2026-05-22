@@ -95,9 +95,9 @@ func TestUpsertDailyData_CascadeOwnStation_OK(t *testing.T) {
 		},
 	}
 	claims := &token.Claims{
-		UserID:         1,
-		OrganizationID: cascadeOrgID,
-		Roles:          []string{"cascade"},
+		UserID:          1,
+		OrganizationIDs: []int64{cascadeOrgID},
+		Roles:           []string{"cascade"},
 	}
 	body := `[{"organization_id": 100, "date": "2026-04-13", "daily_production_mln_kwh": 1.5}]`
 	rr := doGESUpsertWithClaims(upserter, claims, body)
@@ -122,9 +122,9 @@ func TestUpsertDailyData_CascadeForeignStation_403(t *testing.T) {
 		},
 	}
 	claims := &token.Claims{
-		UserID:         1,
-		OrganizationID: cascadeOrgID,
-		Roles:          []string{"cascade"},
+		UserID:          1,
+		OrganizationIDs: []int64{cascadeOrgID},
+		Roles:           []string{"cascade"},
 	}
 	body := `[{"organization_id": 200, "date": "2026-04-13", "daily_production_mln_kwh": 1.5}]`
 	rr := doGESUpsertWithClaims(upserter, claims, body)
@@ -143,9 +143,9 @@ func TestUpsertDailyData_CascadeSelfOrg_OK(t *testing.T) {
 
 	upserter := &captureGESUpserter{} // no parents map needed
 	claims := &token.Claims{
-		UserID:         1,
-		OrganizationID: cascadeOrgID,
-		Roles:          []string{"cascade"},
+		UserID:          1,
+		OrganizationIDs: []int64{cascadeOrgID},
+		Roles:           []string{"cascade"},
 	}
 	body := `[{"organization_id": 50, "date": "2026-04-13", "daily_production_mln_kwh": 1.5}]`
 	rr := doGESUpsertWithClaims(upserter, claims, body)
@@ -168,9 +168,9 @@ func TestGetDailyData_CascadeOwnStation_OK(t *testing.T) {
 		},
 	}
 	claims := &token.Claims{
-		UserID:         1,
-		OrganizationID: cascadeOrgID,
-		Roles:          []string{"cascade"},
+		UserID:          1,
+		OrganizationIDs: []int64{cascadeOrgID},
+		Roles:           []string{"cascade"},
 	}
 	rr := doGESGetWithClaims(getter, claims, "organization_id=100&date=2026-04-13")
 	if rr.Code != http.StatusOK {
@@ -196,9 +196,9 @@ func TestGetDailyData_CascadeForeignStation_403(t *testing.T) {
 		called: &called,
 	}
 	claims := &token.Claims{
-		UserID:         1,
-		OrganizationID: cascadeOrgID,
-		Roles:          []string{"cascade"},
+		UserID:          1,
+		OrganizationIDs: []int64{cascadeOrgID},
+		Roles:           []string{"cascade"},
 	}
 	rr := doGESGetWithClaims(tracker, claims, "organization_id=200&date=2026-04-13")
 	if rr.Code != http.StatusForbidden {
@@ -212,9 +212,9 @@ func TestGetDailyData_CascadeForeignStation_403(t *testing.T) {
 	// fast-path. This is a regression check that the new check leaves sc alone.
 	called = false
 	scClaims := &token.Claims{
-		UserID:         1,
-		OrganizationID: 1,
-		Roles:          []string{"sc"},
+		UserID:          1,
+		OrganizationIDs: []int64{1},
+		Roles:           []string{"sc"},
 	}
 	rr2 := doGESGetWithClaims(tracker, scClaims, "organization_id=200&date=2026-04-13")
 	if rr2.Code != http.StatusOK {
@@ -278,9 +278,9 @@ func TestUpsertDailyData_RejectsAggregatesExceedingTotal(t *testing.T) {
 		},
 	}
 	claims := &token.Claims{
-		UserID:         1,
-		OrganizationID: 1,
-		Roles:          []string{"sc"},
+		UserID:          1,
+		OrganizationIDs: []int64{1},
+		Roles:           []string{"sc"},
 	}
 	body := `[{
 		"organization_id": 10,
@@ -316,9 +316,9 @@ func TestUpsertDailyData_AllowsPartialUpdateWithinTotal(t *testing.T) {
 		},
 	}
 	claims := &token.Claims{
-		UserID:         1,
-		OrganizationID: 1,
-		Roles:          []string{"sc"},
+		UserID:          1,
+		OrganizationIDs: []int64{1},
+		Roles:           []string{"sc"},
 	}
 	body := `[{
 		"organization_id": 10,
@@ -342,9 +342,9 @@ func TestUpsertDailyData_RejectsNegativeAggregate(t *testing.T) {
 		totals: map[int64]int{10: 6},
 	}
 	claims := &token.Claims{
-		UserID:         1,
-		OrganizationID: 1,
-		Roles:          []string{"sc"},
+		UserID:          1,
+		OrganizationIDs: []int64{1},
+		Roles:           []string{"sc"},
 	}
 	body := `[{
 		"organization_id": 10,
@@ -372,9 +372,9 @@ func TestUpsertDailyData_SkipsSumCheckWhenNoConfig(t *testing.T) {
 		totals: map[int64]int{}, // no config for any org
 	}
 	claims := &token.Claims{
-		UserID:         1,
-		OrganizationID: 1,
-		Roles:          []string{"sc"},
+		UserID:          1,
+		OrganizationIDs: []int64{1},
+		Roles:           []string{"sc"},
 	}
 	// Even huge values pass when no cap is configured.
 	body := `[{
@@ -401,9 +401,9 @@ func TestUpsertDailyData_OverMaxProduction_BadRequest(t *testing.T) {
 		maxProd: map[int64]float64{stationOrgID: 5.0},
 	}
 	claims := &token.Claims{
-		UserID:         1,
-		OrganizationID: 1,
-		Roles:          []string{"sc"},
+		UserID:          1,
+		OrganizationIDs: []int64{1},
+		Roles:           []string{"sc"},
 	}
 	body := `[{
 		"organization_id": 1,
@@ -426,9 +426,9 @@ func TestUpsertDailyData_AtMaxProduction_OK(t *testing.T) {
 		maxProd: map[int64]float64{stationOrgID: 5.0},
 	}
 	claims := &token.Claims{
-		UserID:         1,
-		OrganizationID: 1,
-		Roles:          []string{"sc"},
+		UserID:          1,
+		OrganizationIDs: []int64{1},
+		Roles:           []string{"sc"},
 	}
 	body := `[{
 		"organization_id": 1,
@@ -451,9 +451,9 @@ func TestUpsertDailyData_UnderMaxProduction_OK(t *testing.T) {
 		maxProd: map[int64]float64{stationOrgID: 5.0},
 	}
 	claims := &token.Claims{
-		UserID:         1,
-		OrganizationID: 1,
-		Roles:          []string{"sc"},
+		UserID:          1,
+		OrganizationIDs: []int64{1},
+		Roles:           []string{"sc"},
 	}
 	body := `[{
 		"organization_id": 1,
@@ -479,9 +479,9 @@ func TestUpsertDailyData_ZeroMaxProduction_NoCheck(t *testing.T) {
 		maxProd: map[int64]float64{}, // zero rows skipped → absent
 	}
 	claims := &token.Claims{
-		UserID:         1,
-		OrganizationID: 1,
-		Roles:          []string{"sc"},
+		UserID:          1,
+		OrganizationIDs: []int64{1},
+		Roles:           []string{"sc"},
 	}
 	body := `[{
 		"organization_id": 1,
@@ -504,9 +504,9 @@ func TestUpsertDailyData_NoConfigRow_NoCheck(t *testing.T) {
 		maxProd: map[int64]float64{},
 	}
 	claims := &token.Claims{
-		UserID:         1,
-		OrganizationID: 1,
-		Roles:          []string{"sc"},
+		UserID:          1,
+		OrganizationIDs: []int64{1},
+		Roles:           []string{"sc"},
 	}
 	body := `[{
 		"organization_id": 1,
@@ -536,9 +536,9 @@ func TestUpsertDailyData_PreserveDBProduction_NoCheckWhenAbsent(t *testing.T) {
 		maxProd: map[int64]float64{stationOrgID: 5.0},
 	}
 	claims := &token.Claims{
-		UserID:         1,
-		OrganizationID: 1,
-		Roles:          []string{"sc"},
+		UserID:          1,
+		OrganizationIDs: []int64{1},
+		Roles:           []string{"sc"},
 	}
 	// daily_production_mln_kwh deliberately omitted; only working_aggregates
 	// is being changed (and 1 ≤ default total cap → no aggregate-sum issue).
@@ -572,9 +572,9 @@ func TestUpsertDailyData_OwnConsumptionOnly_SkipsProductionCap(t *testing.T) {
 		maxProd: map[int64]float64{stationOrgID: 0.004646},
 	}
 	claims := &token.Claims{
-		UserID:         1,
-		OrganizationID: 1,
-		Roles:          []string{"sc"},
+		UserID:          1,
+		OrganizationIDs: []int64{1},
+		Roles:           []string{"sc"},
 	}
 	body := `[{
 		"organization_id": 48,
@@ -604,9 +604,9 @@ func TestUpsertDailyData_OwnConsumptionOnly_SkipsAggregatesSum(t *testing.T) {
 		},
 	}
 	claims := &token.Claims{
-		UserID:         1,
-		OrganizationID: 1,
-		Roles:          []string{"sc"},
+		UserID:          1,
+		OrganizationIDs: []int64{1},
+		Roles:           []string{"sc"},
 	}
 	body := `[{
 		"organization_id": 48,
@@ -637,9 +637,9 @@ func TestUpsertDailyData_PartialAggregates_OverlayStillApplies(t *testing.T) {
 		},
 	}
 	claims := &token.Claims{
-		UserID:         1,
-		OrganizationID: 1,
-		Roles:          []string{"sc"},
+		UserID:          1,
+		OrganizationIDs: []int64{1},
+		Roles:           []string{"sc"},
 	}
 	body := `[{
 		"organization_id": 10,
@@ -664,9 +664,9 @@ func TestUpsertDailyData_ExplicitProductionOverCap_StillBadRequest(t *testing.T)
 		maxProd: map[int64]float64{stationOrgID: 5.0},
 	}
 	claims := &token.Claims{
-		UserID:         1,
-		OrganizationID: 1,
-		Roles:          []string{"sc"},
+		UserID:          1,
+		OrganizationIDs: []int64{1},
+		Roles:           []string{"sc"},
 	}
 	body := `[{
 		"organization_id": 1,

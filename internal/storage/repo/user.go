@@ -274,7 +274,9 @@ const (
 
 			p.id as pos_id, p.name as pos_name, p.description as pos_description,
 
-			COALESCE(r.roles_json, '[]'::json) as roles_json
+			COALESCE(r.roles_json, '[]'::json) as roles_json,
+
+			COALESCE(uo.org_ids_json, '[]'::json) as org_ids_json
 	`
 	fromUserJoins = `
 		FROM
@@ -298,6 +300,15 @@ const (
             GROUP BY
                ur.user_id
         ) r ON u.id = r.user_id
+		LEFT JOIN (
+            SELECT
+               uorg.user_id,
+               json_agg(uorg.organization_id ORDER BY uorg.organization_id) as org_ids_json
+            FROM
+               user_organizations uorg
+            GROUP BY
+               uorg.user_id
+        ) uo ON u.id = uo.user_id
 	`
 )
 
@@ -308,6 +319,7 @@ func scanUserRow(scanner interface {
 	var u user.Model
 	var (
 		rolesJSON                     []byte
+		orgIDsJSON                    []byte
 		email, phone, ipPhone, extOrg sql.NullString
 		dob                           sql.NullTime
 		orgID, deptID, posID          sql.NullInt64
@@ -322,6 +334,7 @@ func scanUserRow(scanner interface {
 		&deptID, &deptName,
 		&posID, &posName, &posDescription,
 		&rolesJSON,
+		&orgIDsJSON,
 	)
 	if err != nil {
 		return nil, err
@@ -379,6 +392,14 @@ func scanUserRow(scanner interface {
 	}
 	if u.Roles == nil {
 		u.Roles = make([]string, 0)
+	}
+
+	// Организации (M2M через user_organizations)
+	if err := json.Unmarshal(orgIDsJSON, &u.OrganizationIDs); err != nil {
+		return nil, fmt.Errorf("scanUserRow: failed to unmarshal org ids: %w", err)
+	}
+	if u.OrganizationIDs == nil {
+		u.OrganizationIDs = make([]int64, 0)
 	}
 
 	return &u, nil

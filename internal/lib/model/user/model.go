@@ -31,6 +31,10 @@ type Model struct {
 	// --- Роли (из твоего старого кода) ---
 	Roles []string `json:"roles"`
 
+	// OrganizationIDs — полный список организаций пользователя.
+	// Источник истины — таблица user_organizations (M2M).
+	OrganizationIDs []int64 `json:"organization_ids"`
+
 	// --- Аудит (из users) ---
 	CreatedAt time.Time  `json:"created_at"`
 	UpdatedAt *time.Time `json:"updated_at"`

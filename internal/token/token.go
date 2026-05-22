@@ -23,11 +23,11 @@ type Pair struct {
 // Claims — это полезная нагрузка, которую мы храним в токене.
 type Claims struct {
 	jwt.RegisteredClaims
-	UserID         int64    `json:"uid"`
-	ContactID      int64    `json:"contact_id"`
-	OrganizationID int64    `json:"org_id"`
-	Name           string   `json:"name"`
-	Roles          []string `json:"roles"`
+	UserID          int64    `json:"uid"`
+	ContactID       int64    `json:"contact_id"`
+	OrganizationIDs []int64  `json:"org_ids"`
+	Name            string   `json:"name"`
+	Roles           []string `json:"roles"`
 }
 
 // Token — это наш сервис для работы с JWT.
@@ -84,9 +84,9 @@ func (s *Token) GetRefreshTTL() time.Duration {
 
 // createToken — это внутренний хелпер для создания токена.
 func (s *Token) createAccessToken(u *user.Model) (string, error) {
-	var orgID int64
-	if u.Organization != nil {
-		orgID = u.Organization.ID
+	orgIDs := u.OrganizationIDs
+	if orgIDs == nil {
+		orgIDs = []int64{}
 	}
 
 	claims := Claims{
@@ -94,11 +94,11 @@ func (s *Token) createAccessToken(u *user.Model) (string, error) {
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(s.accessTTL)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
-		UserID:         u.ID,
-		ContactID:      u.ContactID,
-		OrganizationID: orgID,
-		Name:           u.Name,
-		Roles:          u.Roles,
+		UserID:          u.ID,
+		ContactID:       u.ContactID,
+		OrganizationIDs: orgIDs,
+		Name:            u.Name,
+		Roles:           u.Roles,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

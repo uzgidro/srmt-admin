@@ -63,7 +63,7 @@ func setupOwnNeedsRouter(t *testing.T, builder *mockOwnNeedsBuilder, role string
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	verifier := &mockTokenVerifier{claims: &token.Claims{
-		UserID: 1, ContactID: 1, OrganizationID: 1,
+		UserID: 1, ContactID: 1, OrganizationIDs: []int64{1},
 		Roles: []string{role},
 	}}
 	loc, _ := time.LoadLocation("Asia/Tashkent")
