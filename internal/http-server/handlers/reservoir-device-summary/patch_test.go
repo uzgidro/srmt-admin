@@ -42,7 +42,7 @@ func TestPatchOrgAccess(t *testing.T) {
 			name: "sc role - access to any org",
 			claims: &token.Claims{
 				UserID:         1,
-				OrganizationID: 1,
+				OrganizationIDs: []int64{1},
 				Roles:          []string{"sc"},
 			},
 			body:       `{"updates": [{"organization_id": 999, "count_total": 10}]}`,
@@ -52,7 +52,7 @@ func TestPatchOrgAccess(t *testing.T) {
 			name: "reservoir role - own org",
 			claims: &token.Claims{
 				UserID:         2,
-				OrganizationID: 5,
+				OrganizationIDs: []int64{5},
 				Roles:          []string{"reservoir"},
 			},
 			body:       `{"updates": [{"organization_id": 5, "count_total": 10}]}`,
@@ -62,7 +62,7 @@ func TestPatchOrgAccess(t *testing.T) {
 			name: "reservoir role - foreign org",
 			claims: &token.Claims{
 				UserID:         3,
-				OrganizationID: 5,
+				OrganizationIDs: []int64{5},
 				Roles:          []string{"reservoir"},
 			},
 			body:       `{"updates": [{"organization_id": 10, "count_total": 10}]}`,

@@ -10,6 +10,7 @@ import (
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
 	model "srmt-admin/internal/lib/model/ges-report"
+	"srmt-admin/internal/lib/service/auth"
 	"srmt-admin/internal/storage"
 
 	"github.com/go-chi/chi/v5/middleware"
@@ -103,23 +104,23 @@ func GetConfigs(log *slog.Logger, repo ConfigGetter) http.HandlerFunc {
 func filterGESConfigsForCaller(ctx context.Context, configs []model.Config) []model.Config {
 	claims, ok := mwauth.ClaimsFromContext(ctx)
 	if !ok || claims == nil {
-		return configs
+		return []model.Config{}
 	}
 	for _, role := range claims.Roles {
 		if role == "sc" || role == "rais" {
 			return configs
 		}
 	}
-	if claims.OrganizationID == 0 {
-		return configs
+	if len(claims.OrganizationIDs) == 0 {
+		return []model.Config{}
 	}
 	filtered := make([]model.Config, 0, len(configs))
 	for _, c := range configs {
-		if c.OrganizationID == claims.OrganizationID {
+		if auth.ContainsOrg(claims.OrganizationIDs, c.OrganizationID) {
 			filtered = append(filtered, c)
 			continue
 		}
-		if c.CascadeID != nil && *c.CascadeID == claims.OrganizationID {
+		if c.CascadeID != nil && auth.ContainsOrg(claims.OrganizationIDs, *c.CascadeID) {
 			filtered = append(filtered, c)
 		}
 	}

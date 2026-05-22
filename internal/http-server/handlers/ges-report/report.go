@@ -67,8 +67,19 @@ func GetReport(log *slog.Logger, svc ReportBuilder) http.HandlerFunc {
 					break
 				}
 			}
-			if !isSuperUser && claims.OrganizationID != 0 {
-				id := claims.OrganizationID
+			if !isSuperUser {
+				// A non-admin (cascade role) without any organization is a
+				// broken account — deny rather than fall through to the
+				// unscoped full report.
+				if len(claims.OrganizationIDs) == 0 {
+					log.Warn("non-admin caller without organization id")
+					render.Status(r, http.StatusForbidden)
+					render.JSON(w, r, resp.Forbidden("user has no organization assigned"))
+					return
+				}
+				// ges-report cascade-scope ограничен первым каскадом
+				// пользователя; multi-cascade отчёт — отдельная задача.
+				id := claims.OrganizationIDs[0]
 				cascadeOrgID = &id
 			}
 		}

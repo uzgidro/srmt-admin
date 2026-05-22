@@ -103,7 +103,7 @@ func doFrozen(t *testing.T, repo *captureFrozenRepo, claims *token.Claims, metho
 }
 
 func scClaimsFrozen() *token.Claims {
-	return &token.Claims{UserID: 1, OrganizationID: 1, Roles: []string{"sc"}}
+	return &token.Claims{UserID: 1, OrganizationIDs: []int64{1}, Roles: []string{"sc"}}
 }
 
 // TestUpsertFrozenDefault_InvalidFieldName_BadRequest — field_name="foo" → 400.
@@ -157,7 +157,7 @@ func TestUpsertFrozenDefault_CascadeUserOtherOrg_Forbidden(t *testing.T) {
 	repo := &captureFrozenRepo{
 		parents: map[int64]*int64{200: &otherParent},
 	}
-	cascadeClaims := &token.Claims{UserID: 5, OrganizationID: 1, Roles: []string{"cascade"}}
+	cascadeClaims := &token.Claims{UserID: 5, OrganizationIDs: []int64{1}, Roles: []string{"cascade"}}
 	body := `{"organization_id": 200, "field_name": "water_head_m", "frozen_value": 45.0}`
 	rr := doFrozen(t, repo, cascadeClaims, http.MethodPut, body)
 	if rr.Code != http.StatusForbidden {
@@ -232,7 +232,7 @@ func TestListFrozenDefaults_CascadeUserSeesOwnCascade(t *testing.T) {
 			{OrganizationID: 200, CascadeID: &cascadeOther, FieldName: "water_head_m", FrozenValue: 99.0}, // чужой каскад
 		},
 	}
-	cascadeClaims := &token.Claims{UserID: 5, OrganizationID: 10, Roles: []string{"cascade"}}
+	cascadeClaims := &token.Claims{UserID: 5, OrganizationIDs: []int64{10}, Roles: []string{"cascade"}}
 	rr := doFrozen(t, repo, cascadeClaims, http.MethodGet, "")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status: want 200, got %d; body: %s", rr.Code, rr.Body.String())
@@ -247,6 +247,39 @@ func TestListFrozenDefaults_CascadeUserSeesOwnCascade(t *testing.T) {
 	for _, e := range got {
 		if e.OrganizationID == 200 {
 			t.Errorf("leaked entry from other cascade: %+v", e)
+		}
+	}
+}
+
+// TestListFrozenDefaults_MultiOrgUserSeesAllAssignedCascades — multi-org
+// доступ: пользователь, привязанный к двум каскадам (10 и 20), видит записи
+// обоих своих каскадов, но не чужого (30).
+func TestListFrozenDefaults_MultiOrgUserSeesAllAssignedCascades(t *testing.T) {
+	cascadeA := int64(10)
+	cascadeB := int64(20)
+	cascadeOther := int64(30)
+	repo := &captureFrozenRepo{
+		listResult: []model.FrozenDefault{
+			{OrganizationID: 100, CascadeID: &cascadeA, FieldName: "water_head_m", FrozenValue: 45.0},     // каскад A
+			{OrganizationID: 200, CascadeID: &cascadeB, FieldName: "water_level_m", FrozenValue: 12.0},    // каскад B
+			{OrganizationID: 300, CascadeID: &cascadeOther, FieldName: "water_head_m", FrozenValue: 99.0}, // чужой каскад
+		},
+	}
+	multiClaims := &token.Claims{UserID: 7, OrganizationIDs: []int64{10, 20}, Roles: []string{"cascade"}}
+	rr := doFrozen(t, repo, multiClaims, http.MethodGet, "")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d; body: %s", rr.Code, rr.Body.String())
+	}
+	var got []model.FrozenDefault
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("filtered list: want 2 entries (both assigned cascades), got %d: %+v", len(got), got)
+	}
+	for _, e := range got {
+		if e.OrganizationID == 300 {
+			t.Errorf("leaked entry from non-assigned cascade: %+v", e)
 		}
 	}
 }

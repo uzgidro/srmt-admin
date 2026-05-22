@@ -19,13 +19,14 @@ import (
 // upcoming GetShutdownsByCascade method. Counters expose call activity so
 // tests can guard against accidental branch swaps in production code.
 type mockShutdownListGetter struct {
-	getAllFunc       func(ctx context.Context, day time.Time) ([]*shutdown.ResponseModel, error)
-	getCascadeFunc   func(ctx context.Context, day time.Time, cascadeOrgID int64) ([]*shutdown.ResponseModel, error)
-	typesFunc        func(ctx context.Context) (map[int64][]string, error)
-	getAllCalls      int
-	getCascadeCalls  int
-	typesCalls       int
-	lastCascadeOrgID int64
+	getAllFunc        func(ctx context.Context, day time.Time) ([]*shutdown.ResponseModel, error)
+	getCascadeFunc    func(ctx context.Context, day time.Time, cascadeOrgID int64) ([]*shutdown.ResponseModel, error)
+	typesFunc         func(ctx context.Context) (map[int64][]string, error)
+	getAllCalls       int
+	getCascadeCalls   int
+	typesCalls        int
+	lastCascadeOrgID  int64
+	cascadeOrgIDsSeen []int64
 }
 
 func (m *mockShutdownListGetter) GetShutdowns(ctx context.Context, day time.Time) ([]*shutdown.ResponseModel, error) {
@@ -39,6 +40,7 @@ func (m *mockShutdownListGetter) GetShutdowns(ctx context.Context, day time.Time
 func (m *mockShutdownListGetter) GetShutdownsByCascade(ctx context.Context, day time.Time, cascadeOrgID int64) ([]*shutdown.ResponseModel, error) {
 	m.getCascadeCalls++
 	m.lastCascadeOrgID = cascadeOrgID
+	m.cascadeOrgIDsSeen = append(m.cascadeOrgIDsSeen, cascadeOrgID)
 	if m.getCascadeFunc != nil {
 		return m.getCascadeFunc(ctx, day, cascadeOrgID)
 	}
@@ -93,7 +95,7 @@ func TestGet_NoClaims_FallbackToAll(t *testing.T) {
 
 func TestGet_ScUser_SeesAll(t *testing.T) {
 	mock := &mockShutdownListGetter{}
-	rr := runGet(t, mock, &token.Claims{UserID: 1, OrganizationID: 99, Roles: []string{"sc"}}, "date=2026-04-23")
+	rr := runGet(t, mock, &token.Claims{UserID: 1, OrganizationIDs: []int64{99}, Roles: []string{"sc"}}, "date=2026-04-23")
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("got %d, want 200. body=%s", rr.Code, rr.Body.String())
@@ -108,7 +110,7 @@ func TestGet_ScUser_SeesAll(t *testing.T) {
 
 func TestGet_RaisUser_SeesAll(t *testing.T) {
 	mock := &mockShutdownListGetter{}
-	rr := runGet(t, mock, &token.Claims{UserID: 1, OrganizationID: 99, Roles: []string{"rais"}}, "date=2026-04-23")
+	rr := runGet(t, mock, &token.Claims{UserID: 1, OrganizationIDs: []int64{99}, Roles: []string{"rais"}}, "date=2026-04-23")
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("got %d, want 200. body=%s", rr.Code, rr.Body.String())
@@ -123,7 +125,7 @@ func TestGet_RaisUser_SeesAll(t *testing.T) {
 
 func TestGet_NonCascadeNonSc_SeesAll(t *testing.T) {
 	mock := &mockShutdownListGetter{}
-	rr := runGet(t, mock, &token.Claims{UserID: 1, OrganizationID: 99, Roles: []string{"reservoir"}}, "date=2026-04-23")
+	rr := runGet(t, mock, &token.Claims{UserID: 1, OrganizationIDs: []int64{99}, Roles: []string{"reservoir"}}, "date=2026-04-23")
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("got %d, want 200. body=%s", rr.Code, rr.Body.String())
@@ -138,7 +140,7 @@ func TestGet_NonCascadeNonSc_SeesAll(t *testing.T) {
 
 func TestGet_CascadeUser_SeesOwnCascadeOnly(t *testing.T) {
 	mock := &mockShutdownListGetter{}
-	rr := runGet(t, mock, &token.Claims{UserID: 1, OrganizationID: 5, Roles: []string{"cascade"}}, "date=2026-04-23")
+	rr := runGet(t, mock, &token.Claims{UserID: 1, OrganizationIDs: []int64{5}, Roles: []string{"cascade"}}, "date=2026-04-23")
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("got %d, want 200. body=%s", rr.Code, rr.Body.String())
@@ -154,6 +156,46 @@ func TestGet_CascadeUser_SeesOwnCascadeOnly(t *testing.T) {
 	}
 }
 
+// A cascade user belonging to two cascades must see shutdowns from both:
+// GetShutdownsByCascade is called once per org and the results merged.
+func TestGet_CascadeUser_MultiOrg_SeesAllCascades(t *testing.T) {
+	mock := &mockShutdownListGetter{
+		getCascadeFunc: func(_ context.Context, _ time.Time, orgID int64) ([]*shutdown.ResponseModel, error) {
+			// One shutdown per cascade, distinguishable by ID.
+			return []*shutdown.ResponseModel{{ID: orgID * 100, OrganizationID: orgID}}, nil
+		},
+	}
+	rr := runGet(t, mock, &token.Claims{UserID: 1, OrganizationIDs: []int64{5, 7}, Roles: []string{"cascade"}}, "date=2026-04-23")
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("got %d, want 200. body=%s", rr.Code, rr.Body.String())
+	}
+	if mock.getCascadeCalls != 2 {
+		t.Errorf("GetShutdownsByCascade calls = %d, want 2 (one per cascade)", mock.getCascadeCalls)
+	}
+	if mock.getAllCalls != 0 {
+		t.Errorf("GetShutdowns calls = %d, want 0 (cascade user must NOT see all)", mock.getAllCalls)
+	}
+	wantOrgIDs := map[int64]bool{5: true, 7: true}
+	for _, id := range mock.cascadeOrgIDsSeen {
+		if !wantOrgIDs[id] {
+			t.Errorf("unexpected cascade orgID %d queried, want only 5 and 7: %v", id, mock.cascadeOrgIDsSeen)
+		}
+	}
+	if len(mock.cascadeOrgIDsSeen) != 2 {
+		t.Errorf("cascadeOrgIDsSeen = %v, want exactly orgs 5 and 7", mock.cascadeOrgIDsSeen)
+	}
+
+	var resp shutdown.GroupedResponseWithURLs
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v. body=%s", err, rr.Body.String())
+	}
+	// Both shutdowns land in Other (no org-types map entries).
+	if len(resp.Other) != 2 {
+		t.Errorf("other = %d items, want 2 (merged from both cascades)", len(resp.Other))
+	}
+}
+
 // Cascade user without an OrganizationID would otherwise leak the entire list
 // because GetShutdownsByCascade(ctx, day, 0) would match no cascade. Handler
 // must short-circuit and return an empty grouped response.
@@ -161,7 +203,7 @@ func TestGet_CascadeUser_SeesOwnCascadeOnly(t *testing.T) {
 // the org-types map for an empty result; both are harmless.
 func TestGet_CascadeUser_NoOrgID_EmptyList(t *testing.T) {
 	mock := &mockShutdownListGetter{}
-	rr := runGet(t, mock, &token.Claims{UserID: 1, OrganizationID: 0, Roles: []string{"cascade"}}, "date=2026-04-23")
+	rr := runGet(t, mock, &token.Claims{UserID: 1, OrganizationIDs: nil, Roles: []string{"cascade"}}, "date=2026-04-23")
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("got %d, want 200. body=%s", rr.Code, rr.Body.String())
@@ -193,7 +235,7 @@ func TestGet_CascadeUser_NoOrgID_EmptyList(t *testing.T) {
 
 func TestGet_CascadeWithRaisRole_SeesAll(t *testing.T) {
 	mock := &mockShutdownListGetter{}
-	rr := runGet(t, mock, &token.Claims{UserID: 1, OrganizationID: 5, Roles: []string{"cascade", "rais"}}, "date=2026-04-23")
+	rr := runGet(t, mock, &token.Claims{UserID: 1, OrganizationIDs: []int64{5}, Roles: []string{"cascade", "rais"}}, "date=2026-04-23")
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("got %d, want 200. body=%s", rr.Code, rr.Body.String())
@@ -208,7 +250,7 @@ func TestGet_CascadeWithRaisRole_SeesAll(t *testing.T) {
 
 func TestGet_CascadeWithReservoirRole_SeesOwnOnly(t *testing.T) {
 	mock := &mockShutdownListGetter{}
-	rr := runGet(t, mock, &token.Claims{UserID: 1, OrganizationID: 5, Roles: []string{"cascade", "reservoir"}}, "date=2026-04-23")
+	rr := runGet(t, mock, &token.Claims{UserID: 1, OrganizationIDs: []int64{5}, Roles: []string{"cascade", "reservoir"}}, "date=2026-04-23")
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("got %d, want 200. body=%s", rr.Code, rr.Body.String())
@@ -226,7 +268,7 @@ func TestGet_CascadeWithReservoirRole_SeesOwnOnly(t *testing.T) {
 
 func TestGet_InvalidDateFormat(t *testing.T) {
 	mock := &mockShutdownListGetter{}
-	rr := runGet(t, mock, &token.Claims{UserID: 1, OrganizationID: 99, Roles: []string{"sc"}}, "date=not-a-date")
+	rr := runGet(t, mock, &token.Claims{UserID: 1, OrganizationIDs: []int64{99}, Roles: []string{"sc"}}, "date=not-a-date")
 
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("got %d, want 400. body=%s", rr.Code, rr.Body.String())

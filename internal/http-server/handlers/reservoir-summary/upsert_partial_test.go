@@ -131,7 +131,7 @@ func TestUpsertForwardsOptionalFieldStates(t *testing.T) {
 
 			verifier := &mockTokenVerifier{claims: &token.Claims{
 				UserID:         1,
-				OrganizationID: 1,
+				OrganizationIDs: []int64{1},
 				Roles:          []string{"sc"},
 			}}
 

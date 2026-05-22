@@ -31,9 +31,9 @@ func decodeStructuredError(t *testing.T, body []byte) (errMsg string, code strin
 func TestUpsertDailyData_ConsumptionPersisted(t *testing.T) {
 	upserter := &captureGESUpserter{}
 	claims := &token.Claims{
-		UserID:         1,
-		OrganizationID: 1,
-		Roles:          []string{"sc"},
+		UserID:          1,
+		OrganizationIDs: []int64{1},
+		Roles:           []string{"sc"},
 	}
 	body := `[{
 		"organization_id": 10,
@@ -65,9 +65,9 @@ func TestUpsertDailyData_ConsumptionPersisted(t *testing.T) {
 func TestUpsertDailyData_ConsumptionNullExplicit(t *testing.T) {
 	upserter := &captureGESUpserter{}
 	claims := &token.Claims{
-		UserID:         1,
-		OrganizationID: 1,
-		Roles:          []string{"sc"},
+		UserID:          1,
+		OrganizationIDs: []int64{1},
+		Roles:           []string{"sc"},
 	}
 	body := `[{
 		"organization_id": 10,
@@ -92,9 +92,9 @@ func TestUpsertDailyData_ConsumptionNullExplicit(t *testing.T) {
 func TestUpsertDailyData_ConsumptionAbsent_PartialUpdate(t *testing.T) {
 	upserter := &captureGESUpserter{}
 	claims := &token.Claims{
-		UserID:         1,
-		OrganizationID: 1,
-		Roles:          []string{"sc"},
+		UserID:          1,
+		OrganizationIDs: []int64{1},
+		Roles:           []string{"sc"},
 	}
 	// No consumption_m3_s key at all.
 	body := `[{
@@ -119,9 +119,9 @@ func TestUpsertDailyData_ConsumptionAbsent_PartialUpdate(t *testing.T) {
 func TestUpsertDailyData_ConsumptionNegative_StructuredError(t *testing.T) {
 	upserter := &captureGESUpserter{}
 	claims := &token.Claims{
-		UserID:         1,
-		OrganizationID: 1,
-		Roles:          []string{"sc"},
+		UserID:          1,
+		OrganizationIDs: []int64{1},
+		Roles:           []string{"sc"},
 	}
 	body := `[{
 		"organization_id": 16,
@@ -171,9 +171,9 @@ func TestUpsertDailyData_AggregatesExceedTotal_StructuredError(t *testing.T) {
 		totals: map[int64]int{stationOrgID: 4},
 	}
 	claims := &token.Claims{
-		UserID:         1,
-		OrganizationID: 1,
-		Roles:          []string{"sc"},
+		UserID:          1,
+		OrganizationIDs: []int64{1},
+		Roles:           []string{"sc"},
 	}
 	body := `[{
 		"organization_id": 10,
@@ -225,9 +225,9 @@ func TestUpsertDailyData_ProductionExceedsMax_StructuredError(t *testing.T) {
 		maxProd: map[int64]float64{stationOrgID: 5.0},
 	}
 	claims := &token.Claims{
-		UserID:         1,
-		OrganizationID: 1,
-		Roles:          []string{"sc"},
+		UserID:          1,
+		OrganizationIDs: []int64{1},
+		Roles:           []string{"sc"},
 	}
 	body := `[{
 		"organization_id": 1,

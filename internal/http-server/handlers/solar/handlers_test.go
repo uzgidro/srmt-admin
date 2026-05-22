@@ -152,13 +152,18 @@ func doRequest(t *testing.T, repo *captureRepo, claims *token.Claims, method, ta
 }
 
 func scClaims() *token.Claims {
-	return &token.Claims{UserID: 1, OrganizationID: 1, Roles: []string{"sc"}}
+	return &token.Claims{UserID: 1, OrganizationIDs: []int64{1}, Roles: []string{"sc"}}
 }
 func raisClaims() *token.Claims {
-	return &token.Claims{UserID: 2, OrganizationID: 1, Roles: []string{"rais"}}
+	return &token.Claims{UserID: 2, OrganizationIDs: []int64{1}, Roles: []string{"rais"}}
 }
 func cascadeClaims(orgID int64) *token.Claims {
-	return &token.Claims{UserID: 10, OrganizationID: orgID, Roles: []string{"cascade"}}
+	return &token.Claims{UserID: 10, OrganizationIDs: []int64{orgID}, Roles: []string{"cascade"}}
+}
+
+// cascadeMultiOrgClaims builds a cascade caller with access to several orgs.
+func cascadeMultiOrgClaims(orgIDs ...int64) *token.Claims {
+	return &token.Claims{UserID: 11, OrganizationIDs: orgIDs, Roles: []string{"cascade"}}
 }
 
 func dailyBody(orgID int64, date string) string {
@@ -239,7 +244,7 @@ func TestUpsertSolarDailyData_CascadeMixedBatch_AllForbidden(t *testing.T) {
 // not 500 and not silent 200. Regression for known security issue.
 func TestUpsertSolarDailyData_CascadeNoOrgID_Forbidden(t *testing.T) {
 	repo := &captureRepo{}
-	claims := &token.Claims{UserID: 10, OrganizationID: 0, Roles: []string{"cascade"}}
+	claims := &token.Claims{UserID: 10, OrganizationIDs: nil, Roles: []string{"cascade"}}
 	rr := doRequest(t, repo, claims, http.MethodPost, "/solar/daily-data", dailyBody(42, "2026-04-28"))
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("status: want 403, got %d, body: %s", rr.Code, rr.Body.String())
@@ -324,6 +329,39 @@ func TestGetSolarDailyData_CascadeSeesOwnOrgOnly(t *testing.T) {
 	}
 }
 
+// Multi-org access: a cascade user with two orgs in their claim sees records
+// for both, but still not records for a third org they lack access to.
+func TestGetSolarDailyData_CascadeMultiOrgSeesAllOwned(t *testing.T) {
+	repo := &captureRepo{
+		dailyRangeResult: []model.DailyData{
+			{ID: 1, OrganizationID: 42, Date: time.Date(2026, 4, 28, 0, 0, 0, 0, time.UTC)},
+			{ID: 2, OrganizationID: 99, Date: time.Date(2026, 4, 28, 0, 0, 0, 0, time.UTC)},
+			{ID: 3, OrganizationID: 7, Date: time.Date(2026, 4, 28, 0, 0, 0, 0, time.UTC)},
+		},
+	}
+	rr := doRequest(t, repo, cascadeMultiOrgClaims(42, 99), http.MethodGet, "/solar/daily-data?date=2026-04-28", "")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d, body: %s", rr.Code, rr.Body.String())
+	}
+	var got []model.DailyData
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("multi-org cascade must see both owned orgs; got %d, want 2: %+v", len(got), got)
+	}
+	seen := map[int64]bool{}
+	for _, rec := range got {
+		seen[rec.OrganizationID] = true
+	}
+	if !seen[42] || !seen[99] {
+		t.Errorf("must see orgs 42 and 99; got %+v", got)
+	}
+	if seen[7] {
+		t.Errorf("must NOT see foreign org 7; got %+v", got)
+	}
+}
+
 // Cross-org info disclosure regression: cascade user passing
 // `?organization_id=99` (a foreign org) must NOT receive that data even
 // though they may have legitimate access to other orgs. The query param
@@ -353,7 +391,7 @@ func TestGetSolarDailyData_CascadeNoOrgID_Forbidden(t *testing.T) {
 			{ID: 1, OrganizationID: 42, Date: time.Date(2026, 4, 28, 0, 0, 0, 0, time.UTC)},
 		},
 	}
-	claims := &token.Claims{UserID: 10, OrganizationID: 0, Roles: []string{"cascade"}}
+	claims := &token.Claims{UserID: 10, OrganizationIDs: nil, Roles: []string{"cascade"}}
 	rr := doRequest(t, repo, claims, http.MethodGet, "/solar/daily-data?date=2026-04-28", "")
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("status: want 403, got %d, body: %s", rr.Code, rr.Body.String())

@@ -81,10 +81,10 @@ func contextWithScClaims(ctx context.Context) context.Context {
 // contextWithDeleteRoleClaims lets cascade/other-role tests set their own role+orgID.
 func contextWithDeleteRoleClaims(ctx context.Context, userID, orgID int64, role string) context.Context {
 	claims := &token.Claims{
-		UserID:         userID,
-		OrganizationID: orgID,
-		Name:           "Test User",
-		Roles:          []string{role},
+		UserID:          userID,
+		OrganizationIDs: []int64{orgID},
+		Name:            "Test User",
+		Roles:           []string{role},
 	}
 	return mwauth.ContextWithClaims(ctx, claims)
 }

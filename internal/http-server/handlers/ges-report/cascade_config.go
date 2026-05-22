@@ -10,6 +10,7 @@ import (
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
 	model "srmt-admin/internal/lib/model/ges-report"
+	"srmt-admin/internal/lib/service/auth"
 	"srmt-admin/internal/storage"
 
 	"github.com/go-chi/chi/v5/middleware"
@@ -88,24 +89,24 @@ func GetCascadeConfigs(log *slog.Logger, repo CascadeConfigGetter) http.HandlerF
 }
 
 // filterCascadeConfigsForCaller returns cascade configs visible to the current
-// user. sc/rais see all cascades. Others see only their own cascade (where
-// organization_id == claims.OrganizationID).
+// user. sc/rais see all cascades. Others see only cascades whose
+// organization_id is one of the user's organizations (claims.OrganizationIDs).
 func filterCascadeConfigsForCaller(ctx context.Context, configs []model.CascadeConfig) []model.CascadeConfig {
 	claims, ok := mwauth.ClaimsFromContext(ctx)
 	if !ok || claims == nil {
-		return configs
+		return []model.CascadeConfig{}
 	}
 	for _, role := range claims.Roles {
 		if role == "sc" || role == "rais" {
 			return configs
 		}
 	}
-	if claims.OrganizationID == 0 {
-		return configs
+	if len(claims.OrganizationIDs) == 0 {
+		return []model.CascadeConfig{}
 	}
 	filtered := make([]model.CascadeConfig, 0, 1)
 	for _, c := range configs {
-		if c.OrganizationID == claims.OrganizationID {
+		if auth.ContainsOrg(claims.OrganizationIDs, c.OrganizationID) {
 			filtered = append(filtered, c)
 		}
 	}

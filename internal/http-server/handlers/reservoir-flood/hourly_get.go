@@ -11,6 +11,7 @@ import (
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
 	model "srmt-admin/internal/lib/model/reservoir-flood"
+	"srmt-admin/internal/lib/service/auth"
 
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
@@ -80,7 +81,7 @@ func GetHourly(log *slog.Logger, repo HourlyGetter, loc *time.Location) http.Han
 		// Returning 200 with [] would silently mask a misconfigured user.
 		if !callerIsAdmin(r.Context()) {
 			claims, ok := mwauth.ClaimsFromContext(r.Context())
-			if !ok || claims == nil || claims.OrganizationID == 0 {
+			if !ok || claims == nil || len(claims.OrganizationIDs) == 0 {
 				log.Warn("non-admin caller without organization id")
 				render.Status(r, http.StatusForbidden)
 				render.JSON(w, r, resp.Forbidden("user has no organization assigned"))
@@ -105,9 +106,9 @@ func GetHourly(log *slog.Logger, repo HourlyGetter, loc *time.Location) http.Han
 
 // filterRecordsForCaller restricts the response to records the caller is
 // allowed to see. sc/rais see everything. Other roles (typically
-// reservoir_duty) see only records for their own org. The handler MUST have
-// already enforced claims.OrganizationID != 0 before calling this for
-// non-admin roles — see GetHourly.
+// reservoir_flood) see only records for orgs in their assigned org set. The
+// handler MUST have already enforced a non-empty claims.OrganizationIDs
+// before calling this for non-admin roles — see GetHourly.
 func filterRecordsForCaller(ctx context.Context, list []model.HourlyRecord) []model.HourlyRecord {
 	claims, ok := mwauth.ClaimsFromContext(ctx)
 	if !ok || claims == nil {
@@ -120,7 +121,7 @@ func filterRecordsForCaller(ctx context.Context, list []model.HourlyRecord) []mo
 	}
 	out := make([]model.HourlyRecord, 0, len(list))
 	for _, rec := range list {
-		if rec.OrganizationID == claims.OrganizationID {
+		if auth.ContainsOrg(claims.OrganizationIDs, rec.OrganizationID) {
 			out = append(out, rec)
 		}
 	}

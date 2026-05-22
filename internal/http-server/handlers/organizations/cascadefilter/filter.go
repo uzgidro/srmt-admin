@@ -8,6 +8,7 @@ import (
 
 	mwauth "srmt-admin/internal/http-server/middleware/auth"
 	"srmt-admin/internal/lib/model/organization"
+	"srmt-admin/internal/lib/service/auth"
 )
 
 // Apply returns orgs filtered by cascade membership for the caller.
@@ -17,10 +18,10 @@ import (
 //   - sc/rais role    -> orgs unchanged (full access).
 //   - No cascade role -> orgs unchanged (other roles are not restricted here).
 //   - cascade role:
-//     - claims.OrganizationID == 0 -> empty slice (nothing visible).
-//     - otherwise keep orgs where org.ID == claims.OrganizationID OR
-//       org.ParentOrganizationID points at claims.OrganizationID. Items
-//       (nested tree children) are preserved verbatim.
+//     - empty claims.OrganizationIDs -> empty slice (nothing visible).
+//     - otherwise keep orgs whose ID is in claims.OrganizationIDs OR
+//       whose ParentOrganizationID points at one of claims.OrganizationIDs.
+//       Items (nested tree children) are preserved verbatim.
 func Apply(ctx context.Context, orgs []*organization.Model) []*organization.Model {
 	claims, ok := mwauth.ClaimsFromContext(ctx)
 	if !ok || claims == nil {
@@ -41,7 +42,7 @@ func Apply(ctx context.Context, orgs []*organization.Model) []*organization.Mode
 		return orgs
 	}
 
-	if claims.OrganizationID == 0 {
+	if len(claims.OrganizationIDs) == 0 {
 		return []*organization.Model{}
 	}
 
@@ -50,11 +51,11 @@ func Apply(ctx context.Context, orgs []*organization.Model) []*organization.Mode
 		if org == nil {
 			continue
 		}
-		if org.ID == claims.OrganizationID {
+		if auth.ContainsOrg(claims.OrganizationIDs, org.ID) {
 			filtered = append(filtered, org)
 			continue
 		}
-		if org.ParentOrganizationID != nil && *org.ParentOrganizationID == claims.OrganizationID {
+		if org.ParentOrganizationID != nil && auth.ContainsOrg(claims.OrganizationIDs, *org.ParentOrganizationID) {
 			filtered = append(filtered, org)
 		}
 	}

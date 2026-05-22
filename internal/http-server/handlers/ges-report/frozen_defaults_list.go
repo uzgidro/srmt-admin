@@ -9,6 +9,7 @@ import (
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
 	model "srmt-admin/internal/lib/model/ges-report"
+	"srmt-admin/internal/lib/service/auth"
 
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
@@ -49,10 +50,10 @@ func ListFrozenDefaults(log *slog.Logger, repo FrozenDefaultLister) http.Handler
 
 // filterFrozenDefaultsForCaller restricts the list to what the current user
 // may see. sc/rais get the unfiltered slice. Other roles get entries for
-// their own organization and entries belonging to stations in their cascade
-// (CascadeID == claims.OrganizationID). When claims are missing or the org
-// id is zero we deny by returning an empty slice — defence-in-depth in case
-// the route group middleware is ever bypassed.
+// any of their organizations and entries belonging to stations in those
+// cascades (CascadeID in claims.OrganizationIDs). When claims are missing or
+// the org list is empty we deny by returning an empty slice — defence-in-depth
+// in case the route group middleware is ever bypassed.
 func filterFrozenDefaultsForCaller(ctx context.Context, entries []model.FrozenDefault) []model.FrozenDefault {
 	claims, ok := mwauth.ClaimsFromContext(ctx)
 	if !ok || claims == nil {
@@ -63,16 +64,16 @@ func filterFrozenDefaultsForCaller(ctx context.Context, entries []model.FrozenDe
 			return entries
 		}
 	}
-	if claims.OrganizationID == 0 {
+	if len(claims.OrganizationIDs) == 0 {
 		return []model.FrozenDefault{}
 	}
 	filtered := make([]model.FrozenDefault, 0, len(entries))
 	for _, e := range entries {
-		if e.OrganizationID == claims.OrganizationID {
+		if auth.ContainsOrg(claims.OrganizationIDs, e.OrganizationID) {
 			filtered = append(filtered, e)
 			continue
 		}
-		if e.CascadeID != nil && *e.CascadeID == claims.OrganizationID {
+		if e.CascadeID != nil && auth.ContainsOrg(claims.OrganizationIDs, *e.CascadeID) {
 			filtered = append(filtered, e)
 		}
 	}

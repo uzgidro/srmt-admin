@@ -155,13 +155,13 @@ func doRequest(t *testing.T, repo *captureRepo, claims *token.Claims, method, ta
 }
 
 func scClaims() *token.Claims {
-	return &token.Claims{UserID: 1, OrganizationID: 1, Roles: []string{"sc"}}
+	return &token.Claims{UserID: 1, OrganizationIDs: []int64{1}, Roles: []string{"sc"}}
 }
 func raisClaims() *token.Claims {
-	return &token.Claims{UserID: 2, OrganizationID: 1, Roles: []string{"rais"}}
+	return &token.Claims{UserID: 2, OrganizationIDs: []int64{1}, Roles: []string{"rais"}}
 }
 func dutyClaims(orgID int64) *token.Claims {
-	return &token.Claims{UserID: 10, OrganizationID: orgID, Roles: []string{"reservoir_duty"}}
+	return &token.Claims{UserID: 10, OrganizationIDs: []int64{orgID}, Roles: []string{"reservoir_flood"}}
 }
 
 func hourlyBody(orgID int64, recordedAt string) string {
@@ -374,7 +374,38 @@ func TestGetHourly_DutySeesOwnOrgOnly(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 	if len(got) != 1 || got[0].OrganizationID != 42 {
-		t.Errorf("reservoir_duty must see only own org; got %+v", got)
+		t.Errorf("reservoir_flood must see only own org; got %+v", got)
+	}
+}
+
+// A reservoir_flood duty user assigned to multiple organizations must see
+// records for ALL of them. Multi-org claim: OrganizationIDs holds the full
+// set, and filterRecordsForCaller admits a record if its org is in that set.
+func TestGetHourly_DutyMultiOrg_SeesAllAssignedOrgs(t *testing.T) {
+	repo := &captureRepo{
+		hourlyRangeResult: []model.HourlyRecord{
+			{ID: 1, OrganizationID: 42, RecordedAt: time.Date(2026, 4, 27, 15, 0, 0, 0, time.UTC)},
+			{ID: 2, OrganizationID: 99, RecordedAt: time.Date(2026, 4, 27, 16, 0, 0, 0, time.UTC)},
+		},
+	}
+	claims := &token.Claims{UserID: 10, OrganizationIDs: []int64{42, 99}, Roles: []string{"reservoir_flood"}}
+	rr := doRequest(t, repo, claims, http.MethodGet, "/reservoir-flood/hourly?date=2026-04-27", "")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d, body: %s", rr.Code, rr.Body.String())
+	}
+	var got []model.HourlyRecord
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("multi-org duty must see records for all assigned orgs; got %d, want 2", len(got))
+	}
+	seen := map[int64]bool{}
+	for _, rec := range got {
+		seen[rec.OrganizationID] = true
+	}
+	if !seen[42] || !seen[99] {
+		t.Errorf("response must contain both org 42 and org 99; got %+v", got)
 	}
 }
 
@@ -392,7 +423,7 @@ func TestUpsertConfig_SC_OK(t *testing.T) {
 	}
 }
 
-// reservoir_duty MUST be rejected at the route level (Tier 2 = sc/rais only).
+// reservoir_flood MUST be rejected at the route level (Tier 2 = sc/rais only).
 // In this test the router is built without the route-level RequireAnyRole gate
 // (we wire all routes for handler-test convenience), so the handler MUST itself
 // reject the duty role with 403. This keeps defence-in-depth even if the route
@@ -472,8 +503,8 @@ func TestGetHourly_DutyNoOrgID_Forbidden(t *testing.T) {
 			{ID: 1, OrganizationID: 42, RecordedAt: time.Date(2026, 4, 27, 15, 0, 0, 0, time.UTC)},
 		},
 	}
-	// duty user with OrganizationID = 0 (broken DB setup).
-	claims := &token.Claims{UserID: 10, OrganizationID: 0, Roles: []string{"reservoir_duty"}}
+	// duty user with no organizations (broken DB setup).
+	claims := &token.Claims{UserID: 10, OrganizationIDs: nil, Roles: []string{"reservoir_flood"}}
 	rr := doRequest(t, repo, claims, http.MethodGet, "/reservoir-flood/hourly?date=2026-04-27", "")
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("status: want 403, got %d, body: %s", rr.Code, rr.Body.String())
@@ -487,7 +518,7 @@ func TestGetConfigs_DutyNoOrgID_Forbidden(t *testing.T) {
 			{ID: 1, OrganizationID: 42, OrganizationName: "Charvak", SortOrder: 1, IsActive: true},
 		},
 	}
-	claims := &token.Claims{UserID: 10, OrganizationID: 0, Roles: []string{"reservoir_duty"}}
+	claims := &token.Claims{UserID: 10, OrganizationIDs: nil, Roles: []string{"reservoir_flood"}}
 	rr := doRequest(t, repo, claims, http.MethodGet, "/reservoir-flood/config", "")
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("status: want 403, got %d, body: %s", rr.Code, rr.Body.String())

@@ -130,10 +130,10 @@ func setupExportRouter(
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	verifier := &mockTokenVerifier{claims: &token.Claims{
-		UserID:         1,
-		ContactID:      1,
-		OrganizationID: 1,
-		Roles:          []string{"sc"},
+		UserID:          1,
+		ContactID:       1,
+		OrganizationIDs: []int64{1},
+		Roles:           []string{"sc"},
 	}}
 	loc, _ := time.LoadLocation("Asia/Tashkent")
 	tmplPath := createTestTemplate(t)

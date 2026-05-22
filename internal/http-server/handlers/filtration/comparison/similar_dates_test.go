@@ -59,7 +59,7 @@ func (m *mockSimilarDatesGetter) GetOrganizationName(_ context.Context, _ int64)
 
 func TestGetSimilarDates(t *testing.T) {
 	scClaims := &token.Claims{UserID: 1, Roles: []string{"sc"}}
-	reservoirClaims := &token.Claims{UserID: 2, Roles: []string{"reservoir"}, OrganizationID: 5}
+	reservoirClaims := &token.Claims{UserID: 2, Roles: []string{"reservoir"}, OrganizationIDs: []int64{5}}
 	noOrgClaims := &token.Claims{UserID: 3, Roles: []string{"reservoir"}}
 
 	lvl := 284.5

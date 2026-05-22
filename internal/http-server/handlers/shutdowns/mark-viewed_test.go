@@ -84,7 +84,7 @@ func TestMarkViewed_CascadeUser_OwnCascade_OK(t *testing.T) {
 		getOrgFunc: func(ctx context.Context, id int64) (int64, error) { return 10, nil },
 		parentFunc: func(ctx context.Context, orgID int64) (*int64, error) { return &parent, nil },
 	}
-	rr := serveMarkViewed(t, mock, "7", &token.Claims{UserID: 1, OrganizationID: 5, Roles: []string{"cascade"}})
+	rr := serveMarkViewed(t, mock, "7", &token.Claims{UserID: 1, OrganizationIDs: []int64{5}, Roles: []string{"cascade"}})
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("got %d, want 200. body=%s", rr.Code, rr.Body.String())
@@ -103,7 +103,7 @@ func TestMarkViewed_CascadeUser_ForeignCascade_NotFound(t *testing.T) {
 		getOrgFunc: func(ctx context.Context, id int64) (int64, error) { return 20, nil },
 		parentFunc: func(ctx context.Context, orgID int64) (*int64, error) { return &foreignParent, nil },
 	}
-	rr := serveMarkViewed(t, mock, "7", &token.Claims{UserID: 1, OrganizationID: 5, Roles: []string{"cascade"}})
+	rr := serveMarkViewed(t, mock, "7", &token.Claims{UserID: 1, OrganizationIDs: []int64{5}, Roles: []string{"cascade"}})
 
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("got %d, want 404. body=%s", rr.Code, rr.Body.String())

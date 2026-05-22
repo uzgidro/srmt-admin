@@ -42,7 +42,7 @@ func TestUpsertOrgAccess(t *testing.T) {
 			name: "sc role - access to any org",
 			claims: &token.Claims{
 				UserID:         1,
-				OrganizationID: 1,
+				OrganizationIDs: []int64{1},
 				Roles:          []string{"sc"},
 			},
 			body:       `[{"organization_id": 999, "date": "2024-01-01"}]`,
@@ -52,7 +52,7 @@ func TestUpsertOrgAccess(t *testing.T) {
 			name: "reservoir role - own org",
 			claims: &token.Claims{
 				UserID:         2,
-				OrganizationID: 5,
+				OrganizationIDs: []int64{5},
 				Roles:          []string{"reservoir"},
 			},
 			body:       `[{"organization_id": 5, "date": "2024-01-01"}]`,
@@ -62,7 +62,7 @@ func TestUpsertOrgAccess(t *testing.T) {
 			name: "reservoir role - foreign org",
 			claims: &token.Claims{
 				UserID:         3,
-				OrganizationID: 5,
+				OrganizationIDs: []int64{5},
 				Roles:          []string{"reservoir"},
 			},
 			body:       `[{"organization_id": 10, "date": "2024-01-01"}]`,
@@ -72,7 +72,7 @@ func TestUpsertOrgAccess(t *testing.T) {
 			name: "reservoir role - mixed batch",
 			claims: &token.Claims{
 				UserID:         4,
-				OrganizationID: 5,
+				OrganizationIDs: []int64{5},
 				Roles:          []string{"reservoir"},
 			},
 			body:       `[{"organization_id": 5, "date": "2024-01-01"}, {"organization_id": 10, "date": "2024-01-02"}]`,

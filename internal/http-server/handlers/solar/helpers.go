@@ -5,6 +5,7 @@ import (
 
 	mwauth "srmt-admin/internal/http-server/middleware/auth"
 	model "srmt-admin/internal/lib/model/solar"
+	"srmt-admin/internal/lib/service/auth"
 )
 
 // callerIsAdmin returns true iff the caller has sc or rais role.
@@ -26,8 +27,9 @@ func callerIsAdmin(ctx context.Context) bool {
 
 // filterDailyDataForCaller restricts the response to records the caller is
 // allowed to see. sc/rais see everything. Other roles (typically cascade) see
-// only records for their own org. The handler MUST have already enforced
-// claims.OrganizationID != 0 for non-admin roles before calling this.
+// only records for their own orgs. The handler MUST have already enforced
+// a non-empty claims.OrganizationIDs list for non-admin roles before calling
+// this.
 //
 // This is a defence-in-depth filter: even if the repo layer somehow returned
 // records for foreign organizations (e.g. via a misused query-param hint that
@@ -45,7 +47,7 @@ func filterDailyDataForCaller(ctx context.Context, list []model.DailyData) []mod
 	}
 	out := make([]model.DailyData, 0, len(list))
 	for _, rec := range list {
-		if rec.OrganizationID == claims.OrganizationID {
+		if auth.ContainsOrg(claims.OrganizationIDs, rec.OrganizationID) {
 			out = append(out, rec)
 		}
 	}

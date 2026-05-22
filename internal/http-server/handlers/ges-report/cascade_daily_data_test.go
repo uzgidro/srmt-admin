@@ -87,10 +87,10 @@ func (c *captureCascadeWeatherGetter) GetOrganizationParentID(_ context.Context,
 
 func setupCascadeWeatherPOSTRouter(upserter *captureCascadeWeatherUpserter) http.Handler {
 	return setupCascadeWeatherPOSTRouterWithClaims(upserter, &token.Claims{
-		UserID:         1,
-		ContactID:      1,
-		OrganizationID: 1,
-		Roles:          []string{"sc"},
+		UserID:          1,
+		ContactID:       1,
+		OrganizationIDs: []int64{1},
+		Roles:           []string{"sc"},
 	})
 }
 
@@ -105,10 +105,10 @@ func setupCascadeWeatherPOSTRouterWithClaims(upserter *captureCascadeWeatherUpse
 
 func setupCascadeWeatherGETRouter(getter *captureCascadeWeatherGetter) http.Handler {
 	return setupCascadeWeatherGETRouterWithClaims(getter, &token.Claims{
-		UserID:         1,
-		ContactID:      1,
-		OrganizationID: 1,
-		Roles:          []string{"sc"},
+		UserID:          1,
+		ContactID:       1,
+		OrganizationIDs: []int64{1},
+		Roles:           []string{"sc"},
 	})
 }
 
@@ -321,10 +321,10 @@ func TestUpsertCascadeDailyWeather_CascadeOwnCascade_OK(t *testing.T) {
 		knownCascades: map[int64]bool{cascadeOrgID: true},
 	}
 	claims := &token.Claims{
-		UserID:         1,
-		ContactID:      1,
-		OrganizationID: cascadeOrgID,
-		Roles:          []string{"cascade"},
+		UserID:          1,
+		ContactID:       1,
+		OrganizationIDs: []int64{cascadeOrgID},
+		Roles:           []string{"cascade"},
 	}
 	h := setupCascadeWeatherPOSTRouterWithClaims(upserter, claims)
 	body := `[{"organization_id":50,"date":"2026-04-13","temperature":22.5,"weather_condition":"01d"}]`
@@ -352,10 +352,10 @@ func TestUpsertCascadeDailyWeather_CascadeForeignCascade_403(t *testing.T) {
 		},
 	}
 	claims := &token.Claims{
-		UserID:         1,
-		ContactID:      1,
-		OrganizationID: cascadeOrgID,
-		Roles:          []string{"cascade"},
+		UserID:          1,
+		ContactID:       1,
+		OrganizationIDs: []int64{cascadeOrgID},
+		Roles:           []string{"cascade"},
 	}
 	h := setupCascadeWeatherPOSTRouterWithClaims(upserter, claims)
 	body := `[{"organization_id":60,"date":"2026-04-13","temperature":22.5}]`
@@ -377,10 +377,10 @@ func TestGetCascadeDailyWeather_CascadeOwn_OK(t *testing.T) {
 		result: &model.CascadeWeather{Temperature: &temp},
 	}
 	claims := &token.Claims{
-		UserID:         1,
-		ContactID:      1,
-		OrganizationID: cascadeOrgID,
-		Roles:          []string{"cascade"},
+		UserID:          1,
+		ContactID:       1,
+		OrganizationIDs: []int64{cascadeOrgID},
+		Roles:           []string{"cascade"},
 	}
 	h := setupCascadeWeatherGETRouterWithClaims(getter, claims)
 	rr := doCascadeWeatherGET(t, h, "organization_id=50&date=2026-04-13")
@@ -402,10 +402,10 @@ func TestGetCascadeDailyWeather_CascadeForeign_403(t *testing.T) {
 		},
 	}
 	claims := &token.Claims{
-		UserID:         1,
-		ContactID:      1,
-		OrganizationID: cascadeOrgID,
-		Roles:          []string{"cascade"},
+		UserID:          1,
+		ContactID:       1,
+		OrganizationIDs: []int64{cascadeOrgID},
+		Roles:           []string{"cascade"},
 	}
 	h := setupCascadeWeatherGETRouterWithClaims(getter, claims)
 	rr := doCascadeWeatherGET(t, h, "organization_id=60&date=2026-04-13")

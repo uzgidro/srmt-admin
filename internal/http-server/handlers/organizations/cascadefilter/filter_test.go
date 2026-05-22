@@ -13,12 +13,12 @@ func int64Ptr(i int64) *int64 {
 	return &i
 }
 
-func ctxWith(role string, orgID int64) context.Context {
+func ctxWith(role string, orgIDs ...int64) context.Context {
 	claims := &token.Claims{
-		UserID:         1,
-		OrganizationID: orgID,
-		Name:           "Test User",
-		Roles:          []string{role},
+		UserID:          1,
+		OrganizationIDs: orgIDs,
+		Name:            "Test User",
+		Roles:           []string{role},
 	}
 	return mwauth.ContextWithClaims(context.Background(), claims)
 }
@@ -133,13 +133,38 @@ func TestApply_CascadeRole_Tree(t *testing.T) {
 	}
 }
 
-func TestApply_CascadeRole_OrgIDZero_EmptyResult(t *testing.T) {
+func TestApply_CascadeRole_NoOrgIDs_EmptyResult(t *testing.T) {
 	orgs := []*organization.Model{
 		{ID: 5},
 		{ID: 10, ParentOrganizationID: int64Ptr(5)},
 	}
-	got := cascadefilter.Apply(ctxWith("cascade", 0), orgs)
+	got := cascadefilter.Apply(ctxWith("cascade"), orgs)
 	if len(got) != 0 {
-		t.Errorf("expected empty result for cascade user with orgID=0, got %d: %v", len(got), ids(got))
+		t.Errorf("expected empty result for cascade user with no orgIDs, got %d: %v", len(got), ids(got))
+	}
+}
+
+func TestApply_CascadeRole_MultiOrg_FlatStations(t *testing.T) {
+	// User belongs to two cascades: 5 and 7.
+	orgs := []*organization.Model{
+		{ID: 5, ParentOrganizationID: nil},
+		{ID: 10, ParentOrganizationID: int64Ptr(5)},
+		{ID: 11, ParentOrganizationID: int64Ptr(5)},
+		{ID: 20, ParentOrganizationID: int64Ptr(7)},
+		{ID: 7, ParentOrganizationID: nil},
+		{ID: 30, ParentOrganizationID: int64Ptr(9)},
+		{ID: 9, ParentOrganizationID: nil},
+	}
+	got := cascadefilter.Apply(ctxWith("cascade", 5, 7), orgs)
+
+	gotIDs := ids(got)
+	wantIDs := map[int64]bool{5: true, 10: true, 11: true, 7: true, 20: true}
+	if len(gotIDs) != len(wantIDs) {
+		t.Fatalf("expected %d orgs, got %d: %v", len(wantIDs), len(gotIDs), gotIDs)
+	}
+	for _, id := range gotIDs {
+		if !wantIDs[id] {
+			t.Errorf("unexpected org id %d in result (want only 5,7,10,11,20): %v", id, gotIDs)
+		}
 	}
 }

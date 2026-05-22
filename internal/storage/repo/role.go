@@ -341,3 +341,49 @@ func (r *Repo) GetUserRoles(ctx context.Context, userID int64) ([]role.Model, er
 
 	return roles, nil
 }
+
+// SetUserOrganizations completely replaces the organization bindings for a
+// user with the provided list (mirrors ReplaceUserRoles). An empty orgIDs
+// slice clears all bindings. Foreign-key violations (unknown user or
+// organization) are translated to storage.ErrForeignKeyViolation.
+func (r *Repo) SetUserOrganizations(ctx context.Context, userID int64, orgIDs []int64) error {
+	const op = "storage.repo.SetUserOrganizations"
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("%s: failed to begin transaction: %w", op, err)
+	}
+	defer tx.Rollback()
+
+	// 1. Drop all existing organization bindings for this user.
+	_, err = tx.ExecContext(ctx, "DELETE FROM user_organizations WHERE user_id = $1", userID)
+	if err != nil {
+		return fmt.Errorf("%s: failed to delete existing organizations: %w", op, err)
+	}
+
+	// 2. Insert the new bindings (if any). Duplicate org IDs in the input
+	//    are absorbed by ON CONFLICT DO NOTHING against the composite PK.
+	if len(orgIDs) > 0 {
+		query := "INSERT INTO user_organizations (user_id, organization_id) VALUES "
+		var valueStrings []string
+		var valueArgs []interface{}
+		paramIndex := 1
+
+		for _, orgID := range orgIDs {
+			valueStrings = append(valueStrings, fmt.Sprintf("($%d, $%d)", paramIndex, paramIndex+1))
+			valueArgs = append(valueArgs, userID, orgID)
+			paramIndex += 2
+		}
+
+		fullQuery := query + strings.Join(valueStrings, ",") + " ON CONFLICT DO NOTHING"
+		_, err = tx.ExecContext(ctx, fullQuery, valueArgs...)
+		if err != nil {
+			if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
+				return translatedErr
+			}
+			return fmt.Errorf("%s: failed to insert new organizations: %w", op, err)
+		}
+	}
+
+	return tx.Commit()
+}
