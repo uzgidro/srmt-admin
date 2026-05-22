@@ -9,8 +9,18 @@ import (
 	"github.com/lib/pq"
 
 	model "srmt-admin/internal/lib/model/reservoir-flood"
+	"srmt-admin/internal/lib/optional"
 	"srmt-admin/internal/storage"
 )
+
+// blankToNull collapses an explicitly-set empty string to NULL. A frontend
+// "clear text field" action sends "" instead of null; storing NULL keeps the
+// all-NULL prune trigger able to drop a fully-empty row.
+func blankToNull(o *optional.Optional[string]) {
+	if o.Set && o.Value != nil && *o.Value == "" {
+		o.Value = nil
+	}
+}
 
 // --- Config CRUD ---
 
@@ -147,6 +157,14 @@ func (r *Repo) UpsertReservoirFloodHourly(ctx context.Context, items []model.Ups
 		if parseErr != nil {
 			return fmt.Errorf("%s: invalid recorded_at %q: %w", op, it.RecordedAt, parseErr)
 		}
+
+		// Normalize "cleared" text fields: a frontend clearing duty_name or
+		// weather_condition sends "" rather than null. Persist that as NULL so
+		// the all-NULL prune trigger (migration 000080) can drop a row whose
+		// only remaining value is an empty string. `it` is a loop-local copy,
+		// so mutating it here does not affect the caller's slice.
+		blankToNull(&it.DutyName)
+		blankToNull(&it.WeatherCondition)
 
 		if _, execErr := tx.ExecContext(ctx, query,
 			it.OrganizationID, recordedAt, // $1, $2
