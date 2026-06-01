@@ -28,12 +28,19 @@ func main() {
 	log.Info("application initialized")
 	log.Info("timezone configured", "timezone", app.Config.Timezone, "location", app.Location.String())
 
-	// If an Excel template override directory was configured but contains
-	// none of the embedded template files, the operator probably mistyped
-	// the path. Warn once at startup — without this the dev would silently
-	// keep getting the embedded copies and wonder why their edits are
-	// ignored.
-	if app.Config.TemplateOverridePath != "" && templates.CountOverrideFiles(app.Config.TemplateOverridePath) == 0 {
+	// Echo the override-path setting at startup so the operator can sanity-
+	// check that cleanenv actually picked up the value they wrote (a typo
+	// in the YAML key — template_path vs template_override_path — would be
+	// silently ignored, leaving the path empty here).
+	overrideFiles := templates.CountOverrideFiles(app.Config.TemplateOverridePath)
+	log.Info("excel templates configured",
+		"override_path", app.Config.TemplateOverridePath,
+		"override_files_found", overrideFiles,
+		"embedded_files", len(templates.AllNames()))
+	// Loud warn when the path is set but useless — most common cause is a
+	// typo in the directory path. Without this dev would silently keep
+	// getting embed copies and wonder why edits are ignored.
+	if app.Config.TemplateOverridePath != "" && overrideFiles == 0 {
 		log.Warn("template override path set but no embedded template files found there; using embed-only",
 			"path", app.Config.TemplateOverridePath)
 	}

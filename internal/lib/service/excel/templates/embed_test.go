@@ -26,6 +26,19 @@ func TestEmbeddedAllPresent(t *testing.T) {
 		if len(data) < 1024 {
 			t.Errorf("%s: suspiciously small (%d bytes)", name, len(data))
 		}
+		// Don't trust size alone — a 1 KB blob of garbage with a Zip header
+		// would pass that check. Round-trip through excelize and make sure
+		// the workbook actually parses and has at least one sheet. This is
+		// the fail-fast guarantee that every embedded template is renderable.
+		f, err := Open(name, "")
+		if err != nil {
+			t.Errorf("%s: Open failed: %v", name, err)
+			continue
+		}
+		if sheets := f.GetSheetList(); len(sheets) == 0 {
+			t.Errorf("%s: parsed file has no sheets", name)
+		}
+		_ = f.Close()
 	}
 }
 
