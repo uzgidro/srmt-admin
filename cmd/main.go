@@ -12,6 +12,7 @@ import (
 
 	startupadmin "srmt-admin/internal/lib/admin/startup-admin"
 	"srmt-admin/internal/lib/logger/sl"
+	"srmt-admin/internal/lib/service/excel/templates"
 )
 
 func main() {
@@ -26,6 +27,23 @@ func main() {
 	log := app.Logger
 	log.Info("application initialized")
 	log.Info("timezone configured", "timezone", app.Config.Timezone, "location", app.Location.String())
+
+	// Echo the override-path setting at startup so the operator can sanity-
+	// check that cleanenv actually picked up the value they wrote (a typo
+	// in the YAML key — template_path vs template_override_path — would be
+	// silently ignored, leaving the path empty here).
+	overrideFiles := templates.CountOverrideFiles(app.Config.TemplateOverridePath)
+	log.Info("excel templates configured",
+		"override_path", app.Config.TemplateOverridePath,
+		"override_files_found", overrideFiles,
+		"embedded_files", len(templates.AllNames()))
+	// Loud warn when the path is set but useless — most common cause is a
+	// typo in the directory path. Without this dev would silently keep
+	// getting embed copies and wonder why edits are ignored.
+	if app.Config.TemplateOverridePath != "" && overrideFiles == 0 {
+		log.Warn("template override path set but no embedded template files found there; using embed-only",
+			"path", app.Config.TemplateOverridePath)
+	}
 
 	// Ensure admin user exists
 	if err := startupadmin.EnsureAdminExists(context.Background(), log, app.PgRepo); err != nil {

@@ -6,26 +6,28 @@ import (
 	"time"
 
 	"srmt-admin/internal/lib/model/discharge"
+	"srmt-admin/internal/lib/service/excel/templates"
 
 	"github.com/xuri/excelize/v2"
 )
 
 // Generator handles Excel file generation for discharge reports
 type Generator struct {
-	templatePath string
+	overrideDir string
 }
 
-// New creates a new Generator with the template path
-func New(templatePath string) *Generator {
+// New creates a new Generator. overrideDir is an optional directory to
+// look up the template in before falling back to the embedded copy.
+func New(overrideDir string) *Generator {
 	return &Generator{
-		templatePath: templatePath,
+		overrideDir: overrideDir,
 	}
 }
 
 // GenerateExcel creates an Excel file from the template with discharge data
 func (g *Generator) GenerateExcel(date string, data []discharge.Model, loc *time.Location) (*excelize.File, error) {
 	// Open template file
-	f, err := excelize.OpenFile(g.templatePath)
+	f, err := templates.Open(templates.Discharge, g.overrideDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open template: %w", err)
 	}

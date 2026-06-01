@@ -209,13 +209,7 @@ func ProvideRouter(
 		MetricsBlender:             metricsBlender,
 		ReservoirFetcher:           reservoirFetcher,
 		HTTPClient:                 httpClient,
-		ExcelTemplatePath:          cfg.TemplatePath + "/res-summary.xlsx",
-		DischargeExcelTemplatePath: cfg.TemplatePath + "/discharge.xlsx",
-		SCExcelTemplatePath:        cfg.TemplatePath + "/sc.xlsx",
-		HourlyExcelTemplatePath:    cfg.TemplatePath + "/res-summary-hourly.xlsx",
-		FilterExcelTemplatePath:    cfg.TemplatePath + "/res-summary-filter.xlsx",
-		GESExcelTemplatePath:       cfg.TemplatePath + "/ges-prod.xlsx",
-		OwnNeedsExcelTemplatePath:  cfg.TemplatePath + "/own-needs.xlsx",
+		TemplateOverrideDir:        cfg.TemplateOverridePath,
 		AlarmProcessor:             alarmProcessor,
 		HRMPersonnelService:        hrmPersonnelSvc,
 		HRMVacationService:         hrmVacationSvc,
@@ -234,7 +228,6 @@ func ProvideRouter(
 		GESReportService:           gesReportSvc,
 		DischargeService:           dischargeSvc,
 		SelService:                 selSvc,
-		SelExcelTemplatePath:       cfg.TemplatePath + "/sel.xlsx",
 	}
 
 	router.SetupRoutes(r, deps)

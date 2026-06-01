@@ -174,6 +174,7 @@ import (
 	gesreporthandler "srmt-admin/internal/http-server/handlers/ges-report"
 	gesgen "srmt-admin/internal/lib/service/excel/ges"
 	ownneedsgen "srmt-admin/internal/lib/service/excel/ownneeds"
+	"srmt-admin/internal/lib/service/excel/templates"
 	gesreportsvc "srmt-admin/internal/lib/service/ges-report"
 	hrmanalytics "srmt-admin/internal/lib/service/hrm/analytics"
 	hrmcompetency "srmt-admin/internal/lib/service/hrm/competency"
@@ -214,14 +215,12 @@ type AppDependencies struct {
 	MetricsBlender             *metrics.MetricsBlender
 	ReservoirFetcher           *reservoir.Fetcher
 	HTTPClient                 *http.Client
-	ExcelTemplatePath          string
-	DischargeExcelTemplatePath string
-	SCExcelTemplatePath        string
-	HourlyExcelTemplatePath    string
-	FilterExcelTemplatePath    string
-	GESExcelTemplatePath       string
-	OwnNeedsExcelTemplatePath  string
-	AlarmProcessor             *alarm.Processor
+	// TemplateOverrideDir, if non-empty, points at a directory whose .xlsx
+	// files override the embedded report templates per render. Missing files
+	// in this directory silently fall back to the embedded copy. Forwarded
+	// from Config.TemplateOverridePath.
+	TemplateOverrideDir string
+	AlarmProcessor      *alarm.Processor
 	HRMPersonnelService        *hrmpersonnel.Service
 	HRMVacationService         *hrmvacation.Service
 	HRMDashboardService        *hrmdashboard.Service
@@ -239,7 +238,6 @@ type AppDependencies struct {
 	GESReportService           *gesreportsvc.Service
 	DischargeService           *dischargesvc.Service
 	SelService                 *selsvc.Service
-	SelExcelTemplatePath       string
 }
 
 func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
@@ -267,23 +265,23 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			deps.PgRepo, // ResDeviceGetter
 			deps.PgRepo, // InfraEventGetter
 			deps.PgRepo, // InfraEventCategoryGetter
-			scExcelGen.New(deps.SCExcelTemplatePath),
+			scExcelGen.New(deps.TemplateOverrideDir),
 			loc,
 		))
 		r.Get("/filter/export", filterExport.New(
 			deps.Log,
 			deps.PgRepo, // ReservoirSummaryGetter
 			deps.PgRepo, // FiltrationComparisonGetter
-			excelgen.New(deps.FilterExcelTemplatePath),
+			excelgen.New(deps.TemplateOverrideDir, templates.ResSummaryFilt),
 			filterExcelGen.New(),
 			loc,
 		))
-		r.Get("/ges-report/export", gesreporthandler.Export(deps.Log, deps.GESReportService, deps.PgRepo, deps.PgRepo, gesgen.New(deps.GESExcelTemplatePath), loc))
-		r.Get("/ges-report/own-needs/export", gesreporthandler.ExportOwnNeeds(deps.Log, deps.GESReportService, ownneedsgen.New(deps.OwnNeedsExcelTemplatePath), loc))
+		r.Get("/ges-report/export", gesreporthandler.Export(deps.Log, deps.GESReportService, deps.PgRepo, deps.PgRepo, gesgen.New(deps.TemplateOverrideDir), loc))
+		r.Get("/ges-report/own-needs/export", gesreporthandler.ExportOwnNeeds(deps.Log, deps.GESReportService, ownneedsgen.New(deps.TemplateOverrideDir), loc))
 		r.Get("/reservoir-flood/export", reservoirfloodhandler.GetExport(
 			deps.Log,
 			deps.SelService,
-			selExcelGen.New(deps.SelExcelTemplatePath),
+			selExcelGen.New(deps.TemplateOverrideDir),
 			loc,
 		))
 	})
@@ -479,7 +477,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Get("/discharges/export", dischargeExport.New(
 				deps.Log,
 				deps.PgRepo,
-				dischargeExcelGen.New(deps.DischargeExcelTemplatePath),
+				dischargeExcelGen.New(deps.TemplateOverrideDir),
 				loc,
 			))
 
@@ -502,13 +500,13 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 				deps.Log,
 				deps.PgRepo,
 				deps.ReservoirFetcher,
-				excelgen.New(deps.ExcelTemplatePath),
+				excelgen.New(deps.TemplateOverrideDir, templates.ResSummary),
 			))
 			r.Post("/reservoir-summary", reservoirsummary.New(deps.Log, deps.PgRepo))
 			r.Get("/reservoir-summary-hourly/export", reservoirsummaryhourly.GetExport(
 				deps.Log,
 				deps.ReservoirHourlyService,
-				reservoirHourlyExcelGen.New(deps.HourlyExcelTemplatePath),
+				reservoirHourlyExcelGen.New(deps.TemplateOverrideDir),
 			))
 
 			r.Get("/visits", visit.Get(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
@@ -540,7 +538,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 				deps.PgRepo, // ResDeviceGetter
 				deps.PgRepo, // InfraEventGetter
 				deps.PgRepo, // InfraEventCategoryGetter
-				scExcelGen.New(deps.SCExcelTemplatePath),
+				scExcelGen.New(deps.TemplateOverrideDir),
 				loc,
 			))
 
@@ -549,7 +547,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 				deps.Log,
 				deps.PgRepo, // ReservoirSummaryGetter
 				deps.PgRepo, // FiltrationComparisonGetter
-				excelgen.New(deps.FilterExcelTemplatePath),
+				excelgen.New(deps.TemplateOverrideDir, templates.ResSummaryFilt),
 				filterExcelGen.New(),
 				loc,
 			))
@@ -582,7 +580,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 				r.Get("/export", reservoirfloodhandler.GetExport(
 					deps.Log,
 					deps.SelService,
-					selExcelGen.New(deps.SelExcelTemplatePath),
+					selExcelGen.New(deps.TemplateOverrideDir),
 					loc,
 				))
 			})
@@ -638,8 +636,8 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			// Tier 2: sc/rais only — config write, plans write, export
 			r.Group(func(r chi.Router) {
 				r.Use(mwauth.RequireAnyRole("sc", "rais"))
-				r.Get("/export", gesreporthandler.Export(deps.Log, deps.GESReportService, deps.PgRepo, deps.PgRepo, gesgen.New(deps.GESExcelTemplatePath), loc))
-				r.Get("/own-needs/export", gesreporthandler.ExportOwnNeeds(deps.Log, deps.GESReportService, ownneedsgen.New(deps.OwnNeedsExcelTemplatePath), loc))
+				r.Get("/export", gesreporthandler.Export(deps.Log, deps.GESReportService, deps.PgRepo, deps.PgRepo, gesgen.New(deps.TemplateOverrideDir), loc))
+				r.Get("/own-needs/export", gesreporthandler.ExportOwnNeeds(deps.Log, deps.GESReportService, ownneedsgen.New(deps.TemplateOverrideDir), loc))
 				r.Post("/config", gesreporthandler.UpsertConfig(deps.Log, deps.PgRepo))
 				r.Delete("/config", gesreporthandler.DeleteConfig(deps.Log, deps.PgRepo))
 				r.Post("/plans", gesreporthandler.BulkUpsertPlan(deps.Log, deps.PgRepo))
@@ -692,7 +690,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 				deps.Log,
 				deps.PgRepo,
 				deps.PgRepo,
-				excelgen.New(deps.FilterExcelTemplatePath),
+				excelgen.New(deps.TemplateOverrideDir, templates.ResSummaryFilt),
 				filterExcelGen.New(),
 				loc,
 			))

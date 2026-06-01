@@ -24,6 +24,8 @@ import (
 	"time"
 
 	"github.com/xuri/excelize/v2"
+
+	"srmt-admin/internal/lib/service/excel/templates"
 )
 
 // Template layout constants.
@@ -35,12 +37,14 @@ const (
 
 // Generator renders the report.
 type Generator struct {
-	templatePath string
+	overrideDir string
 }
 
-// New binds the generator to a template path.
-func New(templatePath string) *Generator {
-	return &Generator{templatePath: templatePath}
+// New binds the generator to an optional override directory for the embedded
+// template. When overrideDir is empty (or the file is missing in it), the
+// embedded sel.xlsx is used.
+func New(overrideDir string) *Generator {
+	return &Generator{overrideDir: overrideDir}
 }
 
 // Report bundles everything needed to fill the template.
@@ -83,7 +87,7 @@ func (g *Generator) GenerateExcel(rep *Report) (*excelize.File, error) {
 	if rep == nil {
 		return nil, fmt.Errorf("nil report")
 	}
-	f, err := excelize.OpenFile(g.templatePath)
+	f, err := templates.Open(templates.Sel, g.overrideDir)
 	if err != nil {
 		return nil, fmt.Errorf("open template: %w", err)
 	}

@@ -2,8 +2,6 @@ package ges
 
 import (
 	"fmt"
-	"path/filepath"
-	"runtime"
 	"strconv"
 	"testing"
 	"time"
@@ -11,15 +9,6 @@ import (
 	"github.com/xuri/excelize/v2"
 	model "srmt-admin/internal/lib/model/ges-report"
 )
-
-func templatePath(t *testing.T) string {
-	t.Helper()
-	_, filename, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("cannot determine test file path")
-	}
-	return filepath.Join(filepath.Dir(filename), "..", "..", "..", "..", "..", "template", "ges-prod.xlsx")
-}
 
 func floatPtr(v float64) *float64 { return &v }
 
@@ -194,7 +183,7 @@ func makeStation(orgID int64, name string, capacity float64, total, working int,
 }
 
 func TestGenerateExcel_OpensTemplate(t *testing.T) {
-	gen := New(templatePath(t))
+	gen := New("")
 	params := buildTestParams()
 
 	f, err := gen.GenerateExcel(params)
@@ -205,7 +194,7 @@ func TestGenerateExcel_OpensTemplate(t *testing.T) {
 }
 
 func TestGenerateExcel_DateInAH3(t *testing.T) {
-	gen := New(templatePath(t))
+	gen := New("")
 	params := buildTestParams()
 
 	f, err := gen.GenerateExcel(params)
@@ -228,7 +217,7 @@ func TestGenerateExcel_DateInAH3(t *testing.T) {
 }
 
 func TestGenerateExcel_SheetRenamed(t *testing.T) {
-	gen := New(templatePath(t))
+	gen := New("")
 	params := buildTestParams()
 
 	f, err := gen.GenerateExcel(params)
@@ -245,7 +234,7 @@ func TestGenerateExcel_SheetRenamed(t *testing.T) {
 }
 
 func TestGenerateExcel_StationRows(t *testing.T) {
-	gen := New(templatePath(t))
+	gen := New("")
 	params := buildTestParams()
 
 	f, err := gen.GenerateExcel(params)
@@ -279,7 +268,7 @@ func TestGenerateExcel_StationRows(t *testing.T) {
 }
 
 func TestGenerateExcel_GrandTotalFilled(t *testing.T) {
-	gen := New(templatePath(t))
+	gen := New("")
 	params := buildTestParams()
 
 	f, err := gen.GenerateExcel(params)
@@ -312,7 +301,7 @@ func TestGenerateExcel_GrandTotalFilled(t *testing.T) {
 }
 
 func TestGenerateExcel_ForecastsFilled(t *testing.T) {
-	gen := New(templatePath(t))
+	gen := New("")
 	params := buildTestParams()
 
 	f, err := gen.GenerateExcel(params)
@@ -339,7 +328,7 @@ func TestGenerateExcel_ForecastsFilled(t *testing.T) {
 }
 
 func TestGenerateExcel_AggregatesFilled(t *testing.T) {
-	gen := New(templatePath(t))
+	gen := New("")
 	params := buildTestParams()
 
 	f, err := gen.GenerateExcel(params)
@@ -367,7 +356,7 @@ func TestGenerateExcel_AggregatesFilled(t *testing.T) {
 }
 
 func TestGenerateExcel_AggregatesFromReport(t *testing.T) {
-	gen := New(templatePath(t))
+	gen := New("")
 	params := buildTestParams()
 	// Override grand total aggregates to deterministic values we can locate.
 	params.Report.GrandTotal.RepairAggregates = 2
@@ -413,7 +402,7 @@ func TestGenerateExcel_AggregatesFromReport(t *testing.T) {
 }
 
 func TestGenerateExcel_ColumnMapping(t *testing.T) {
-	gen := New(templatePath(t))
+	gen := New("")
 	params := buildTestParams()
 
 	f, err := gen.GenerateExcel(params)

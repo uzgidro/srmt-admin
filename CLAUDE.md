@@ -127,6 +127,32 @@ YAML config loaded via `cleanenv`. Set `CONFIG_PATH` env var. Example configs in
 - **MinIO** — S3-compatible object storage
 - **Redis** — caching
 
+### Excel report templates
+
+All 8 .xlsx templates live in `internal/lib/service/excel/templates/` and are
+embedded into the binary via `//go:embed *.xlsx`. The `templates` package
+exposes `templates.Open(name, overrideDir)` — single point of read for every
+generator. Constants `templates.Sel`, `templates.GESProd`, … name each file.
+
+- **Prod:** templates ship inside the binary. `prod.yaml` does NOT set
+  `template_override_path`. No filesystem dependency.
+- **Dev:** edit `internal/lib/service/excel/templates/<file>.xlsx` and
+  rebuild (`go run ./cmd`).
+- **Hot-reload (optional):** set `template_override_path: "./some/dir"` in
+  `local.yaml` / `dev.yaml`, drop edited .xlsx into that directory under the
+  embedded filename — generators prefer the on-disk copy. Missing files
+  silently fall back to embed. `cmd/main.go` logs a `Warn` at startup if
+  `template_override_path` is non-empty but the directory holds none of the
+  expected files (likely typo).
+- **Don't open .xlsx in Excel from the source directory while the app is
+  running** — Excel creates `~$<file>.xlsx` lock files. They are gitignored
+  and dockerignored, but noisy.
+- **Renaming a config key:** the old `template_path` key was removed. Any
+  pre-existing `prod.yaml` / `local.yaml` / `dev.yaml` carrying it should
+  be migrated to `template_override_path` (or have the key removed if
+  embed-only is desired). cleanenv silently ignores unknown keys, so the
+  app keeps working but the dev override does not engage.
+
 ### Documentation
 
 - `docs/WIRE_FAQ.md` — Wire DI troubleshooting

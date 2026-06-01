@@ -38,6 +38,12 @@ coverage.html
 tmp/
 *.tmp
 
+# Excel lock files (Excel creates these when a workbook is open). They live
+# next to the embedded templates in internal/lib/service/excel/templates/
+# and must NEVER be picked up by //go:embed *.xlsx.
+~$*.xlsx
+*.xlsx.tmp
+
 # Don't ignore migrations (needed in container)
 !migrations/
 

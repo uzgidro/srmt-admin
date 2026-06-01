@@ -13,8 +13,13 @@ type Config struct {
 	StoragePath string `yaml:"storage_path" env-required:"true"`
 	//LogPath     string `yaml:"log_path" env-required:"false"` TODO(): add service -> send logs to mongo
 	MigrationsPath string `yaml:"migrations_path" env-required:"true"`
-	TemplatePath   string `yaml:"template_path" env-default:"./template"`
-	ApiKey         string `yaml:"callback_api_key" env-required:"true"`
+	// TemplateOverridePath, if non-empty, is a directory whose .xlsx files
+	// override the embedded report templates at runtime. Leave empty in prod
+	// to use only the embedded copies (single source of truth). Set to e.g.
+	// "./internal/lib/service/excel/templates" in dev for hot-reload of
+	// template edits without rebuilding.
+	TemplateOverridePath string `yaml:"template_override_path" env-default:""`
+	ApiKey               string `yaml:"callback_api_key" env-required:"true"`
 	Bucket         string `yaml:"bucket" env-required:"true"`
 	Timezone       string `yaml:"timezone" env-default:"Asia/Tashkent"` // UTC+5
 	Mongo          `yaml:"mongo"`

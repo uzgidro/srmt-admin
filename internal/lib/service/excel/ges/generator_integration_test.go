@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"testing"
 	"time"
@@ -17,7 +16,7 @@ import (
 // Excel file, saves it to d:/tmp/ges-test-output.xlsx for visual inspection,
 // and spot-checks key cells.
 func TestGenerateExcel_IntegrationWithRealData(t *testing.T) {
-	gen := New(templatePath(t))
+	gen := New("")
 	params := buildRealisticParams(t)
 
 	f, err := gen.GenerateExcel(params)
@@ -428,13 +427,3 @@ func realStation(
 	return s
 }
 
-// resolveRepoRoot returns the repo root based on current test file location.
-func resolveRepoRoot(t *testing.T) string {
-	t.Helper()
-	_, filename, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("cannot determine test file path")
-	}
-	// internal/lib/service/excel/ges/ -> 5 levels up
-	return filepath.Join(filepath.Dir(filename), "..", "..", "..", "..", "..")
-}

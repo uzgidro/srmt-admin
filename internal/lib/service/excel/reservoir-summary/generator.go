@@ -5,26 +5,37 @@ import (
 	"time"
 
 	reservoirsummarymodel "srmt-admin/internal/lib/model/reservoir-summary"
+	"srmt-admin/internal/lib/service/excel/templates"
 
 	"github.com/xuri/excelize/v2"
 )
 
-// Generator handles Excel file generation for reservoir summaries
+// Generator handles Excel file generation for reservoir summaries.
+// The same generator code drives two distinct templates (res-summary.xlsx and
+// res-summary-filter.xlsx), so the template name is part of the generator's
+// identity rather than a per-call argument.
 type Generator struct {
-	templatePath string
+	overrideDir string
+	template    string // templates.ResSummary or templates.ResSummaryFilt
 }
 
-// New creates a new Generator with the template path
-func New(templatePath string) *Generator {
+// New creates a new Generator bound to a specific embedded template.
+// It panics on an empty template name — wrong wiring is a programmer error,
+// not runtime data we want to surface as an HTTP 500 on every report request.
+func New(overrideDir, template string) *Generator {
+	if template == "" {
+		panic("reservoir-summary: template name must not be empty")
+	}
 	return &Generator{
-		templatePath: templatePath,
+		overrideDir: overrideDir,
+		template:    template,
 	}
 }
 
 // GenerateExcel creates an Excel file from the template with the specified date
 func (g *Generator) GenerateExcel(date string, data []*reservoirsummarymodel.ResponseModel, authorShortName string) (*excelize.File, error) {
-	// Open template file
-	f, err := excelize.OpenFile(g.templatePath)
+	// Open template (embedded, with optional override directory)
+	f, err := templates.Open(g.template, g.overrideDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open template: %w", err)
 	}

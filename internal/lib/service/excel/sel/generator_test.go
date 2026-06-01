@@ -2,27 +2,12 @@ package sel
 
 import (
 	"fmt"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/xuri/excelize/v2"
 )
-
-// templatePath returns the absolute path to template/sel.xlsx so tests can
-// run regardless of the working directory.
-func templatePath(t *testing.T) string {
-	t.Helper()
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("runtime.Caller failed")
-	}
-	// .../internal/lib/service/excel/sel/generator_test.go → repo root → template/sel.xlsx
-	repoRoot := filepath.Join(filepath.Dir(file), "..", "..", "..", "..", "..")
-	return filepath.Join(repoRoot, "template", "sel.xlsx")
-}
 
 func ptr(v float64) *float64 { return &v }
 
@@ -38,7 +23,7 @@ func TestGenerator_FillsHeaderS2S3(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			g := New(templatePath(t))
+			g := New("")
 			date := time.Date(2026, 5, 4, 0, 0, 0, 0, time.UTC)
 			f, err := g.GenerateExcel(&Report{Date: date, Hour: tc.hour, AuthorShort: "И. Иванов"})
 			if err != nil {
@@ -86,7 +71,7 @@ func TestGenerator_CurrHourSubheaders(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(fmt.Sprintf("hour_%02d", tc.hour), func(t *testing.T) {
-			g := New(templatePath(t))
+			g := New("")
 			date := time.Date(2026, 5, 12, 0, 0, 0, 0, time.UTC)
 			f, err := g.GenerateExcel(&Report{Date: date, Hour: tc.hour, AuthorShort: "И. Иванов"})
 			if err != nil {
@@ -124,7 +109,7 @@ var prevSubheaderCells = []string{"C5", "E5", "G5", "I5", "K5", "M5", "O5"}
 
 // TestRow5Prev_SingleTime_SameDay: every row's PrevAt = today 14:00 → C5 = "14:00".
 func TestRow5Prev_SingleTime_SameDay(t *testing.T) {
-	g := New(templatePath(t))
+	g := New("")
 	pa := atTashkent(t, 2026, 5, 13, 14)
 	rows := []ReservoirRow{
 		{Name: "A", PrevAt: pa, LevelPrev: ptr(100), LevelCurr: ptr(101)},
@@ -151,7 +136,7 @@ func TestRow5Prev_SingleTime_SameDay(t *testing.T) {
 
 // TestRow5Prev_RangeSameDay: PrevAt at 11/12/14 same day → C5 = "11:00–14:00".
 func TestRow5Prev_RangeSameDay(t *testing.T) {
-	g := New(templatePath(t))
+	g := New("")
 	rows := []ReservoirRow{
 		{Name: "A", PrevAt: atTashkent(t, 2026, 5, 13, 11)},
 		{Name: "B", PrevAt: atTashkent(t, 2026, 5, 13, 12)},
@@ -180,7 +165,7 @@ func TestRow5Prev_RangeSameDay(t *testing.T) {
 // TestRow5Prev_RangeCrossDay: one PrevAt yesterday 23:00, others today.
 // Report.Date is 2026-05-13. Both sides carry date because they differ.
 func TestRow5Prev_RangeCrossDay(t *testing.T) {
-	g := New(templatePath(t))
+	g := New("")
 	rows := []ReservoirRow{
 		{Name: "A", PrevAt: atTashkent(t, 2026, 5, 12, 23)},
 		{Name: "B", PrevAt: atTashkent(t, 2026, 5, 13, 14)},
@@ -210,7 +195,7 @@ func TestRow5Prev_RangeCrossDay(t *testing.T) {
 // Here all prev are yesterday, so all sides differ → date is shown on the single
 // time (no range).
 func TestRow5Prev_RangeYesterdayOnly(t *testing.T) {
-	g := New(templatePath(t))
+	g := New("")
 	pa := atTashkent(t, 2026, 5, 12, 23)
 	rows := []ReservoirRow{
 		{Name: "A", PrevAt: pa},
@@ -238,7 +223,7 @@ func TestRow5Prev_RangeYesterdayOnly(t *testing.T) {
 
 // TestRow5Prev_AllNil: no rows have PrevAt → C5 = "-".
 func TestRow5Prev_AllNil(t *testing.T) {
-	g := New(templatePath(t))
+	g := New("")
 	rows := []ReservoirRow{
 		{Name: "A"}, // no PrevAt
 		{Name: "B"},
@@ -264,7 +249,7 @@ func TestRow5Prev_AllNil(t *testing.T) {
 
 // TestRow5Prev_MixedNil: one row has PrevAt, one doesn't. Only non-nil contributes.
 func TestRow5Prev_MixedNil(t *testing.T) {
-	g := New(templatePath(t))
+	g := New("")
 	rows := []ReservoirRow{
 		{Name: "A"},                                            // nil PrevAt — ignored
 		{Name: "B", PrevAt: atTashkent(t, 2026, 5, 13, 14)},
@@ -292,7 +277,7 @@ func TestRow5Prev_MixedNil(t *testing.T) {
 // not as Excel time values. If they remain time-typed under русская локаль,
 // LibreOffice may try to parse "12.05 23:00" as a date and break PDF rendering.
 func TestRow5Prev_CellTypeIsString(t *testing.T) {
-	g := New(templatePath(t))
+	g := New("")
 	rows := []ReservoirRow{
 		{Name: "A", PrevAt: atTashkent(t, 2026, 5, 13, 14)},
 	}
@@ -322,7 +307,7 @@ func TestRow5Prev_CellTypeIsString(t *testing.T) {
 }
 
 func TestGenerator_OneRow(t *testing.T) {
-	g := New(templatePath(t))
+	g := New("")
 	row := ReservoirRow{
 		Name:        "Чотқол",
 		LevelPrev:   ptr(929.57),
@@ -367,7 +352,7 @@ func TestGenerator_OneRow(t *testing.T) {
 }
 
 func TestGenerator_NineRows(t *testing.T) {
-	g := New(templatePath(t))
+	g := New("")
 	names := []string{"Чотқол", "Чорвоқ", "Пском", "Андижон", "Норин", "Оҳангарон", "Сардоба", "Ҳисорак", "Тўполанг"}
 	rows := make([]ReservoirRow, 0, len(names))
 	for _, n := range names {
@@ -405,7 +390,7 @@ func TestGenerator_NineRows(t *testing.T) {
 }
 
 func TestGenerator_NilFieldsAreDash(t *testing.T) {
-	g := New(templatePath(t))
+	g := New("")
 	row := ReservoirRow{
 		Name: "X",
 		// All numeric and string fields left zero/nil.
@@ -438,7 +423,7 @@ func TestGenerator_NilFieldsAreDash(t *testing.T) {
 // the value-row of THIS block (not the original template row 6) after cloning.
 
 func TestGenerator_DeltaFormulaPresent(t *testing.T) {
-	g := New(templatePath(t))
+	g := New("")
 	row := ReservoirRow{Name: "X", LevelPrev: nil, LevelCurr: ptr(929.64)}
 	f, err := g.GenerateExcel(&Report{
 		Date: time.Date(2026, 5, 4, 0, 0, 0, 0, time.UTC),
@@ -467,7 +452,7 @@ func TestGenerator_DeltaFormulaPresent(t *testing.T) {
 }
 
 func TestGenerator_DuplicateRowPreservesDeltaFormula(t *testing.T) {
-	g := New(templatePath(t))
+	g := New("")
 	rows := []ReservoirRow{
 		{Name: "First", LevelPrev: ptr(100), LevelCurr: ptr(105)},
 		{Name: "Second", LevelPrev: ptr(200), LevelCurr: ptr(208)},
@@ -509,7 +494,7 @@ func TestGenerator_ClonedBlocksHaveVerticalMerges(t *testing.T) {
 	// DuplicateRowTo replicates horizontal merges but drops vertical ones,
 	// leaving the name/duty/weather cells in every cloned block one row tall
 	// while block 1's are two rows tall. Generator must restore them.
-	g := New(templatePath(t))
+	g := New("")
 	rows := make([]ReservoirRow, 9)
 	for i := range rows {
 		rows[i] = ReservoirRow{Name: fmt.Sprintf("R%d", i+1)}
@@ -561,7 +546,7 @@ func TestGenerator_PrintAreaTracksRowCount(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			g := New(templatePath(t))
+			g := New("")
 			rows := make([]ReservoirRow, tc.count)
 			for i := range rows {
 				rows[i] = ReservoirRow{Name: fmt.Sprintf("R%d", i+1)}
@@ -596,7 +581,7 @@ func TestGenerator_PrintAreaTracksRowCount(t *testing.T) {
 }
 
 func TestGenerator_NewFields(t *testing.T) {
-	g := New(templatePath(t))
+	g := New("")
 	row := ReservoirRow{
 		Name:             "X",
 		CapacityPrev:     ptr(100.5),

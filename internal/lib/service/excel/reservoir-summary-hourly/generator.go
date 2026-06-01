@@ -4,25 +4,26 @@ import (
 	"fmt"
 
 	model "srmt-admin/internal/lib/model/reservoir-hourly"
+	"srmt-admin/internal/lib/service/excel/templates"
 
 	"github.com/xuri/excelize/v2"
 )
 
 // Generator handles Excel file generation for hourly reservoir summaries
 type Generator struct {
-	templatePath string
+	overrideDir string
 }
 
-// New creates a new Generator with the template path
-func New(templatePath string) *Generator {
+// New creates a new Generator with an optional override directory for the template
+func New(overrideDir string) *Generator {
 	return &Generator{
-		templatePath: templatePath,
+		overrideDir: overrideDir,
 	}
 }
 
 // GenerateExcel creates an Excel file from the template with report data
 func (g *Generator) GenerateExcel(report *model.HourlyReport) (*excelize.File, error) {
-	f, err := excelize.OpenFile(g.templatePath)
+	f, err := templates.Open(templates.ResSummaryHour, g.overrideDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open template: %w", err)
 	}
