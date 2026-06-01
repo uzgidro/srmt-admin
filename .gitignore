@@ -15,8 +15,10 @@ wire_gen.go
 
 # Keep example configs (no secrets)
 !/config/*.example.yaml
-/template/*
-!/template/*.xlsx
+
+# Excel lock files (Excel creates these when a workbook is open)
+~$*.xlsx
+
 srmt-admin
 
 /k8s-config/

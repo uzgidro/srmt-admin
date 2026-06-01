@@ -12,6 +12,7 @@ import (
 
 	startupadmin "srmt-admin/internal/lib/admin/startup-admin"
 	"srmt-admin/internal/lib/logger/sl"
+	"srmt-admin/internal/lib/service/excel/templates"
 )
 
 func main() {
@@ -26,6 +27,16 @@ func main() {
 	log := app.Logger
 	log.Info("application initialized")
 	log.Info("timezone configured", "timezone", app.Config.Timezone, "location", app.Location.String())
+
+	// If an Excel template override directory was configured but contains
+	// none of the embedded template files, the operator probably mistyped
+	// the path. Warn once at startup — without this the dev would silently
+	// keep getting the embedded copies and wonder why their edits are
+	// ignored.
+	if app.Config.TemplateOverridePath != "" && templates.CountOverrideFiles(app.Config.TemplateOverridePath) == 0 {
+		log.Warn("template override path set but no embedded template files found there; using embed-only",
+			"path", app.Config.TemplateOverridePath)
+	}
 
 	// Ensure admin user exists
 	if err := startupadmin.EnsureAdminExists(context.Background(), log, app.PgRepo); err != nil {

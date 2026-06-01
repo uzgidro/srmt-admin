@@ -12,8 +12,6 @@ import (
 	model "srmt-admin/internal/lib/model/ges-report"
 )
 
-const templatePath = "../../../../../template/own-needs.xlsx"
-
 func ptr(v float64) *float64 { return &v }
 
 func approxEqual(a, b float64) bool { return math.Abs(a-b) < 1e-6 }
@@ -102,7 +100,7 @@ func TestGenerator_OneCascadeTwoStations_ProducesCorrectCells(t *testing.T) {
 		},
 	}
 
-	g := New(templatePath)
+	g := New("")
 	f, err := g.GenerateExcel(Params{Report: rep, Date: time.Date(2026, 4, 27, 0, 0, 0, 0, time.UTC)})
 	if err != nil {
 		t.Fatalf("GenerateExcel: %v", err)
@@ -179,7 +177,7 @@ func TestGenerator_CascadeRowKeepsBoldStyle(t *testing.T) {
 			Totals: model.OwnNeedsTotals{InstalledCapacityMWt: 5.0, OwnConsumptionKWh: 50.0},
 		}},
 	}
-	g := New(templatePath)
+	g := New("")
 	f, err := g.GenerateExcel(Params{Report: rep, Date: time.Date(2026, 4, 27, 0, 0, 0, 0, time.UTC)})
 	if err != nil {
 		t.Fatalf("GenerateExcel: %v", err)
@@ -229,7 +227,7 @@ func TestGenerator_TwoCascadesEachWithStations(t *testing.T) {
 		},
 		GrandTotal: model.OwnNeedsTotals{InstalledCapacityMWt: 17, OwnConsumptionKWh: 70},
 	}
-	g := New(templatePath)
+	g := New("")
 	f, err := g.GenerateExcel(Params{Report: rep, Date: time.Date(2026, 4, 27, 0, 0, 0, 0, time.UTC)})
 	if err != nil {
 		t.Fatalf("GenerateExcel: %v", err)
@@ -304,7 +302,7 @@ func TestGenerator_DivisionByZeroCapacity(t *testing.T) {
 		},
 	}
 
-	g := New(templatePath)
+	g := New("")
 	f, err := g.GenerateExcel(Params{Report: rep, Date: time.Date(2026, 4, 27, 0, 0, 0, 0, time.UTC)})
 	if err != nil {
 		t.Fatalf("GenerateExcel: %v", err)
@@ -323,7 +321,7 @@ func TestGenerator_DivisionByZeroCapacity(t *testing.T) {
 // land in the right cells.
 func TestGenerator_DateInHeader(t *testing.T) {
 	rep := &model.OwnNeedsReport{Date: "2026-04-27"}
-	g := New(templatePath)
+	g := New("")
 	f, err := g.GenerateExcel(Params{Report: rep, Date: time.Date(2026, 4, 27, 0, 0, 0, 0, time.UTC)})
 	if err != nil {
 		t.Fatalf("GenerateExcel: %v", err)
@@ -357,7 +355,7 @@ func TestGenerator_NilOptionalsLeaveCellsEmpty(t *testing.T) {
 			Totals: model.OwnNeedsTotals{InstalledCapacityMWt: 5.0},
 		}},
 	}
-	g := New(templatePath)
+	g := New("")
 	f, err := g.GenerateExcel(Params{Report: rep, Date: time.Date(2026, 4, 27, 0, 0, 0, 0, time.UTC)})
 	if err != nil {
 		t.Fatalf("GenerateExcel: %v", err)

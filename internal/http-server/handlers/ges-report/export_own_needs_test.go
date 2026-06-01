@@ -19,8 +19,6 @@ import (
 	"srmt-admin/internal/token"
 )
 
-const ownNeedsTemplatePath = "../../../../template/own-needs.xlsx"
-
 type mockOwnNeedsBuilder struct {
 	report *model.OwnNeedsReport
 	err    error
@@ -67,7 +65,8 @@ func setupOwnNeedsRouter(t *testing.T, builder *mockOwnNeedsBuilder, role string
 		Roles: []string{role},
 	}}
 	loc, _ := time.LoadLocation("Asia/Tashkent")
-	gen := ownneedsgen.New(ownNeedsTemplatePath)
+	// "" → use embedded own-needs.xlsx (no on-disk template needed).
+	gen := ownneedsgen.New("")
 
 	r := chi.NewRouter()
 	r.Use(mwauth.Authenticator(verifier))

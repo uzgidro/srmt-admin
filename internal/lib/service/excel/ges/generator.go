@@ -12,17 +12,19 @@ import (
 	"time"
 
 	model "srmt-admin/internal/lib/model/ges-report"
+	"srmt-admin/internal/lib/service/excel/templates"
 	"github.com/xuri/excelize/v2"
 )
 
 // Generator creates Excel reports from GES daily data using a template.
 type Generator struct {
-	templatePath string
+	overrideDir string
 }
 
-// New creates a Generator with the given template path.
-func New(templatePath string) *Generator {
-	return &Generator{templatePath: templatePath}
+// New creates a Generator. overrideDir is an optional directory to load
+// templates from instead of the embedded copy; pass "" to always use embed.
+func New(overrideDir string) *Generator {
+	return &Generator{overrideDir: overrideDir}
 }
 
 // ExcelParams holds all data needed to generate the Excel report.
@@ -123,7 +125,7 @@ func weatherIconLog(log *slog.Logger, msg string, kvs ...any) {
 
 // GenerateExcel produces an Excel file from the template and params.
 func (g *Generator) GenerateExcel(params ExcelParams) (*excelize.File, error) {
-	f, err := excelize.OpenFile(g.templatePath)
+	f, err := templates.Open(templates.GESProd, g.overrideDir)
 	if err != nil {
 		return nil, fmt.Errorf("open template: %w", err)
 	}

@@ -13,6 +13,7 @@ import (
 	reservoirdevicesummary "srmt-admin/internal/lib/model/reservoir-device-summary"
 	"srmt-admin/internal/lib/model/shutdown"
 	"srmt-admin/internal/lib/model/visit"
+	"srmt-admin/internal/lib/service/excel/templates"
 
 	"github.com/xuri/excelize/v2"
 )
@@ -26,13 +27,14 @@ type SectionInfo struct {
 
 // Generator handles Excel file generation for SC reports
 type Generator struct {
-	templatePath string
+	overrideDir string
 }
 
-// New creates a new Generator with the template path
-func New(templatePath string) *Generator {
+// New creates a new Generator. overrideDir is an optional directory containing
+// template overrides; when empty the embedded template is used.
+func New(overrideDir string) *Generator {
 	return &Generator{
-		templatePath: templatePath,
+		overrideDir: overrideDir,
 	}
 }
 
@@ -52,7 +54,7 @@ func (g *Generator) GenerateExcel(
 	authorShortName string,
 ) (*excelize.File, error) {
 	// Open template file
-	f, err := excelize.OpenFile(g.templatePath)
+	f, err := templates.Open(templates.SC, g.overrideDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open template: %w", err)
 	}

@@ -24,6 +24,7 @@ import (
 	"github.com/xuri/excelize/v2"
 
 	model "srmt-admin/internal/lib/model/ges-report"
+	"srmt-admin/internal/lib/service/excel/templates"
 )
 
 // Template layout constants — see package comment for context.
@@ -81,12 +82,14 @@ func uzMonthName(m time.Month) string {
 
 // Generator produces an Excel workbook for the own-needs report from a template.
 type Generator struct {
-	templatePath string
+	overrideDir string
 }
 
-// New creates a Generator bound to the given template file path.
-func New(templatePath string) *Generator {
-	return &Generator{templatePath: templatePath}
+// New creates a Generator. overrideDir, when non-empty, is forwarded to
+// templates.Open as the dev-time on-disk override directory; pass "" to
+// always use the embedded template.
+func New(overrideDir string) *Generator {
+	return &Generator{overrideDir: overrideDir}
 }
 
 // Params bundles inputs to GenerateExcel.
@@ -101,7 +104,7 @@ func (g *Generator) GenerateExcel(p Params) (*excelize.File, error) {
 	if p.Report == nil {
 		return nil, fmt.Errorf("nil report")
 	}
-	f, err := excelize.OpenFile(g.templatePath)
+	f, err := templates.Open(templates.OwnNeeds, g.overrideDir)
 	if err != nil {
 		return nil, fmt.Errorf("open template: %w", err)
 	}

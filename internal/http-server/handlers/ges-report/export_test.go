@@ -108,17 +108,20 @@ func testOrgTypes() map[int64][]string {
 	}
 }
 
-// createTestTemplate creates a minimal xlsx file for the generator and returns
-// the temp directory path (caller should defer os.RemoveAll).
+// createTestTemplate writes a minimal xlsx under the expected template name
+// (ges-prod.xlsx) into a temp directory and returns that directory. The
+// generator takes an override DIRECTORY, not a file path: templates.Open
+// joins overrideDir + the embedded filename, so naming matters.
 func createTestTemplate(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	tmplPath := filepath.Join(dir, "ges-test.xlsx")
 	f := excelize.NewFile()
-	// Generator expects at least one sheet
-	_ = f.SaveAs(tmplPath)
+	// Generator expects at least one sheet; the file must be named exactly
+	// like the embedded template (templates.GESProd = "ges-prod.xlsx") so the
+	// override path resolves to it.
+	_ = f.SaveAs(filepath.Join(dir, "ges-prod.xlsx"))
 	f.Close()
-	return tmplPath
+	return dir
 }
 
 func setupExportRouter(
@@ -136,8 +139,8 @@ func setupExportRouter(
 		Roles:           []string{"sc"},
 	}}
 	loc, _ := time.LoadLocation("Asia/Tashkent")
-	tmplPath := createTestTemplate(t)
-	gen := gesgen.New(tmplPath)
+	overrideDir := createTestTemplate(t)
+	gen := gesgen.New(overrideDir)
 
 	r := chi.NewRouter()
 	r.Use(mwauth.Authenticator(verifier))
