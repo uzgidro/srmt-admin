@@ -45,7 +45,7 @@ func New(templatePath string) *Generator {
 
 // Report bundles everything needed to fill the template.
 type Report struct {
-	Date        time.Time      // → S3 (mm-dd-yy)
+	Date        time.Time      // → S3 (YYYY-MM-DD, текст)
 	Hour        int            // → S2 (HH:00); also drives C5..O5 via =MOD($S$2-TIME(1,0,0),1)
 	AuthorShort string         // → M9 (or row 9 + (N-1)*2 after cloning)
 	Reservoirs  []ReservoirRow // one entry per reservoir, rendered in order
@@ -117,7 +117,10 @@ func (g *Generator) GenerateExcel(rep *Report) (*excelize.File, error) {
 	// excelize writes time.Time under the existing [$-10819]hh:mm;@ format
 	// correctly; the year/month/day are irrelevant — only the hour matters.
 	set("S2", time.Date(2000, 1, 1, rep.Hour, 0, 0, 0, time.UTC))
-	set("S3", rep.Date)
+	// Write S3 as a string instead of time.Time so the cell's number format
+	// (mmm.yy on prod, mm-dd-yy on CI) does not transform the displayed value.
+	// Number formats only apply to numeric cells; plain text is rendered verbatim.
+	set("S3", rep.Date.Format("2006-01-02"))
 
 	// Row-5 prev/curr-hour subheaders. The template originally carries
 	// =MOD($S$2-TIME(1,0,0),1) for prev and =$S$2 for curr. Excel renders
