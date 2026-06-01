@@ -47,16 +47,12 @@ func (g *Generator) GenerateExcel(date string, data []*reservoirsummarymodel.Res
 		return nil, fmt.Errorf("failed to parse date: %w", err)
 	}
 
-	// Split per-org rows from the ИТОГО summary row (OrganizationID == nil).
-	// Per-org rows go into the positional slot arrays below; the summary row
-	// is written separately into the C18:M19 "Жами" band of the new template.
+	// The ИТОГО row (OrganizationID == nil) is silently dropped — Excel
+	// computes totals via SUM formulas in rows 20-21 of both templates.
 	var filteredData []*reservoirsummarymodel.ResponseModel
-	var totalRow *reservoirsummarymodel.ResponseModel
 	for _, item := range data {
 		if item.OrganizationID != nil {
 			filteredData = append(filteredData, item)
-		} else {
-			totalRow = item
 		}
 	}
 
@@ -76,8 +72,8 @@ func (g *Generator) GenerateExcel(date string, data []*reservoirsummarymodel.Res
 	set("L2", parsedDate)
 
 	// Populate level data in cells B6-B23 (skip B18-B19)
-	currentLevelCells := []string{"B6", "B8", "B10", "B12", "B14", "B16", "B20", "B22"}
-	differenceCells := []string{"B7", "B9", "B11", "B13", "B15", "B17", "B21", "B23"}
+	currentLevelCells := []string{"B6", "B8", "B10", "B12", "B14", "B16", "B18", "B22"}
+	differenceCells := []string{"B7", "B9", "B11", "B13", "B15", "B17", "B19", "B23"}
 
 	// Calculate the number of organizations to display
 	maxIndex := len(filteredData)
@@ -93,10 +89,10 @@ func (g *Generator) GenerateExcel(date string, data []*reservoirsummarymodel.Res
 	}
 
 	// Populate volume data in cells C6-E22 (skip C18-C19)
-	currentVolumeCells := []string{"C6", "C8", "C10", "C12", "C14", "C16", "C20", "C22"}
-	volumeDifferenceCells := []string{"C7", "C9", "C11", "C13", "C15", "C17", "C21", "C23"}
-	pastYearVolumeCells := []string{"D6", "D8", "D10", "D12", "D14", "D16", "D20", "D22"}
-	twoYearsAgoVolumeCells := []string{"E6", "E8", "E10", "E12", "E14", "E16", "E20", "E22"}
+	currentVolumeCells := []string{"C6", "C8", "C10", "C12", "C14", "C16", "C18", "C22"}
+	volumeDifferenceCells := []string{"C7", "C9", "C11", "C13", "C15", "C17", "C19", "C23"}
+	pastYearVolumeCells := []string{"D6", "D8", "D10", "D12", "D14", "D16", "D18", "D22"}
+	twoYearsAgoVolumeCells := []string{"E6", "E8", "E10", "E12", "E14", "E16", "E18", "E22"}
 
 	// Calculate the number of organizations to display for volume
 	maxVolumeIndex := len(filteredData)
@@ -114,10 +110,10 @@ func (g *Generator) GenerateExcel(date string, data []*reservoirsummarymodel.Res
 	}
 
 	// Populate income data in cells F6-H16
-	currentIncomeCells := []string{"F6", "F8", "F10", "F12", "F14", "F16", "F20", "F22"}
-	incomeDifferenceCells := []string{"F7", "F9", "F11", "F13", "F15", "F17", "F21", "F23"}
-	pastYearIncomeCells := []string{"G6", "G8", "G10", "G12", "G14", "G16", "G20", "G22"}
-	twoYearsAgoIncomeCells := []string{"H6", "H8", "H10", "H12", "H14", "H16", "H20", "H22"}
+	currentIncomeCells := []string{"F6", "F8", "F10", "F12", "F14", "F16", "F18", "F22"}
+	incomeDifferenceCells := []string{"F7", "F9", "F11", "F13", "F15", "F17", "F19", "F23"}
+	pastYearIncomeCells := []string{"G6", "G8", "G10", "G12", "G14", "G16", "G18", "G22"}
+	twoYearsAgoIncomeCells := []string{"H6", "H8", "H10", "H12", "H14", "H16", "H18", "H22"}
 
 	// Calculate the number of organizations to display for income current/diff
 	maxIncomeIndex := len(filteredData)
@@ -135,10 +131,10 @@ func (g *Generator) GenerateExcel(date string, data []*reservoirsummarymodel.Res
 	}
 
 	// Populate release data in cells I6-K16
-	currentReleaseCells := []string{"I6", "I8", "I10", "I12", "I14", "I16", "I20", "I22"}
-	releaseDifferenceCells := []string{"I7", "I9", "I11", "I13", "I15", "I17", "I21", "I23"}
-	pastYearReleaseCells := []string{"J6", "J8", "J10", "J12", "J14", "J16", "J20", "J22"}
-	twoYearsAgoReleaseCells := []string{"K6", "K8", "K10", "K12", "K14", "K16", "K20", "K22"}
+	currentReleaseCells := []string{"I6", "I8", "I10", "I12", "I14", "I16", "I18", "I22"}
+	releaseDifferenceCells := []string{"I7", "I9", "I11", "I13", "I15", "I17", "I19", "I23"}
+	pastYearReleaseCells := []string{"J6", "J8", "J10", "J12", "J14", "J16", "J18", "J22"}
+	twoYearsAgoReleaseCells := []string{"K6", "K8", "K10", "K12", "K14", "K16", "K18", "K22"}
 
 	// Calculate the number of organizations to display for release current/diff
 	maxReleaseIndex := len(filteredData)
@@ -156,8 +152,8 @@ func (g *Generator) GenerateExcel(date string, data []*reservoirsummarymodel.Res
 	}
 
 	// Populate incoming volume (total income) data in cells L6-M22
-	currentYearIncomingVolumeCells := []string{"L6", "L8", "L10", "L12", "L14", "L16", "L20", "L22"}
-	pastYearIncomingVolumeCells := []string{"M6", "M8", "M10", "M12", "M14", "M16", "M20", "M22"}
+	currentYearIncomingVolumeCells := []string{"L6", "L8", "L10", "L12", "L14", "L16", "L18", "L22"}
+	pastYearIncomingVolumeCells := []string{"M6", "M8", "M10", "M12", "M14", "M16", "M18", "M22"}
 
 	// Calculate the number of organizations to display for incoming volume
 	maxIncomingVolumeIndex := len(filteredData)
@@ -173,8 +169,8 @@ func (g *Generator) GenerateExcel(date string, data []*reservoirsummarymodel.Res
 	}
 
 	// Populate modsnow data in cells N6-O22 (skip 3rd index element - index 2)
-	currentYearModsnowCells := []string{"N6", "N8", "N10", "N12", "N14", "N16", "N20", "N22"}
-	pastYearModsnowCells := []string{"O6", "O8", "O10", "O12", "O14", "O16", "O20", "O22"}
+	currentYearModsnowCells := []string{"N6", "N8", "N10", "N12", "N14", "N16", "N18", "N22"}
+	pastYearModsnowCells := []string{"O6", "O8", "O10", "O12", "O14", "O16", "O18", "O22"}
 
 	// Calculate the number of organizations to display for modsnow (skip index 2)
 	maxModsnowIndex := len(filteredData)
@@ -191,29 +187,6 @@ func (g *Generator) GenerateExcel(date string, data []*reservoirsummarymodel.Res
 		org := filteredData[i]
 		set(currentYearModsnowCells[i], org.Modsnow.Current)
 		set(pastYearModsnowCells[i], org.Modsnow.YearAgo)
-	}
-
-	// Populate the "Жами" (ИТОГО) band at rows 18-19. The summary row is
-	// produced by the SQL UNION ALL and arrives with OrganizationID == nil.
-	// Layout (per template): row 18 holds current/year-ago/two-years-ago,
-	// row 19 holds the day-over-day difference. Level + modsnow cells are
-	// intentionally absent from the totals row in the template.
-	if totalRow != nil {
-		set("C18", totalRow.Volume.Current)
-		set("D18", totalRow.Volume.YearAgo)
-		set("E18", totalRow.Volume.TwoYearsAgo)
-		set("F18", totalRow.Income.Current)
-		set("G18", totalRow.Income.YearAgo)
-		set("H18", totalRow.Income.TwoYearsAgo)
-		set("I18", totalRow.Release.Current)
-		set("J18", totalRow.Release.YearAgo)
-		set("K18", totalRow.Release.TwoYearsAgo)
-		set("L18", totalRow.IncomingVolume)
-		set("M18", totalRow.IncomingVolumePrevYear)
-
-		set("C19", totalRow.Volume.Current-totalRow.Volume.Previous)
-		set("F19", totalRow.Income.Current-totalRow.Income.Previous)
-		set("I19", totalRow.Release.Current-totalRow.Release.Previous)
 	}
 
 	set("K25", authorShortName)
