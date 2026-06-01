@@ -57,9 +57,10 @@ func TestGenerator_FillsHeaderS2S3(t *testing.T) {
 			if err != nil {
 				t.Fatalf("GetCellValue S3: %v", err)
 			}
-			// S3 format is mm-dd-yy, so "05-04-26".
-			if gotS3 != "05-04-26" {
-				t.Errorf("S3: want %q, got %q", "05-04-26", gotS3)
+			// S3 is now written as a YYYY-MM-DD text — the cell's number
+			// format does not apply to text values.
+			if gotS3 != "2026-05-04" {
+				t.Errorf("S3: want %q, got %q", "2026-05-04", gotS3)
 			}
 		})
 	}
