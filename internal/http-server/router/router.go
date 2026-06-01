@@ -615,6 +615,25 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Patch("/shutdowns/{id}/viewed", shutdowns.MarkViewed(deps.Log, deps.PgRepo))
 		})
 
+		// Reservoir Summary Config (membership + ИТОГО inclusion).
+		// Driving table for both /reservoir-summary JSON and the Excel
+		// exports under /reservoir-summary/export, /filter/export,
+		// /manual-comparison/export. Whitelist: orgs absent here do not
+		// appear in any of those endpoints.
+		r.Route("/reservoir-summary/config", func(r chi.Router) {
+			// Tier 1: sc/rais/cascade — read membership.
+			r.Group(func(r chi.Router) {
+				r.Use(mwauth.RequireAnyRole("sc", "rais", "cascade"))
+				r.Get("/", reservoirsummary.GetConfigs(deps.Log, deps.PgRepo))
+			})
+			// Tier 2: sc/rais — manage membership.
+			r.Group(func(r chi.Router) {
+				r.Use(mwauth.RequireAnyRole("sc", "rais"))
+				r.Post("/", reservoirsummary.UpsertConfig(deps.Log, deps.PgRepo))
+				r.Delete("/", reservoirsummary.DeleteConfig(deps.Log, deps.PgRepo))
+			})
+		})
+
 		// GES Daily Report
 		r.Route("/ges-report", func(r chi.Router) {
 			// Tier 1: sc/rais/cascade — read report, input data, read configs/plans

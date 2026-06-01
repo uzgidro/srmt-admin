@@ -3,9 +3,11 @@ package repo
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
-	"sort"
+
 	reservoirsummary "srmt-admin/internal/lib/model/reservoir-summary"
+	"srmt-admin/internal/storage"
 )
 
 // GetReservoirSummary retrieves reservoir summary data for all organizations
@@ -102,42 +104,12 @@ func (r *Repo) GetReservoirSummary(ctx context.Context, date string) ([]*reservo
 		return nil, fmt.Errorf("%s: rows iteration error: %w", op, err)
 	}
 
-	// Return empty slice instead of nil for consistency
+	// Return empty slice instead of nil for consistency.
+	// Order is already established by SQL ORDER BY sort_position (see
+	// getReservoirSummaryQuery); no Go-side sort needed.
 	if summaries == nil {
 		summaries = make([]*reservoirsummary.ResponseModel, 0)
 	}
-
-	sortOrder := map[string]int{
-		"Андижон сув омбори":   1,
-		"Охангарон сув омбори": 2,
-		"Сардоба сув омбори":   3,
-		"Хисорак сув омбори":   4,
-		"Топаланг сув омбори":  5,
-		"Чорвок сув омбори":    6,
-		"Чотқол сув омбори":    7,
-		"Пском сув омбори":     8,
-		"ИТОГО":                9,
-	}
-
-	sort.Slice(summaries, func(i, j int) bool {
-		orderI, okI := sortOrder[summaries[i].OrganizationName]
-		orderJ, okJ := sortOrder[summaries[j].OrganizationName]
-
-		// If both have defined order, sort by order
-		if okI && okJ {
-			return orderI < orderJ
-		}
-		// If only i has defined order, i comes first
-		if okI {
-			return true
-		}
-		// If only j has defined order, j comes first
-		if okJ {
-			return false
-		}
-		// If neither has defined order, maintain original order
-		return i < j
-	})
 
 	return summaries, nil
 }
@@ -151,6 +123,10 @@ func scanReservoirSummaryRow(scanner interface {
 	var storedIncomingVolume sql.NullFloat64
 	var storedIncomingVolumePrevYear sql.NullFloat64
 
+	// sortPosition is read off the wire but not exposed on the model —
+	// it exists only so the SQL ORDER BY can interleave ИТОГО with the
+	// per-org rows (see itog_position CTE).
+	var sortPosition int
 	err := scanner.Scan(
 		&orgID,
 		&m.OrganizationName,
@@ -180,6 +156,7 @@ func scanReservoirSummaryRow(scanner interface {
 		&m.IncomingVolumeBaseValue,
 		&m.IncomingVolumePrevYearBaseDate,
 		&m.IncomingVolumePrevYearBaseValue,
+		&sortPosition,
 	)
 	if err != nil {
 		return nil, err
@@ -213,9 +190,22 @@ WITH date_params AS (
         DATE_TRUNC('year', $1::date)::date AS year_start,
         (DATE_TRUNC('year', $1::date) - INTERVAL '1 year')::date AS prev_year_start
 ),
+-- Whitelist: only organizations explicitly configured for this report.
+-- Anything in reservoir_data but missing from reservoir_summary_config is
+-- silently excluded — manage membership via /reservoir-summary/config.
 org_data AS (
-    SELECT DISTINCT organization_id
-    FROM reservoir_data
+    SELECT organization_id
+    FROM reservoir_summary_config
+),
+-- Pre-compute the position the ИТОГО row should occupy: right after the
+-- last "summed" reservoir (max sort_order among include_in_total = TRUE)
+-- but before any "below-total" rows (include_in_total = FALSE, e.g. Пском).
+-- *10 + 5 keeps an integer sort_position that interleaves cleanly with the
+-- per-org *10 values below.
+itog_position AS (
+    SELECT COALESCE(MAX(sort_order), 0) * 10 + 5 AS pos
+    FROM reservoir_summary_config
+    WHERE include_in_total = TRUE
 ),
 level_data AS (
     SELECT
@@ -358,6 +348,8 @@ stored_income_volume AS (
     WHERE rd.date IN (dp.target_date, dp.year_ago_date)
     GROUP BY rd.organization_id
 )
+-- Per-organization rows. sort_position = rsc.sort_order * 10 so the ИТОГО
+-- row can interleave at *10+5 (see itog_position CTE above).
 SELECT
     od.organization_id,
     COALESCE(o.name, '') AS organization_name,
@@ -382,16 +374,18 @@ SELECT
     -- Stored values (NULL if not set)
     siv.stored_total_income_volume AS stored_incoming_volume,
     siv.stored_total_income_volume_prev_year AS stored_incoming_volume_prev_year,
-    -- Incoming volume for all organizations
+    -- Incoming volume for all configured organizations
     COALESCE(iv.incoming_volume_mln_m3_current_year, 0) AS incoming_volume_mln_m3,
     COALESCE(iv.incoming_volume_mln_m3_prev_year, 0) AS incoming_volume_mln_m3_prev_year,
     -- Calculation Base Details
     iv.base_date_curr AS base_date_curr,
     iv.base_val_curr AS base_val_curr,
     iv.base_date_prev AS base_date_prev,
-    iv.base_val_prev AS base_val_prev
+    iv.base_val_prev AS base_val_prev,
+    rsc.sort_order * 10 AS sort_position
 
 FROM org_data od
+JOIN reservoir_summary_config rsc ON rsc.organization_id = od.organization_id
 LEFT JOIN organizations o ON od.organization_id = o.id
 LEFT JOIN level_data ld ON od.organization_id = ld.organization_id
 LEFT JOIN volume_data vd ON od.organization_id = vd.organization_id
@@ -403,7 +397,8 @@ LEFT JOIN stored_income_volume siv ON od.organization_id = siv.organization_id
 
 UNION ALL
 
--- ИТОГО row: only sum values from reservoir organizations (linked to organization_type 8)
+-- ИТОГО row: sum only values from organizations with include_in_total = TRUE
+-- in reservoir_summary_config. Single JOIN replaces 16 EXISTS clauses.
 SELECT
     NULL AS organization_id,
     'ИТОГО' AS organization_name,
@@ -411,93 +406,162 @@ SELECT
     0 AS level_prev,
     0 AS level_year_ago,
     0 AS level_two_years_ago,
-    COALESCE(SUM(CASE WHEN EXISTS (
-        SELECT 1 FROM organization_type_links otl
-        WHERE otl.organization_id = od.organization_id
-        AND otl.type_id = 8
-    ) THEN COALESCE(vd.volume_current, 0) ELSE 0 END), 0) AS volume_current,
-    COALESCE(SUM(CASE WHEN EXISTS (
-        SELECT 1 FROM organization_type_links otl
-        WHERE otl.organization_id = od.organization_id
-        AND otl.type_id = 8
-    ) THEN COALESCE(vd.volume_prev, 0) ELSE 0 END), 0) AS volume_prev,
-    COALESCE(SUM(CASE WHEN EXISTS (
-        SELECT 1 FROM organization_type_links otl
-        WHERE otl.organization_id = od.organization_id
-        AND otl.type_id = 8
-    ) THEN COALESCE(vd.volume_year_ago, 0) ELSE 0 END), 0) AS volume_year_ago,
-    COALESCE(SUM(CASE WHEN EXISTS (
-        SELECT 1 FROM organization_type_links otl
-        WHERE otl.organization_id = od.organization_id
-        AND otl.type_id = 8
-    ) THEN COALESCE(vd.volume_two_years_ago, 0) ELSE 0 END), 0) AS volume_two_years_ago,
-    COALESCE(SUM(CASE WHEN EXISTS (
-        SELECT 1 FROM organization_type_links otl
-        WHERE otl.organization_id = od.organization_id
-        AND otl.type_id = 8
-    ) THEN COALESCE(id.income_current, 0) ELSE 0 END), 0) AS income_current,
-    COALESCE(SUM(CASE WHEN EXISTS (
-        SELECT 1 FROM organization_type_links otl
-        WHERE otl.organization_id = od.organization_id
-        AND otl.type_id = 8
-    ) THEN COALESCE(id.income_prev, 0) ELSE 0 END), 0) AS income_prev,
-    COALESCE(SUM(CASE WHEN EXISTS (
-        SELECT 1 FROM organization_type_links otl
-        WHERE otl.organization_id = od.organization_id
-        AND otl.type_id = 8
-    ) THEN COALESCE(id.income_year_ago, 0) ELSE 0 END), 0) AS income_year_ago,
-    COALESCE(SUM(CASE WHEN EXISTS (
-        SELECT 1 FROM organization_type_links otl
-        WHERE otl.organization_id = od.organization_id
-        AND otl.type_id = 8
-    ) THEN COALESCE(id.income_two_years_ago, 0) ELSE 0 END), 0) AS income_two_years_ago,
-    COALESCE(SUM(CASE WHEN EXISTS (
-        SELECT 1 FROM organization_type_links otl
-        WHERE otl.organization_id = od.organization_id
-        AND otl.type_id = 8
-    ) THEN COALESCE(reld.release_current, 0) ELSE 0 END), 0) AS release_current,
-    COALESCE(SUM(CASE WHEN EXISTS (
-        SELECT 1 FROM organization_type_links otl
-        WHERE otl.organization_id = od.organization_id
-        AND otl.type_id = 8
-    ) THEN COALESCE(reld.release_prev, 0) ELSE 0 END), 0) AS release_prev,
-    COALESCE(SUM(CASE WHEN EXISTS (
-        SELECT 1 FROM organization_type_links otl
-        WHERE otl.organization_id = od.organization_id
-        AND otl.type_id = 8
-    ) THEN COALESCE(reld.release_year_ago, 0) ELSE 0 END), 0) AS release_year_ago,
-    COALESCE(SUM(CASE WHEN EXISTS (
-        SELECT 1 FROM organization_type_links otl
-        WHERE otl.organization_id = od.organization_id
-        AND otl.type_id = 8
-    ) THEN COALESCE(reld.release_two_years_ago, 0) ELSE 0 END), 0) AS release_two_years_ago,
-    COALESCE(SUM(CASE WHEN EXISTS (
-        SELECT 1 FROM organization_type_links otl
-        WHERE otl.organization_id = od.organization_id
-        AND otl.type_id = 8
-    ) THEN COALESCE(md.modsnow_current, 0) ELSE 0 END), 0) AS modsnow_current,
-    COALESCE(SUM(CASE WHEN EXISTS (
-        SELECT 1 FROM organization_type_links otl
-        WHERE otl.organization_id = od.organization_id
-        AND otl.type_id = 8
-    ) THEN COALESCE(md.modsnow_year_ago, 0) ELSE 0 END), 0) AS modsnow_year_ago,
+    COALESCE(SUM(CASE WHEN rsc.include_in_total THEN COALESCE(vd.volume_current, 0) ELSE 0 END), 0) AS volume_current,
+    COALESCE(SUM(CASE WHEN rsc.include_in_total THEN COALESCE(vd.volume_prev, 0) ELSE 0 END), 0) AS volume_prev,
+    COALESCE(SUM(CASE WHEN rsc.include_in_total THEN COALESCE(vd.volume_year_ago, 0) ELSE 0 END), 0) AS volume_year_ago,
+    COALESCE(SUM(CASE WHEN rsc.include_in_total THEN COALESCE(vd.volume_two_years_ago, 0) ELSE 0 END), 0) AS volume_two_years_ago,
+    COALESCE(SUM(CASE WHEN rsc.include_in_total THEN COALESCE(id.income_current, 0) ELSE 0 END), 0) AS income_current,
+    COALESCE(SUM(CASE WHEN rsc.include_in_total THEN COALESCE(id.income_prev, 0) ELSE 0 END), 0) AS income_prev,
+    COALESCE(SUM(CASE WHEN rsc.include_in_total THEN COALESCE(id.income_year_ago, 0) ELSE 0 END), 0) AS income_year_ago,
+    COALESCE(SUM(CASE WHEN rsc.include_in_total THEN COALESCE(id.income_two_years_ago, 0) ELSE 0 END), 0) AS income_two_years_ago,
+    COALESCE(SUM(CASE WHEN rsc.include_in_total THEN COALESCE(reld.release_current, 0) ELSE 0 END), 0) AS release_current,
+    COALESCE(SUM(CASE WHEN rsc.include_in_total THEN COALESCE(reld.release_prev, 0) ELSE 0 END), 0) AS release_prev,
+    COALESCE(SUM(CASE WHEN rsc.include_in_total THEN COALESCE(reld.release_year_ago, 0) ELSE 0 END), 0) AS release_year_ago,
+    COALESCE(SUM(CASE WHEN rsc.include_in_total THEN COALESCE(reld.release_two_years_ago, 0) ELSE 0 END), 0) AS release_two_years_ago,
+    COALESCE(SUM(CASE WHEN rsc.include_in_total THEN COALESCE(md.modsnow_current, 0) ELSE 0 END), 0) AS modsnow_current,
+    COALESCE(SUM(CASE WHEN rsc.include_in_total THEN COALESCE(md.modsnow_year_ago, 0) ELSE 0 END), 0) AS modsnow_year_ago,
     NULL AS stored_incoming_volume,
     NULL AS stored_incoming_volume_prev_year,
-    COALESCE(SUM(COALESCE(iv.incoming_volume_mln_m3_current_year, 0)), 0) AS incoming_volume_mln_m3,
-    COALESCE(SUM(COALESCE(iv.incoming_volume_mln_m3_prev_year, 0)), 0) AS incoming_volume_mln_m3_prev_year,
+    -- incoming_volume historically summed across ALL orgs without the
+    -- include filter; the config now governs it uniformly with the rest.
+    COALESCE(SUM(CASE WHEN rsc.include_in_total THEN COALESCE(iv.incoming_volume_mln_m3_current_year, 0) ELSE 0 END), 0) AS incoming_volume_mln_m3,
+    COALESCE(SUM(CASE WHEN rsc.include_in_total THEN COALESCE(iv.incoming_volume_mln_m3_prev_year, 0) ELSE 0 END), 0) AS incoming_volume_mln_m3_prev_year,
     NULL AS base_date_curr,
     NULL AS base_val_curr,
     NULL AS base_date_prev,
-    NULL AS base_val_prev
+    NULL AS base_val_prev,
+    (SELECT pos FROM itog_position) AS sort_position
 FROM org_data od
-LEFT JOIN organizations o ON od.organization_id = o.id
-LEFT JOIN level_data ld ON od.organization_id = ld.organization_id
+JOIN reservoir_summary_config rsc ON rsc.organization_id = od.organization_id
 LEFT JOIN volume_data vd ON od.organization_id = vd.organization_id
 LEFT JOIN income_data id ON od.organization_id = id.organization_id
 LEFT JOIN release_data reld ON od.organization_id = reld.organization_id
 LEFT JOIN modsnow_data md ON od.organization_id = md.organization_id
 LEFT JOIN incoming_volume iv ON od.organization_id = iv.organization_id
 
-ORDER BY organization_id NULLS LAST
+ORDER BY sort_position
 `
+}
+
+// --- Reservoir Summary Config CRUD ---
+
+// UpsertReservoirSummaryConfig inserts or updates a config row. Upsert key
+// is organization_id (UNIQUE in DB).
+func (r *Repo) UpsertReservoirSummaryConfig(ctx context.Context, req reservoirsummary.UpsertReservoirSummaryConfigRequest) error {
+	const op = "storage.repo.UpsertReservoirSummaryConfig"
+
+	const query = `
+		INSERT INTO reservoir_summary_config (organization_id, sort_order, include_in_total)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (organization_id) DO UPDATE SET
+			sort_order = EXCLUDED.sort_order,
+			include_in_total = EXCLUDED.include_in_total,
+			updated_at = NOW()`
+
+	_, err := r.db.ExecContext(ctx, query, req.OrganizationID, req.SortOrder, req.IncludeInTotal)
+	if err != nil {
+		if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
+			return translatedErr
+		}
+		return fmt.Errorf("%s: %w", op, err)
+	}
+	return nil
+}
+
+// GetAllReservoirSummaryConfigs returns all config rows joined with
+// organization names, ordered by sort_order so the result is render-ready.
+func (r *Repo) GetAllReservoirSummaryConfigs(ctx context.Context) ([]reservoirsummary.ReservoirSummaryConfig, error) {
+	const op = "storage.repo.GetAllReservoirSummaryConfigs"
+
+	const query = `
+		SELECT
+			rsc.id,
+			rsc.organization_id,
+			o.name AS organization_name,
+			rsc.sort_order,
+			rsc.include_in_total
+		FROM reservoir_summary_config rsc
+		JOIN organizations o ON o.id = rsc.organization_id
+		ORDER BY rsc.sort_order, o.name`
+
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("%s: query: %w", op, err)
+	}
+	defer rows.Close()
+
+	result := make([]reservoirsummary.ReservoirSummaryConfig, 0)
+	for rows.Next() {
+		var cfg reservoirsummary.ReservoirSummaryConfig
+		if err := rows.Scan(
+			&cfg.ID,
+			&cfg.OrganizationID,
+			&cfg.OrganizationName,
+			&cfg.SortOrder,
+			&cfg.IncludeInTotal,
+		); err != nil {
+			return nil, fmt.Errorf("%s: scan: %w", op, err)
+		}
+		result = append(result, cfg)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: rows: %w", op, err)
+	}
+	return result, nil
+}
+
+// DeleteReservoirSummaryConfig removes one config row by organization_id.
+// Returns storage.ErrNotFound when no row matched.
+func (r *Repo) DeleteReservoirSummaryConfig(ctx context.Context, organizationID int64) error {
+	const op = "storage.repo.DeleteReservoirSummaryConfig"
+
+	res, err := r.db.ExecContext(ctx, "DELETE FROM reservoir_summary_config WHERE organization_id = $1", organizationID)
+	if err != nil {
+		if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
+			return translatedErr
+		}
+		return fmt.Errorf("%s: %w", op, err)
+	}
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("%s: rows affected: %w", op, err)
+	}
+	if rowsAffected == 0 {
+		return storage.ErrNotFound
+	}
+	return nil
+}
+
+// GetReservoirSummaryConfigByOrgID returns one config row by organization_id,
+// or storage.ErrNotFound when nothing matched. Useful for validating that an
+// org is part of the report before writing related data.
+func (r *Repo) GetReservoirSummaryConfigByOrgID(ctx context.Context, orgID int64) (*reservoirsummary.ReservoirSummaryConfig, error) {
+	const op = "storage.repo.GetReservoirSummaryConfigByOrgID"
+
+	const query = `
+		SELECT
+			rsc.id,
+			rsc.organization_id,
+			o.name AS organization_name,
+			rsc.sort_order,
+			rsc.include_in_total
+		FROM reservoir_summary_config rsc
+		JOIN organizations o ON o.id = rsc.organization_id
+		WHERE rsc.organization_id = $1`
+
+	var cfg reservoirsummary.ReservoirSummaryConfig
+	err := r.db.QueryRowContext(ctx, query, orgID).Scan(
+		&cfg.ID,
+		&cfg.OrganizationID,
+		&cfg.OrganizationName,
+		&cfg.SortOrder,
+		&cfg.IncludeInTotal,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, storage.ErrNotFound
+		}
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+	return &cfg, nil
 }
