@@ -29,3 +29,22 @@ type ResponseModel struct {
 	IncomingVolumePrevYearBaseDate  *string  `json:"incoming_volume_prev_year_base_date,omitempty"`
 	IncomingVolumePrevYearBaseValue *float64 `json:"incoming_volume_prev_year_base_value,omitempty"`
 }
+
+// ReservoirSummaryConfig controls which organizations appear in the
+// /reservoir-summary report and how they roll up into the ИТОГО row.
+// Source of truth for both the JSON endpoint and the Excel exports.
+type ReservoirSummaryConfig struct {
+	ID               int64  `json:"id"`
+	OrganizationID   int64  `json:"organization_id"`
+	OrganizationName string `json:"organization_name,omitempty"`
+	SortOrder        int    `json:"sort_order"`
+	IncludeInTotal   bool   `json:"include_in_total"`
+}
+
+// UpsertReservoirSummaryConfigRequest is the POST body for creating or
+// updating one config row. Upsert key is organization_id (UNIQUE in DB).
+type UpsertReservoirSummaryConfigRequest struct {
+	OrganizationID int64 `json:"organization_id" validate:"required,gt=0"`
+	SortOrder      int   `json:"sort_order" validate:"gte=0"`
+	IncludeInTotal bool  `json:"include_in_total"`
+}
