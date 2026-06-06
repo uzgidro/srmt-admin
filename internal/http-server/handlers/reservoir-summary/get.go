@@ -7,9 +7,11 @@ import (
 	"srmt-admin/internal/lib/dto"
 	"time"
 
+	mwauth "srmt-admin/internal/http-server/middleware/auth"
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
 	reservoirsummary "srmt-admin/internal/lib/model/reservoir-summary"
+	"srmt-admin/internal/lib/service/auth"
 
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
@@ -70,6 +72,8 @@ func Get(log *slog.Logger, getter reservoirSummaryGetter, fetcher staticDataFetc
 
 		applyStaticFallbacks(r.Context(), log, summaries, dataAtDayBegin, getter)
 
+		summaries = filterSummariesForCaller(r.Context(), summaries)
+
 		log.Info("successfully retrieved reservoir summaries",
 			slog.Int("count", len(summaries)),
 			slog.String("date", dateStr),
@@ -77,4 +81,31 @@ func Get(log *slog.Logger, getter reservoirSummaryGetter, fetcher staticDataFetc
 
 		render.JSON(w, r, summaries)
 	}
+}
+
+// filterSummariesForCaller returns the rows visible to the current user.
+// sc/rais see everything (incl. the ИТОГО row). Any other role gets only
+// rows whose OrganizationID is in claims.OrganizationIDs; the ИТОГО row
+// (OrganizationID == nil) is dropped — totals across the full report make
+// no sense when the user only sees their own organization.
+func filterSummariesForCaller(ctx context.Context, summaries []*reservoirsummary.ResponseModel) []*reservoirsummary.ResponseModel {
+	claims, ok := mwauth.ClaimsFromContext(ctx)
+	if !ok || claims == nil {
+		return []*reservoirsummary.ResponseModel{}
+	}
+	for _, role := range claims.Roles {
+		if role == "sc" || role == "rais" {
+			return summaries
+		}
+	}
+	if len(claims.OrganizationIDs) == 0 {
+		return []*reservoirsummary.ResponseModel{}
+	}
+	filtered := make([]*reservoirsummary.ResponseModel, 0, 1)
+	for _, s := range summaries {
+		if s.OrganizationID != nil && auth.ContainsOrg(claims.OrganizationIDs, *s.OrganizationID) {
+			filtered = append(filtered, s)
+		}
+	}
+	return filtered
 }

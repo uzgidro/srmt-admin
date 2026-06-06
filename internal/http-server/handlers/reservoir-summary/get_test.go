@@ -9,9 +9,11 @@ import (
 	"os"
 	"testing"
 
+	mwauth "srmt-admin/internal/http-server/middleware/auth"
 	"srmt-admin/internal/lib/dto"
 	reservoirsummary "srmt-admin/internal/lib/model/reservoir-summary"
 	"srmt-admin/internal/storage"
+	"srmt-admin/internal/token"
 )
 
 type mockSummaryGetter struct {
@@ -79,6 +81,7 @@ func TestGet_NoAvg_ShouldNotFallbackToCurrentValues(t *testing.T) {
 	handler := Get(log, getter, fetcher)
 
 	req := httptest.NewRequest(http.MethodGet, "/reservoir-summary?date=2025-01-01", nil)
+	req = req.WithContext(mwauth.ContextWithClaims(req.Context(), &token.Claims{Roles: []string{"sc"}}))
 	rr := httptest.NewRecorder()
 
 	handler.ServeHTTP(rr, req)
@@ -144,6 +147,7 @@ func TestGet_WithAvg_ShouldUseAvgValues(t *testing.T) {
 	handler := Get(log, getter, fetcher)
 
 	req := httptest.NewRequest(http.MethodGet, "/reservoir-summary?date=2025-01-01", nil)
+	req = req.WithContext(mwauth.ContextWithClaims(req.Context(), &token.Claims{Roles: []string{"sc"}}))
 	rr := httptest.NewRecorder()
 
 	handler.ServeHTTP(rr, req)
@@ -185,6 +189,7 @@ func TestGet_VolumeRecomputedFromLevel(t *testing.T) {
 	handler := Get(log, getter, fetcher)
 
 	req := httptest.NewRequest(http.MethodGet, "/reservoir-summary?date=2025-01-01", nil)
+	req = req.WithContext(mwauth.ContextWithClaims(req.Context(), &token.Claims{Roles: []string{"sc"}}))
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
@@ -238,6 +243,7 @@ func TestGet_VolumeRecomputedFromStaticLevel(t *testing.T) {
 	handler := Get(log, getter, fetcher)
 
 	req := httptest.NewRequest(http.MethodGet, "/reservoir-summary?date=2025-01-01", nil)
+	req = req.WithContext(mwauth.ContextWithClaims(req.Context(), &token.Claims{Roles: []string{"sc"}}))
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
@@ -292,6 +298,7 @@ func TestGet_FallbackToStaticVolumeWhenCurveNotConfigured(t *testing.T) {
 	handler := Get(log, getter, fetcher)
 
 	req := httptest.NewRequest(http.MethodGet, "/reservoir-summary?date=2025-01-01", nil)
+	req = req.WithContext(mwauth.ContextWithClaims(req.Context(), &token.Claims{Roles: []string{"sc"}}))
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
@@ -337,6 +344,7 @@ func TestGet_NoFallbackWhenDBVolumeNonZero(t *testing.T) {
 	handler := Get(log, getter, fetcher)
 
 	req := httptest.NewRequest(http.MethodGet, "/reservoir-summary?date=2025-01-01", nil)
+	req = req.WithContext(mwauth.ContextWithClaims(req.Context(), &token.Claims{Roles: []string{"sc"}}))
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
@@ -385,6 +393,7 @@ func TestGet_AlreadyHasValues_ShouldNotOverwrite(t *testing.T) {
 	handler := Get(log, getter, fetcher)
 
 	req := httptest.NewRequest(http.MethodGet, "/reservoir-summary?date=2025-01-01", nil)
+	req = req.WithContext(mwauth.ContextWithClaims(req.Context(), &token.Claims{Roles: []string{"sc"}}))
 	rr := httptest.NewRecorder()
 
 	handler.ServeHTTP(rr, req)
@@ -400,3 +409,177 @@ func TestGet_AlreadyHasValues_ShouldNotOverwrite(t *testing.T) {
 		t.Errorf("Release.Current: expected 150 (unchanged), got %f", result[0].Release.Current)
 	}
 }
+
+// --- Role-based filtering of the response array ---
+
+// makeGetRequest builds a GET request with claims injected via the auth
+// test helper. Lives only in this file because all role-filter tests need
+// the same plumbing.
+func makeGetRequest(claims *token.Claims) *http.Request {
+	req := httptest.NewRequest(http.MethodGet, "/reservoir-summary?date=2026-06-01", nil)
+	if claims != nil {
+		req = req.WithContext(mwauth.ContextWithClaims(req.Context(), claims))
+	}
+	return req
+}
+
+// roleFilterFixture: 3 orgs + the ИТОГО summary row, in the order the repo
+// would return after the config-driven ORDER BY.
+func roleFilterFixture() []*reservoirsummary.ResponseModel {
+	return []*reservoirsummary.ResponseModel{
+		{OrganizationID: ptrInt64(41), OrganizationName: "Org 41"},
+		{OrganizationID: ptrInt64(42), OrganizationName: "Org 42"},
+		{OrganizationID: ptrInt64(43), OrganizationName: "Org 43"},
+		{OrganizationID: nil, OrganizationName: "ИТОГО"},
+	}
+}
+
+// reservoir role with one OrganizationID must see ONLY that org's row.
+// The ИТОГО row (OrganizationID == nil) is dropped because a per-org user
+// has no use for a sum across the full report — and showing it would leak
+// aggregate data they shouldn't see.
+func TestGet_ReservoirRole_OwnOrgOnly(t *testing.T) {
+	getter := &mockSummaryGetter{summaries: roleFilterFixture()}
+	fetcher := &mockStaticDataFetcher{}
+	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+
+	req := makeGetRequest(&token.Claims{
+		UserID:          1,
+		Roles:           []string{"reservoir"},
+		OrganizationIDs: []int64{42},
+	})
+	rec := httptest.NewRecorder()
+	Get(log, getter, fetcher)(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d (body %s)", rec.Code, rec.Body.String())
+	}
+	var got []*reservoirsummary.ResponseModel
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("want exactly 1 row (org 42), got %d: %+v", len(got), got)
+	}
+	if got[0].OrganizationID == nil || *got[0].OrganizationID != 42 {
+		t.Errorf("want org 42, got %+v", got[0])
+	}
+	for _, r := range got {
+		if r.OrganizationID == nil {
+			t.Errorf("ИТОГО row leaked to reservoir-role response: %+v", r)
+		}
+	}
+}
+
+// rais behaves identically to sc — the filter has them in one branch.
+// Pinned as its own test so a future refactor splitting them up doesn't
+// silently drop one role.
+func TestGet_RAISRole_SeesAll(t *testing.T) {
+	getter := &mockSummaryGetter{summaries: roleFilterFixture()}
+	fetcher := &mockStaticDataFetcher{}
+	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+
+	req := makeGetRequest(&token.Claims{UserID: 1, Roles: []string{"rais"}})
+	rec := httptest.NewRecorder()
+	Get(log, getter, fetcher)(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d", rec.Code)
+	}
+	var got []*reservoirsummary.ResponseModel
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got) != 4 {
+		t.Errorf("rais must see all 4 rows, got %d", len(got))
+	}
+}
+
+// reservoir with no orgs assigned in claims gets an empty list (200),
+// never a 500 and never the full payload. Defends against misconfigured
+// JWTs from leaking aggregate data.
+func TestGet_ReservoirRole_EmptyOrgsReturnsEmpty(t *testing.T) {
+	getter := &mockSummaryGetter{summaries: roleFilterFixture()}
+	fetcher := &mockStaticDataFetcher{}
+	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+
+	req := makeGetRequest(&token.Claims{
+		UserID:          1,
+		Roles:           []string{"reservoir"},
+		OrganizationIDs: nil,
+	})
+	rec := httptest.NewRecorder()
+	Get(log, getter, fetcher)(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d", rec.Code)
+	}
+	var got []*reservoirsummary.ResponseModel
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("reservoir with no orgs must get empty list, got %d rows", len(got))
+	}
+}
+
+// No claims in the context (production: blocked by auth middleware long
+// before the handler). The filter's defensive nil-claims guard must still
+// return an empty list, not panic and not leak.
+func TestGet_NoClaimsReturnsEmpty(t *testing.T) {
+	getter := &mockSummaryGetter{summaries: roleFilterFixture()}
+	fetcher := &mockStaticDataFetcher{}
+	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+
+	req := makeGetRequest(nil) // no ContextWithClaims call
+	rec := httptest.NewRecorder()
+	Get(log, getter, fetcher)(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d", rec.Code)
+	}
+	var got []*reservoirsummary.ResponseModel
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("no-claims must get empty list, got %d rows", len(got))
+	}
+}
+
+// sc role sees the full payload exactly as the repo returned it, including
+// the ИТОГО row. Same handler, same fixture — only the claims differ.
+func TestGet_SCRole_SeesAll(t *testing.T) {
+	getter := &mockSummaryGetter{summaries: roleFilterFixture()}
+	fetcher := &mockStaticDataFetcher{}
+	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+
+	req := makeGetRequest(&token.Claims{
+		UserID: 1,
+		Roles:  []string{"sc"},
+	})
+	rec := httptest.NewRecorder()
+	Get(log, getter, fetcher)(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d", rec.Code)
+	}
+	var got []*reservoirsummary.ResponseModel
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got) != 4 {
+		t.Fatalf("sc must see all 4 rows (3 orgs + ИТОГО), got %d", len(got))
+	}
+	// Sanity-check that ИТОГО row survived.
+	foundItog := false
+	for _, r := range got {
+		if r.OrganizationID == nil {
+			foundItog = true
+		}
+	}
+	if !foundItog {
+		t.Errorf("ИТОГО row missing from sc-role response")
+	}
+}
+
