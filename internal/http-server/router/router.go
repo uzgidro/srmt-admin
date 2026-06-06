@@ -495,14 +495,14 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Get("/reservoir-device", reservoirdevicesummary.Get(deps.Log, deps.PgRepo))
 			r.Patch("/reservoir-device", reservoirdevicesummary.Patch(deps.Log, deps.PgRepo))
 
-			r.Get("/reservoir-summary", reservoirsummary.Get(deps.Log, deps.PgRepo, deps.ReservoirFetcher))
+			// /reservoir-summary GET and POST live in the sc/rais/reservoir
+			// group below — reservoir-role users access their own org rows.
 			r.Get("/reservoir-summary/export", reservoirsummary.GetExport(
 				deps.Log,
 				deps.PgRepo,
 				deps.ReservoirFetcher,
 				excelgen.New(deps.TemplateOverrideDir, templates.ResSummary),
 			))
-			r.Post("/reservoir-summary", reservoirsummary.New(deps.Log, deps.PgRepo))
 			r.Get("/reservoir-summary-hourly/export", reservoirsummaryhourly.GetExport(
 				deps.Log,
 				deps.ReservoirHourlyService,
@@ -551,6 +551,17 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 				filterExcelGen.New(),
 				loc,
 			))
+		})
+
+		// Reservoir summary read/write — sc/rais see everything; reservoir
+		// role sees and writes only its own organizations. Per-org filtering
+		// lives in the handlers (GET: filterSummariesForCaller; POST:
+		// auth.CheckOrgAccessBatch). Excel exports stay in the sc/rais-only
+		// group above — they render the whole report.
+		r.Group(func(r chi.Router) {
+			r.Use(mwauth.RequireAnyRole("sc", "rais", "reservoir"))
+			r.Get("/reservoir-summary", reservoirsummary.Get(deps.Log, deps.PgRepo, deps.ReservoirFetcher))
+			r.Post("/reservoir-summary", reservoirsummary.New(deps.Log, deps.PgRepo))
 		})
 
 		// Level Volume — sc/rais plus reservoir/reservoir_flood (read-only).
