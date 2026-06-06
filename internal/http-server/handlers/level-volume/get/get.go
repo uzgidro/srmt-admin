@@ -7,6 +7,7 @@ import (
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
 	"srmt-admin/internal/lib/model/levelvolume"
+	"srmt-admin/internal/lib/service/auth"
 	"strconv"
 
 	"github.com/go-chi/chi/v5/middleware"
@@ -55,6 +56,17 @@ func New(log *slog.Logger, getter LevelVolumeGetter) http.HandlerFunc {
 			log.Error("failed to parse organization_id", sl.Err(err))
 			render.Status(r, http.StatusBadRequest)
 			render.JSON(w, r, resp.BadRequest("Invalid organization_id"))
+			return
+		}
+
+		// sc/rais pass through; reservoir/reservoir_flood may only query
+		// their own organizations. Check BEFORE the repo call so a forbidden
+		// request never reaches the data layer (no timing-side-channel leak
+		// of which orgIDs exist).
+		if err := auth.CheckOrgAccess(r.Context(), organizationID); err != nil {
+			log.Warn("org access denied for level-volume request", sl.Err(err), slog.Int64("organization_id", organizationID))
+			render.Status(r, http.StatusForbidden)
+			render.JSON(w, r, resp.Forbidden("Access denied"))
 			return
 		}
 
