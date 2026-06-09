@@ -17,37 +17,45 @@ type DutyViolation struct {
 	OrganizationID   int64        `json:"organization_id"`
 	OrganizationName string       `json:"organization_name,omitempty"`
 	StartTime        time.Time    `json:"start_time"`
-	EndTime          time.Time    `json:"end_time"`
-	DutyOfficerName  string       `json:"duty_officer_name"`
-	Reason           string       `json:"reason"`
-	Files            []file.Model `json:"files"`
-	CreatedAt        time.Time    `json:"created_at"`
-	CreatedByUserID  *int64       `json:"created_by_user_id,omitempty"`
-	UpdatedAt        time.Time    `json:"updated_at"`
+	// EndTime is optional: a record may be created the moment a violation
+	// is noticed, with end_time filled in later via PATCH. Nil → "ongoing".
+	EndTime         *time.Time   `json:"end_time,omitempty"`
+	DutyOfficerName string       `json:"duty_officer_name"`
+	Reason          string       `json:"reason"`
+	Files           []file.Model `json:"files"`
+	CreatedAt       time.Time    `json:"created_at"`
+	CreatedByUserID *int64       `json:"created_by_user_id,omitempty"`
+	UpdatedAt       time.Time    `json:"updated_at"`
 }
 
 // CreateRequest is the POST body. file_ids must come from a prior
 // POST /upload/files call (frontend uploads files first, then submits the
 // record with the returned IDs).
 type CreateRequest struct {
-	OrganizationID  int64     `json:"organization_id" validate:"required,gt=0"`
-	StartTime       time.Time `json:"start_time" validate:"required"`
-	EndTime         time.Time `json:"end_time" validate:"required,gtfield=StartTime"`
-	DutyOfficerName string    `json:"duty_officer_name" validate:"required,min=1,max=200"`
-	Reason          string    `json:"reason" validate:"required,min=1,max=2000"`
-	FileIDs         []int64   `json:"file_ids" validate:"omitempty,dive,gt=0"`
+	OrganizationID int64     `json:"organization_id" validate:"required,gt=0"`
+	StartTime      time.Time `json:"start_time" validate:"required"`
+	// EndTime is optional. Omit it (or send null) to record an in-progress
+	// violation; fill it in later via PATCH. When present it must be
+	// strictly after StartTime; omitempty short-circuits the gtfield
+	// check when the pointer is nil.
+	EndTime         *time.Time `json:"end_time" validate:"omitempty,gtfield=StartTime"`
+	DutyOfficerName string     `json:"duty_officer_name" validate:"required,min=1,max=200"`
+	Reason          string     `json:"reason" validate:"required,min=1,max=2000"`
+	FileIDs         []int64    `json:"file_ids" validate:"omitempty,dive,gt=0"`
 }
 
 // UpdateRequest is the PATCH body. file_ids is treated as a full
 // replacement of the current attachment list (not a delta). To clear all
 // attachments pass an empty array; to add one pass [...old, new].
 type UpdateRequest struct {
-	OrganizationID  int64     `json:"organization_id" validate:"required,gt=0"`
-	StartTime       time.Time `json:"start_time" validate:"required"`
-	EndTime         time.Time `json:"end_time" validate:"required,gtfield=StartTime"`
-	DutyOfficerName string    `json:"duty_officer_name" validate:"required,min=1,max=200"`
-	Reason          string    `json:"reason" validate:"required,min=1,max=2000"`
-	FileIDs         []int64   `json:"file_ids" validate:"omitempty,dive,gt=0"`
+	OrganizationID int64     `json:"organization_id" validate:"required,gt=0"`
+	StartTime      time.Time `json:"start_time" validate:"required"`
+	// EndTime: same semantics as CreateRequest — optional, validated only
+	// when present. To clear a previously-set end_time, send null.
+	EndTime         *time.Time `json:"end_time" validate:"omitempty,gtfield=StartTime"`
+	DutyOfficerName string     `json:"duty_officer_name" validate:"required,min=1,max=200"`
+	Reason          string     `json:"reason" validate:"required,min=1,max=2000"`
+	FileIDs         []int64    `json:"file_ids" validate:"omitempty,dive,gt=0"`
 }
 
 // OrgGroup is the GET-list response shape: records grouped by their

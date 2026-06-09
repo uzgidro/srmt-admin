@@ -68,10 +68,11 @@ func (m *mockRepo) DeleteDutyViolation(_ context.Context, _ int64) error {
 // --- helpers ---
 
 func validReq() dvmodel.CreateRequest {
+	end := time.Date(2026, 6, 8, 20, 0, 0, 0, time.UTC)
 	return dvmodel.CreateRequest{
 		OrganizationID:  103,
 		StartTime:       time.Date(2026, 6, 8, 8, 0, 0, 0, time.UTC),
-		EndTime:         time.Date(2026, 6, 8, 20, 0, 0, 0, time.UTC),
+		EndTime:         &end,
 		DutyOfficerName: "Иванов И.И.",
 		Reason:          "Прогул",
 	}

@@ -333,13 +333,14 @@ func scanDutyViolationRow(scanner interface {
 	Scan(dest ...any) error
 }) (*dvmodel.DutyViolation, error) {
 	var dv dvmodel.DutyViolation
+	var endTime sql.NullTime
 	var createdBy sql.NullInt64
 	if err := scanner.Scan(
 		&dv.ID,
 		&dv.OrganizationID,
 		&dv.OrganizationName,
 		&dv.StartTime,
-		&dv.EndTime,
+		&endTime,
 		&dv.DutyOfficerName,
 		&dv.Reason,
 		&dv.CreatedAt,
@@ -347,6 +348,9 @@ func scanDutyViolationRow(scanner interface {
 		&dv.UpdatedAt,
 	); err != nil {
 		return nil, err
+	}
+	if endTime.Valid {
+		dv.EndTime = &endTime.Time
 	}
 	if createdBy.Valid {
 		dv.CreatedByUserID = &createdBy.Int64

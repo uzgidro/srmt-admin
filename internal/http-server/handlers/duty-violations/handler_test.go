@@ -149,6 +149,36 @@ func TestAdd_HappyPath(t *testing.T) {
 	}
 }
 
+// end_time is optional — record an in-progress violation by omitting the
+// field entirely. Validator must NOT fire `required`.
+func TestAdd_OmittedEndTime_OK(t *testing.T) {
+	svc := &mockCreator{out: &dvmodel.DutyViolation{ID: 8, OrganizationID: 103}}
+	body := `{"organization_id":103,"start_time":"2026-06-08T08:00:00Z","duty_officer_name":"X","reason":"Y"}`
+	req := authedRequest(http.MethodPost, "/duty-violations", body, 1)
+	rec := httptest.NewRecorder()
+
+	Add(quietLog(), svc)(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("omitted end_time must be accepted; got %d body %s", rec.Code, rec.Body.String())
+	}
+}
+
+// Explicit `end_time: null` must behave the same as omitting the field.
+// Frontend may send null when clearing a previously-set end_time on PATCH.
+func TestAdd_NullEndTime_OK(t *testing.T) {
+	svc := &mockCreator{out: &dvmodel.DutyViolation{ID: 9, OrganizationID: 103}}
+	body := `{"organization_id":103,"start_time":"2026-06-08T08:00:00Z","end_time":null,"duty_officer_name":"X","reason":"Y"}`
+	req := authedRequest(http.MethodPost, "/duty-violations", body, 1)
+	rec := httptest.NewRecorder()
+
+	Add(quietLog(), svc)(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("null end_time must be accepted; got %d body %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestAdd_InvalidJSON(t *testing.T) {
 	svc := &mockCreator{}
 	req := authedRequest(http.MethodPost, "/duty-violations", "{not json", 1)

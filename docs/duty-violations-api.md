@@ -46,6 +46,25 @@
 > другим записям или нужны для аудита. Для удаления самого файла —
 > существующий `DELETE /files/{fileID}`.
 
+## Ongoing-записи (без `end_time`)
+
+`end_time` — **опциональное** поле. Запись о нарушении можно создать
+в момент, когда оно замечено, и закрыть позже — patch'ем подставить
+`end_time`. Пока поле пустое, запись считается «открытой».
+
+Семантика:
+
+- `POST /duty-violations` без `end_time` (или `"end_time": null`) →
+  создаст ongoing-запись.
+- `PATCH /duty-violations/{id}` с заполненным `end_time` → закрывает
+  запись.
+- `PATCH` с `"end_time": null` → сбрасывает обратно в ongoing.
+- В ответе (`GET`, `POST`, `PATCH`) ongoing-запись приходит **без поля
+  `end_time`** (omitempty) — фронт проверяет `!('end_time' in record)`
+  или явно `record.end_time === undefined`.
+- Если `end_time` задан, он строго `>` `start_time` (валидатор + CHECK
+  на стороне БД).
+
 ## Фильтры списка
 
 `GET /duty-violations?organization_id=N&date=YYYY-MM-DD`
@@ -78,7 +97,8 @@
 > (2) Конверсия UTC midnight → op-day Asia/Tashkent сдвигает границы на
 > ≈5 часов; фронту это и нужно. (3) Shape ответа изменился с
 > `DutyViolation[]` на `DutyViolationOrgGroup[]` — записи теперь
-> сгруппированы по организации.
+> сгруппированы по организации. (4) `end_time` стал опциональным
+> (см. раздел «Ongoing-записи» выше) — поле может отсутствовать в ответе.
 
 ## TypeScript DTO
 
@@ -97,7 +117,7 @@ interface DutyViolation {
   organization_id: number;
   organization_name?: string;  // JOIN из organizations.name
   start_time: string;          // ISO 8601 с timezone
-  end_time: string;            // > start_time
+  end_time?: string | null;    // optional; null/missing = "ongoing" (смена ещё открыта)
   duty_officer_name: string;
   reason: string;
   files: FileMeta[];           // всегда массив (возможно пустой), не null
@@ -118,7 +138,7 @@ interface DutyViolationOrgGroup {
 interface CreateDutyViolationRequest {
   organization_id: number;   // > 0
   start_time: string;        // ISO 8601
-  end_time: string;          // должно быть > start_time
+  end_time?: string | null;  // OPTIONAL: omit/null = "ongoing"; если задан — должно быть > start_time
   duty_officer_name: string; // 1..200 символов, не пустая после trim
   reason: string;            // 1..2000 символов, не пустая после trim
   file_ids?: number[];       // опц., каждый > 0
@@ -262,9 +282,11 @@ DELETE /duty-violations/7
 - **Форма редактирования** должна показывать текущий список файлов
   (из последнего GET'а) и при сохранении прислать **полный** массив
   `file_ids` — иначе все привязки сбросятся.
-- **Datetime-picker** для `start_time` / `end_time` — обязательно
-  валидировать `end > start` на клиенте до сабмита (бэк всё равно
-  отобьёт 400, но клиентская проверка экономит round-trip).
+- **Datetime-picker для `start_time`** — обязательное поле, ставится
+  при создании. **`end_time` — опциональный**: показывайте отдельный
+  тоггл «Смена закрыта» / «В процессе» и скрывайте picker `end_time`
+  в режиме ongoing. Если задан — валидируйте `end > start` на клиенте
+  (бэк всё равно отобьёт 400, но клиентская проверка экономит round-trip).
 - **403 Forbidden** на запросе своей же организации — означает что
   токен утратил привязку (relogin) или роль изменили; форма должна
   показать осмысленное сообщение.
