@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/lib/pq"
 
@@ -278,11 +279,13 @@ func buildDutyViolationsListQuery(f dvmodel.ListFilter) (string, []any) {
 	if f.OrganizationID != nil {
 		add("dv.organization_id = $%d", *f.OrganizationID)
 	}
-	if f.From != nil {
-		add("dv.start_time >= $%d", *f.From)
-	}
-	if f.To != nil {
-		add("dv.start_time <= $%d", *f.To)
+	if f.Day != nil {
+		// Day is anchored at 05:00 local; the op-day window is half-open
+		// [Day, Day+24h). Matches incidents/visits/shutdowns.
+		start := *f.Day
+		end := start.Add(24 * time.Hour)
+		add("dv.start_time >= $%d", start)
+		add("dv.start_time < $%d", end)
 	}
 	if len(conds) > 0 {
 		q += "WHERE " + joinConds(conds)

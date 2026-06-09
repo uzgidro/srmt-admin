@@ -81,6 +81,17 @@ func (m *mockDeleter) Delete(_ context.Context, _ int64) error {
 
 func quietLog() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
 
+// tashkentLoc is loaded once and shared across tests — Asia/Tashkent is the
+// project's operational-day timezone, fixed +05:00 (no DST), so we don't
+// need any rebuild or per-test setup. Falling back to UTC keeps tests
+// runnable on systems without tzdata installed.
+var tashkentLoc = func() *time.Location {
+	if l, err := time.LoadLocation("Asia/Tashkent"); err == nil {
+		return l
+	}
+	return time.FixedZone("Asia/Tashkent", 5*60*60)
+}()
+
 // scClaims gives the caller full org access (CheckOrgAccess pass-through).
 func scClaims(userID int64) *token.Claims {
 	return &token.Claims{UserID: userID, Roles: []string{"sc"}}
@@ -235,7 +246,7 @@ func TestList_HappyPath_NoFilters(t *testing.T) {
 	svc := &mockLister{out: []*dvmodel.DutyViolation{{ID: 1}, {ID: 2}}}
 	req := authedRequest(http.MethodGet, "/duty-violations", "", 1)
 	rec := httptest.NewRecorder()
-	List(quietLog(), svc)(rec, req)
+	List(quietLog(), svc, tashkentLoc)(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status: want 200, got %d", rec.Code)
@@ -249,23 +260,54 @@ func TestList_HappyPath_NoFilters(t *testing.T) {
 	}
 }
 
-// Confirms the handler forwards org_id, from and to to the service intact.
-// Catches off-by-one parser bugs that would silently drop a filter.
+// Confirms the handler forwards org_id and date to the service.
+// date=2026-06-08 → Day = 2026-06-08T05:00 Tashkent (start of op-day).
+// The repo handles the +24h end-of-window.
 func TestList_ForwardsAllFilters(t *testing.T) {
 	svc := &mockLister{out: nil}
 	req := authedRequest(http.MethodGet,
-		"/duty-violations?organization_id=42&from=2026-06-01&to=2026-06-30", "", 1)
+		"/duty-violations?organization_id=42&date=2026-06-08", "", 1)
 	rec := httptest.NewRecorder()
-	List(quietLog(), svc)(rec, req)
+	List(quietLog(), svc, tashkentLoc)(rec, req)
 
 	if svc.got.OrganizationID == nil || *svc.got.OrganizationID != 42 {
 		t.Errorf("org filter not forwarded: %+v", svc.got)
 	}
-	if svc.got.From == nil || !svc.got.From.Equal(time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)) {
-		t.Errorf("from filter wrong: %+v", svc.got.From)
+	wantDay := time.Date(2026, 6, 8, 5, 0, 0, 0, tashkentLoc)
+	if svc.got.Day == nil || !svc.got.Day.Equal(wantDay) {
+		t.Errorf("date filter wrong: want %v, got %v", wantDay, svc.got.Day)
 	}
-	if svc.got.To == nil {
-		t.Error("to filter not forwarded")
+}
+
+// Op-day anchor uses the configured timezone, not UTC. ?date=2026-06-08
+// with Asia/Tashkent loc must yield 00:00 UTC of that calendar date
+// (05:00 local = 00:00 UTC). Regression guard against re-introducing
+// time.Parse, which would silently produce midnight UTC.
+func TestList_DateUsesLocationNotUTC(t *testing.T) {
+	svc := &mockLister{out: nil}
+	req := authedRequest(http.MethodGet, "/duty-violations?date=2026-06-08", "", 1)
+	rec := httptest.NewRecorder()
+	List(quietLog(), svc, tashkentLoc)(rec, req)
+
+	wantUTC := time.Date(2026, 6, 8, 0, 0, 0, 0, time.UTC)
+	if svc.got.Day == nil || !svc.got.Day.UTC().Equal(wantUTC) {
+		t.Errorf("date in UTC: want %v, got %v", wantUTC, svc.got.Day.UTC())
+	}
+}
+
+// Without ?date the handler forwards a nil Day filter — the repo then
+// returns every record. Matches the contract used by the project's other
+// list endpoints (incidents/visits also default to "no day filter" when
+// the parameter is missing inside the handler, before the handler's own
+// fallback kicks in).
+func TestList_NoDateForwardsNilDay(t *testing.T) {
+	svc := &mockLister{out: nil}
+	req := authedRequest(http.MethodGet, "/duty-violations", "", 1)
+	rec := httptest.NewRecorder()
+	List(quietLog(), svc, tashkentLoc)(rec, req)
+
+	if svc.got.Day != nil {
+		t.Errorf("missing ?date must NOT set Day filter, got %v", svc.got.Day)
 	}
 }
 
@@ -273,7 +315,7 @@ func TestList_InvalidFilter_400(t *testing.T) {
 	svc := &mockLister{}
 	req := authedRequest(http.MethodGet, "/duty-violations?organization_id=abc", "", 1)
 	rec := httptest.NewRecorder()
-	List(quietLog(), svc)(rec, req)
+	List(quietLog(), svc, tashkentLoc)(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status: want 400, got %d", rec.Code)
 	}
@@ -285,7 +327,7 @@ func TestList_NilResult_RendersEmptyArray(t *testing.T) {
 	svc := &mockLister{out: nil}
 	req := authedRequest(http.MethodGet, "/duty-violations", "", 1)
 	rec := httptest.NewRecorder()
-	List(quietLog(), svc)(rec, req)
+	List(quietLog(), svc, tashkentLoc)(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status: want 200, got %d", rec.Code)
@@ -305,7 +347,7 @@ func TestList_NonPrivilegedNoFilter_AutoScoped(t *testing.T) {
 	req = req.WithContext(mwauth.ContextWithClaims(req.Context(),
 		&token.Claims{UserID: 1, Roles: []string{"reservoir"}, OrganizationIDs: []int64{50}}))
 	rec := httptest.NewRecorder()
-	List(quietLog(), svc)(rec, req)
+	List(quietLog(), svc, tashkentLoc)(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status: want 200, got %d", rec.Code)
@@ -324,7 +366,7 @@ func TestList_NonPrivilegedForeignOrg_Forbidden(t *testing.T) {
 	req = req.WithContext(mwauth.ContextWithClaims(req.Context(),
 		&token.Claims{UserID: 1, Roles: []string{"reservoir"}, OrganizationIDs: []int64{50}}))
 	rec := httptest.NewRecorder()
-	List(quietLog(), svc)(rec, req)
+	List(quietLog(), svc, tashkentLoc)(rec, req)
 
 	if rec.Code != http.StatusForbidden {
 		t.Errorf("status: want 403, got %d", rec.Code)
@@ -339,7 +381,7 @@ func TestList_NonPrivilegedNoOrgs_ReturnsEmpty(t *testing.T) {
 	req = req.WithContext(mwauth.ContextWithClaims(req.Context(),
 		&token.Claims{UserID: 1, Roles: []string{"reservoir"}, OrganizationIDs: nil}))
 	rec := httptest.NewRecorder()
-	List(quietLog(), svc)(rec, req)
+	List(quietLog(), svc, tashkentLoc)(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status: want 200, got %d", rec.Code)
@@ -361,7 +403,7 @@ func TestList_PrivilegedNoFilter_PassesThrough(t *testing.T) {
 	svc := &mockLister{out: []*dvmodel.DutyViolation{{ID: 1}, {ID: 2}}}
 	req := authedRequest(http.MethodGet, "/duty-violations", "", 1)
 	rec := httptest.NewRecorder()
-	List(quietLog(), svc)(rec, req)
+	List(quietLog(), svc, tashkentLoc)(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status: want 200, got %d", rec.Code)

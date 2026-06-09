@@ -38,27 +38,38 @@ func TestBuildDutyViolationsListQuery_FiltersByOrg(t *testing.T) {
 	}
 }
 
-func TestBuildDutyViolationsListQuery_FiltersByDateRange(t *testing.T) {
-	from := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
-	to := time.Date(2026, 6, 30, 23, 59, 59, 0, time.UTC)
-	q, args := buildDutyViolationsListQuery(dvmodel.ListFilter{From: &from, To: &to})
+// A non-nil Day expands into a half-open `[Day, Day+24h)` window: both
+// sides bound to start_time, the upper bound strict `<` so a record on
+// the cutoff belongs to the NEXT op-day. Two args, one each.
+func TestBuildDutyViolationsListQuery_FiltersByDay(t *testing.T) {
+	day := time.Date(2026, 6, 8, 5, 0, 0, 0, time.UTC)
+	q, args := buildDutyViolationsListQuery(dvmodel.ListFilter{Day: &day})
 
 	if !strings.Contains(q, "dv.start_time >= $1") {
-		t.Errorf("from-filter missing: %s", q)
+		t.Errorf("lower bound missing: %s", q)
 	}
-	if !strings.Contains(q, "dv.start_time <= $2") {
-		t.Errorf("to-filter missing: %s", q)
+	if !strings.Contains(q, "dv.start_time < $2") {
+		t.Errorf("upper bound must use half-open `< $2`, got: %s", q)
+	}
+	if strings.Contains(q, "dv.start_time <= $") {
+		t.Errorf("legacy inclusive `<=` filter must not appear: %s", q)
 	}
 	if len(args) != 2 {
-		t.Errorf("want 2 args, got %d", len(args))
+		t.Errorf("want 2 args (start + end), got %d", len(args))
+	}
+	if got := args[0].(time.Time); !got.Equal(day) {
+		t.Errorf("lower bound arg: want %v, got %v", day, got)
+	}
+	if got := args[1].(time.Time); !got.Equal(day.Add(24 * time.Hour)) {
+		t.Errorf("upper bound arg: want %v, got %v", day.Add(24*time.Hour), got)
 	}
 }
 
 func TestBuildDutyViolationsListQuery_CombinesFiltersWithAnd(t *testing.T) {
 	orgID := int64(42)
-	from := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	day := time.Date(2026, 6, 8, 5, 0, 0, 0, time.UTC)
 	q, _ := buildDutyViolationsListQuery(dvmodel.ListFilter{
-		OrganizationID: &orgID, From: &from,
+		OrganizationID: &orgID, Day: &day,
 	})
 
 	if !strings.Contains(q, " AND ") {
