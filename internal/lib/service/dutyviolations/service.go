@@ -22,7 +22,7 @@ import (
 type Repository interface {
 	AddDutyViolationWithFiles(ctx context.Context, req dvmodel.CreateRequest, createdByUserID int64) (int64, error)
 	UpdateDutyViolationWithFiles(ctx context.Context, id int64, req dvmodel.UpdateRequest) error
-	GetDutyViolations(ctx context.Context, f dvmodel.ListFilter) ([]*dvmodel.DutyViolation, error)
+	GetDutyViolations(ctx context.Context, f dvmodel.ListFilter) ([]dvmodel.OrgGroup, error)
 	GetDutyViolationByID(ctx context.Context, id int64) (*dvmodel.DutyViolation, error)
 	DeleteDutyViolation(ctx context.Context, id int64) error
 }
@@ -65,10 +65,10 @@ func (s *Service) GetByID(ctx context.Context, id int64) (*dvmodel.DutyViolation
 	return dv, nil
 }
 
-// List passes the filter through to the repo unchanged. It exists on the
-// service only to give the handler a single dependency surface (Service)
-// instead of repo+service mixed.
-func (s *Service) List(ctx context.Context, f dvmodel.ListFilter) ([]*dvmodel.DutyViolation, error) {
+// List returns records grouped by organization. Groups are sorted by
+// org name ASC; within each group records are newest-first. The shape
+// is the API contract — frontend renders the groups directly.
+func (s *Service) List(ctx context.Context, f dvmodel.ListFilter) ([]dvmodel.OrgGroup, error) {
 	const op = "service.dutyviolations.List"
 	out, err := s.repo.GetDutyViolations(ctx, f)
 	if err != nil {

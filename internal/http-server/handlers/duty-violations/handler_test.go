@@ -32,12 +32,12 @@ func (m *mockCreator) Create(_ context.Context, _ dvmodel.CreateRequest, _ int64
 }
 
 type mockLister struct {
-	out []*dvmodel.DutyViolation
+	out []dvmodel.OrgGroup
 	err error
 	got dvmodel.ListFilter
 }
 
-func (m *mockLister) List(_ context.Context, f dvmodel.ListFilter) ([]*dvmodel.DutyViolation, error) {
+func (m *mockLister) List(_ context.Context, f dvmodel.ListFilter) ([]dvmodel.OrgGroup, error) {
 	m.got = f
 	return m.out, m.err
 }
@@ -243,7 +243,10 @@ func TestAdd_ServiceError_500(t *testing.T) {
 // --- GET /duty-violations ---
 
 func TestList_HappyPath_NoFilters(t *testing.T) {
-	svc := &mockLister{out: []*dvmodel.DutyViolation{{ID: 1}, {ID: 2}}}
+	svc := &mockLister{out: []dvmodel.OrgGroup{
+		{ID: 1, Name: "Org A", Violations: []dvmodel.DutyViolation{{ID: 1}}},
+		{ID: 2, Name: "Org B", Violations: []dvmodel.DutyViolation{{ID: 2}, {ID: 3}}},
+	}}
 	req := authedRequest(http.MethodGet, "/duty-violations", "", 1)
 	rec := httptest.NewRecorder()
 	List(quietLog(), svc, tashkentLoc)(rec, req)
@@ -251,12 +254,18 @@ func TestList_HappyPath_NoFilters(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status: want 200, got %d", rec.Code)
 	}
-	var got []*dvmodel.DutyViolation
+	var got []dvmodel.OrgGroup
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
 	if len(got) != 2 {
-		t.Errorf("want 2 rows, got %d", len(got))
+		t.Fatalf("want 2 groups, got %d", len(got))
+	}
+	if got[0].ID != 1 || got[0].Name != "Org A" || len(got[0].Violations) != 1 {
+		t.Errorf("group A wrong: %+v", got[0])
+	}
+	if got[1].ID != 2 || got[1].Name != "Org B" || len(got[1].Violations) != 2 {
+		t.Errorf("group B wrong: %+v", got[1])
 	}
 }
 
@@ -376,7 +385,9 @@ func TestList_NonPrivilegedForeignOrg_Forbidden(t *testing.T) {
 // Non-privileged caller without ANY orgs in claims gets an empty list,
 // not a wildcard query.
 func TestList_NonPrivilegedNoOrgs_ReturnsEmpty(t *testing.T) {
-	svc := &mockLister{out: []*dvmodel.DutyViolation{{ID: 1}}}
+	svc := &mockLister{out: []dvmodel.OrgGroup{
+		{ID: 1, Name: "Org A", Violations: []dvmodel.DutyViolation{{ID: 1}}},
+	}}
 	req := httptest.NewRequest(http.MethodGet, "/duty-violations", nil)
 	req = req.WithContext(mwauth.ContextWithClaims(req.Context(),
 		&token.Claims{UserID: 1, Roles: []string{"reservoir"}, OrganizationIDs: nil}))
@@ -400,7 +411,10 @@ func TestList_NonPrivilegedNoOrgs_ReturnsEmpty(t *testing.T) {
 // sc role keeps unrestricted access — no auto-scoping, no 403 on any
 // organization_id, including absent.
 func TestList_PrivilegedNoFilter_PassesThrough(t *testing.T) {
-	svc := &mockLister{out: []*dvmodel.DutyViolation{{ID: 1}, {ID: 2}}}
+	svc := &mockLister{out: []dvmodel.OrgGroup{
+		{ID: 1, Name: "Org A", Violations: []dvmodel.DutyViolation{{ID: 1}}},
+		{ID: 2, Name: "Org B", Violations: []dvmodel.DutyViolation{{ID: 2}}},
+	}}
 	req := authedRequest(http.MethodGet, "/duty-violations", "", 1)
 	rec := httptest.NewRecorder()
 	List(quietLog(), svc, tashkentLoc)(rec, req)

@@ -50,6 +50,18 @@ type UpdateRequest struct {
 	FileIDs         []int64   `json:"file_ids" validate:"omitempty,dive,gt=0"`
 }
 
+// OrgGroup is the GET-list response shape: records grouped by their
+// organization. Groups are sorted by Name ASC; within each group the
+// records keep the repo's own ordering (newest start_time first).
+//
+// A flat list is intentionally NOT exposed — the API contract is "grouped
+// by org" so the frontend doesn't have to re-bucket on every render.
+type OrgGroup struct {
+	ID         int64           `json:"id"`
+	Name       string          `json:"name"`
+	Violations []DutyViolation `json:"violations"`
+}
+
 // ListFilter holds optional query-string filters for the GET list endpoint.
 // All fields are nil when not provided; the repo composes a dynamic WHERE
 // clause from the non-nil ones.

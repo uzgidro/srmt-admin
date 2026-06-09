@@ -21,8 +21,12 @@ func TestBuildDutyViolationsListQuery_NoFilters(t *testing.T) {
 	if strings.Contains(q, "WHERE") {
 		t.Errorf("no-filter query must not have WHERE clause:\n%s", q)
 	}
-	if !strings.Contains(q, "ORDER BY dv.start_time DESC") {
-		t.Errorf("query must order by start_time DESC:\n%s", q)
+	// Order matters for the streaming group-by-org in GetDutyViolations:
+	// organization_name MUST come first so rows for the same org arrive
+	// contiguously. start_time DESC keeps the prior "newest-first" feel
+	// inside each group.
+	if !strings.Contains(q, "ORDER BY organization_name ASC, dv.start_time DESC") {
+		t.Errorf("query must order by organization_name ASC, then start_time DESC:\n%s", q)
 	}
 }
 

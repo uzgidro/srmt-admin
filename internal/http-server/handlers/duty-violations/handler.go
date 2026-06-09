@@ -31,7 +31,7 @@ type ServiceCreator interface {
 }
 
 type ServiceLister interface {
-	List(ctx context.Context, f dvmodel.ListFilter) ([]*dvmodel.DutyViolation, error)
+	List(ctx context.Context, f dvmodel.ListFilter) ([]dvmodel.OrgGroup, error)
 }
 
 // ServiceUpdater needs GetByID too: PATCH must authorize against the
@@ -164,8 +164,8 @@ func List(log *slog.Logger, svc ServiceLister, loc *time.Location) http.HandlerF
 			} else {
 				claims, ok := mwauth.ClaimsFromContext(r.Context())
 				if !ok || claims == nil || len(claims.OrganizationIDs) == 0 {
-					// No org assignment → no records to show.
-					render.JSON(w, r, []*dvmodel.DutyViolation{})
+					// No org assignment → no groups to show.
+					render.JSON(w, r, []dvmodel.OrgGroup{})
 					return
 				}
 				ownOrg := claims.OrganizationIDs[0]
@@ -184,7 +184,7 @@ func List(log *slog.Logger, svc ServiceLister, loc *time.Location) http.HandlerF
 		// Always render a JSON array, never null — frontend never has to
 		// guard `.map()` against a missing list.
 		if list == nil {
-			list = []*dvmodel.DutyViolation{}
+			list = []dvmodel.OrgGroup{}
 		}
 		render.JSON(w, r, list)
 	}
