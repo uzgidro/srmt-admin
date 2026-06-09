@@ -52,6 +52,19 @@ func (s *Service) Create(ctx context.Context, req dvmodel.CreateRequest, created
 	return s.repo.GetDutyViolationByID(ctx, id)
 }
 
+// GetByID returns one record (with files + org name) or storage.ErrNotFound.
+// Handlers call this BEFORE write mutations to authorize against the
+// record's CURRENT organization — defending against IDOR even if a caller
+// passes a foreign organization_id in the PATCH body.
+func (s *Service) GetByID(ctx context.Context, id int64) (*dvmodel.DutyViolation, error) {
+	const op = "service.dutyviolations.GetByID"
+	dv, err := s.repo.GetDutyViolationByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+	return dv, nil
+}
+
 // List passes the filter through to the repo unchanged. It exists on the
 // service only to give the handler a single dependency surface (Service)
 // instead of repo+service mixed.

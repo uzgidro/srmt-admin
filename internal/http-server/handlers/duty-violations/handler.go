@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	mwauth "srmt-admin/internal/http-server/middleware/auth"
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
 	dvmodel "srmt-admin/internal/lib/model/duty-violations"
@@ -33,11 +34,20 @@ type ServiceLister interface {
 	List(ctx context.Context, f dvmodel.ListFilter) ([]*dvmodel.DutyViolation, error)
 }
 
+// ServiceUpdater needs GetByID too: PATCH must authorize against the
+// record's CURRENT organization_id, not against whatever the request body
+// claims — otherwise a caller with access to org A could move (or just
+// edit) a record belonging to org B by passing organization_id=A.
 type ServiceUpdater interface {
+	GetByID(ctx context.Context, id int64) (*dvmodel.DutyViolation, error)
 	Update(ctx context.Context, id int64, req dvmodel.UpdateRequest) (*dvmodel.DutyViolation, error)
 }
 
+// ServiceDeleter needs GetByID for the same reason: without checking the
+// existing record's org, any caller with the right role could delete any
+// record by guessing the id (IDOR).
 type ServiceDeleter interface {
+	GetByID(ctx context.Context, id int64) (*dvmodel.DutyViolation, error)
 	Delete(ctx context.Context, id int64) error
 }
 
@@ -130,6 +140,36 @@ func List(log *slog.Logger, svc ServiceLister) http.HandlerFunc {
 			return
 		}
 
+		// Tenant scoping for non-privileged callers:
+		// - If a specific organization_id was requested, CheckOrgAccess
+		//   rejects foreign orgs with 403 (sc/rais pass through).
+		// - If no organization_id was passed, a non-privileged caller
+		//   would otherwise see every record across every org. Force the
+		//   filter to their first claims-listed org (the typical case is
+		//   single-org membership). This is a safety net: today the
+		//   router only lets sc/rais reach here, but when reservoir-class
+		//   roles are added the handler is already safe.
+		if !isPrivilegedCaller(r.Context()) {
+			if f.OrganizationID != nil {
+				if err := auth.CheckOrgAccess(r.Context(), *f.OrganizationID); err != nil {
+					log.Warn("org access denied on list filter",
+						sl.Err(err), slog.Int64("organization_id", *f.OrganizationID))
+					render.Status(r, http.StatusForbidden)
+					render.JSON(w, r, resp.Forbidden("Access denied"))
+					return
+				}
+			} else {
+				claims, ok := mwauth.ClaimsFromContext(r.Context())
+				if !ok || claims == nil || len(claims.OrganizationIDs) == 0 {
+					// No org assignment → no records to show.
+					render.JSON(w, r, []*dvmodel.DutyViolation{})
+					return
+				}
+				ownOrg := claims.OrganizationIDs[0]
+				f.OrganizationID = &ownOrg
+			}
+		}
+
 		list, err := svc.List(r.Context(), f)
 		if err != nil {
 			log.Error("failed to list duty violations", sl.Err(err))
@@ -176,11 +216,44 @@ func Edit(log *slog.Logger, svc ServiceUpdater) http.HandlerFunc {
 			render.JSON(w, r, resp.ValidationErrors(vErrs))
 			return
 		}
-		if err := auth.CheckOrgAccess(r.Context(), req.OrganizationID); err != nil {
-			log.Warn("org access denied", sl.Err(err), slog.Int64("organization_id", req.OrganizationID))
+
+		// IDOR defense: load the existing record FIRST and authorize against
+		// its current organization_id, not against the request body's
+		// claim. Otherwise a caller with access to org A could PATCH a
+		// record owned by org B simply by setting organization_id=A in
+		// the body. If the caller wants to move the record to a different
+		// org, they must also have access to the destination — checked
+		// separately below.
+		existing, err := svc.GetByID(r.Context(), id)
+		if err != nil {
+			if errors.Is(err, storage.ErrNotFound) {
+				render.Status(r, http.StatusNotFound)
+				render.JSON(w, r, resp.NotFound("Record not found"))
+				return
+			}
+			log.Error("failed to load existing record", sl.Err(err))
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, resp.InternalServerError("Failed to load record"))
+			return
+		}
+		if err := auth.CheckOrgAccess(r.Context(), existing.OrganizationID); err != nil {
+			log.Warn("org access denied on existing record",
+				sl.Err(err), slog.Int64("existing_org", existing.OrganizationID))
 			render.Status(r, http.StatusForbidden)
 			render.JSON(w, r, resp.Forbidden("Access denied"))
 			return
+		}
+		// Cross-org transfer also requires access to the destination org.
+		// For sc/rais this is a no-op (full access); for any future role
+		// confined to specific orgs, it stops reassignment to a foreign org.
+		if req.OrganizationID != existing.OrganizationID {
+			if err := auth.CheckOrgAccess(r.Context(), req.OrganizationID); err != nil {
+				log.Warn("org access denied on target org of transfer",
+					sl.Err(err), slog.Int64("target_org", req.OrganizationID))
+				render.Status(r, http.StatusForbidden)
+				render.JSON(w, r, resp.Forbidden("Access denied"))
+				return
+			}
 		}
 
 		dv, err := svc.Update(r.Context(), id, req)
@@ -226,6 +299,31 @@ func Delete(log *slog.Logger, svc ServiceDeleter) http.HandlerFunc {
 			return
 		}
 
+		// IDOR defense: load the record and authorize against its org
+		// before deleting. Without this, any caller in the route group
+		// could delete records belonging to organizations they don't own
+		// (today only sc/rais reach this handler so the leak is latent;
+		// the check makes the feature safe to expose to other roles).
+		existing, err := svc.GetByID(r.Context(), id)
+		if err != nil {
+			if errors.Is(err, storage.ErrNotFound) {
+				render.Status(r, http.StatusNotFound)
+				render.JSON(w, r, resp.NotFound("Record not found"))
+				return
+			}
+			log.Error("failed to load existing record", sl.Err(err))
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, resp.InternalServerError("Failed to load record"))
+			return
+		}
+		if err := auth.CheckOrgAccess(r.Context(), existing.OrganizationID); err != nil {
+			log.Warn("org access denied on delete",
+				sl.Err(err), slog.Int64("existing_org", existing.OrganizationID))
+			render.Status(r, http.StatusForbidden)
+			render.JSON(w, r, resp.Forbidden("Access denied"))
+			return
+		}
+
 		if err := svc.Delete(r.Context(), id); err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
 				render.Status(r, http.StatusNotFound)
@@ -242,6 +340,23 @@ func Delete(log *slog.Logger, svc ServiceDeleter) http.HandlerFunc {
 		render.Status(r, http.StatusNoContent)
 		render.JSON(w, r, resp.Delete())
 	}
+}
+
+// isPrivilegedCaller reports whether the caller is sc or rais (full
+// cross-org access). Used by the List handler to decide whether to scope
+// the query to the caller's organizations — keeping the rule local to
+// this file so changes don't ripple across modules.
+func isPrivilegedCaller(ctx context.Context) bool {
+	claims, ok := mwauth.ClaimsFromContext(ctx)
+	if !ok || claims == nil {
+		return false
+	}
+	for _, role := range claims.Roles {
+		if role == "sc" || role == "rais" {
+			return true
+		}
+	}
+	return false
 }
 
 // --- helpers (file-local) ---

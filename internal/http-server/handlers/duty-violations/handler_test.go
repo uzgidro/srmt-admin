@@ -43,19 +43,41 @@ func (m *mockLister) List(_ context.Context, f dvmodel.ListFilter) ([]*dvmodel.D
 }
 
 type mockUpdater struct {
+	// GetByID half — what the IDOR-defense read returns
+	getOut *dvmodel.DutyViolation
+	getErr error
+
+	// Update half — what the actual mutation returns
 	out *dvmodel.DutyViolation
 	err error
+
+	updateCalled bool
+}
+
+func (m *mockUpdater) GetByID(_ context.Context, _ int64) (*dvmodel.DutyViolation, error) {
+	return m.getOut, m.getErr
 }
 
 func (m *mockUpdater) Update(_ context.Context, _ int64, _ dvmodel.UpdateRequest) (*dvmodel.DutyViolation, error) {
+	m.updateCalled = true
 	return m.out, m.err
 }
 
 type mockDeleter struct {
-	err error
+	getOut       *dvmodel.DutyViolation
+	getErr       error
+	err          error
+	deleteCalled bool
 }
 
-func (m *mockDeleter) Delete(_ context.Context, _ int64) error { return m.err }
+func (m *mockDeleter) GetByID(_ context.Context, _ int64) (*dvmodel.DutyViolation, error) {
+	return m.getOut, m.getErr
+}
+
+func (m *mockDeleter) Delete(_ context.Context, _ int64) error {
+	m.deleteCalled = true
+	return m.err
+}
 
 func quietLog() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
 
@@ -274,10 +296,95 @@ func TestList_NilResult_RendersEmptyArray(t *testing.T) {
 	}
 }
 
+// Tenant scoping: a non-privileged caller WITHOUT organization_id in the
+// query must NOT see every record. The handler force-injects their own
+// first org from claims so the SQL filter binds.
+func TestList_NonPrivilegedNoFilter_AutoScoped(t *testing.T) {
+	svc := &mockLister{out: nil}
+	req := httptest.NewRequest(http.MethodGet, "/duty-violations", nil)
+	req = req.WithContext(mwauth.ContextWithClaims(req.Context(),
+		&token.Claims{UserID: 1, Roles: []string{"reservoir"}, OrganizationIDs: []int64{50}}))
+	rec := httptest.NewRecorder()
+	List(quietLog(), svc)(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d", rec.Code)
+	}
+	if svc.got.OrganizationID == nil || *svc.got.OrganizationID != 50 {
+		t.Errorf("non-privileged caller must be auto-scoped to own org; got filter %+v", svc.got)
+	}
+}
+
+// Tenant scoping: a non-privileged caller passing a FOREIGN organization_id
+// gets 403, NOT a quiet empty list (we want loud rejection so the
+// frontend bug surfaces).
+func TestList_NonPrivilegedForeignOrg_Forbidden(t *testing.T) {
+	svc := &mockLister{}
+	req := httptest.NewRequest(http.MethodGet, "/duty-violations?organization_id=999", nil)
+	req = req.WithContext(mwauth.ContextWithClaims(req.Context(),
+		&token.Claims{UserID: 1, Roles: []string{"reservoir"}, OrganizationIDs: []int64{50}}))
+	rec := httptest.NewRecorder()
+	List(quietLog(), svc)(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("status: want 403, got %d", rec.Code)
+	}
+}
+
+// Non-privileged caller without ANY orgs in claims gets an empty list,
+// not a wildcard query.
+func TestList_NonPrivilegedNoOrgs_ReturnsEmpty(t *testing.T) {
+	svc := &mockLister{out: []*dvmodel.DutyViolation{{ID: 1}}}
+	req := httptest.NewRequest(http.MethodGet, "/duty-violations", nil)
+	req = req.WithContext(mwauth.ContextWithClaims(req.Context(),
+		&token.Claims{UserID: 1, Roles: []string{"reservoir"}, OrganizationIDs: nil}))
+	rec := httptest.NewRecorder()
+	List(quietLog(), svc)(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d", rec.Code)
+	}
+	body := strings.TrimSpace(rec.Body.String())
+	if body != "[]" {
+		t.Errorf("want `[]`, got %q", body)
+	}
+	// Crucially: the service was NEVER called. A wildcard query against
+	// the DB would leak everything.
+	if svc.got.OrganizationID != nil {
+		t.Errorf("service must not be invoked for no-orgs caller; got filter %+v", svc.got)
+	}
+}
+
+// sc role keeps unrestricted access — no auto-scoping, no 403 on any
+// organization_id, including absent.
+func TestList_PrivilegedNoFilter_PassesThrough(t *testing.T) {
+	svc := &mockLister{out: []*dvmodel.DutyViolation{{ID: 1}, {ID: 2}}}
+	req := authedRequest(http.MethodGet, "/duty-violations", "", 1)
+	rec := httptest.NewRecorder()
+	List(quietLog(), svc)(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d", rec.Code)
+	}
+	if svc.got.OrganizationID != nil {
+		t.Errorf("sc must NOT be auto-scoped; got filter %+v", svc.got)
+	}
+}
+
 // --- PATCH /duty-violations/{id} ---
 
+// existingDV is the typical "record already in DB" the IDOR-defense read
+// returns. Pass an OrganizationID; sc claims pass through CheckOrgAccess
+// for any value, so most tests just use the same org as the request body.
+func existingDV(orgID int64) *dvmodel.DutyViolation {
+	return &dvmodel.DutyViolation{ID: 5, OrganizationID: orgID}
+}
+
 func TestEdit_HappyPath(t *testing.T) {
-	svc := &mockUpdater{out: &dvmodel.DutyViolation{ID: 5, OrganizationID: 103}}
+	svc := &mockUpdater{
+		getOut: existingDV(103),
+		out:    &dvmodel.DutyViolation{ID: 5, OrganizationID: 103},
+	}
 	req := authedRequest(http.MethodPatch, "/duty-violations/5", validCreateBody(), 1)
 	req = withID(req, "5")
 	rec := httptest.NewRecorder()
@@ -288,8 +395,27 @@ func TestEdit_HappyPath(t *testing.T) {
 	}
 }
 
-func TestEdit_NotFound(t *testing.T) {
-	svc := &mockUpdater{err: storage.ErrNotFound}
+// GetByID-side ErrNotFound (record doesn't exist) must return 404 from the
+// pre-update read — not propagate as a 500.
+func TestEdit_NotFoundOnPreRead(t *testing.T) {
+	svc := &mockUpdater{getErr: storage.ErrNotFound}
+	req := authedRequest(http.MethodPatch, "/duty-violations/9999", validCreateBody(), 1)
+	req = withID(req, "9999")
+	rec := httptest.NewRecorder()
+	Edit(quietLog(), svc)(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status: want 404, got %d", rec.Code)
+	}
+	if svc.updateCalled {
+		t.Errorf("Update must not run when pre-read returns NotFound")
+	}
+}
+
+// NotFound on the Update half (after a successful pre-read) — rare race
+// window. Still surfaces as 404 to the caller.
+func TestEdit_NotFoundOnUpdate(t *testing.T) {
+	svc := &mockUpdater{getOut: existingDV(103), err: storage.ErrNotFound}
 	req := authedRequest(http.MethodPatch, "/duty-violations/9999", validCreateBody(), 1)
 	req = withID(req, "9999")
 	rec := httptest.NewRecorder()
@@ -313,7 +439,7 @@ func TestEdit_BadID(t *testing.T) {
 }
 
 func TestEdit_FKViolation_422(t *testing.T) {
-	svc := &mockUpdater{err: storage.ErrForeignKeyViolation}
+	svc := &mockUpdater{getOut: existingDV(103), err: storage.ErrForeignKeyViolation}
 	req := authedRequest(http.MethodPatch, "/duty-violations/5", validCreateBody(), 1)
 	req = withID(req, "5")
 	rec := httptest.NewRecorder()
@@ -325,7 +451,7 @@ func TestEdit_FKViolation_422(t *testing.T) {
 }
 
 func TestEdit_CheckConstraintViolation_400(t *testing.T) {
-	svc := &mockUpdater{err: storage.ErrCheckConstraintViolation}
+	svc := &mockUpdater{getOut: existingDV(103), err: storage.ErrCheckConstraintViolation}
 	req := authedRequest(http.MethodPatch, "/duty-violations/5", validCreateBody(), 1)
 	req = withID(req, "5")
 	rec := httptest.NewRecorder()
@@ -336,9 +462,14 @@ func TestEdit_CheckConstraintViolation_400(t *testing.T) {
 	}
 }
 
-func TestEdit_OrgAccessDenied(t *testing.T) {
-	svc := &mockUpdater{out: &dvmodel.DutyViolation{ID: 5}}
-	req := httptest.NewRequest(http.MethodPatch, "/duty-violations/5", strings.NewReader(validCreateBody()))
+// IDOR defense: caller's claims grant org 50; the EXISTING record belongs
+// to org 999. Even though the request body says organization_id=103 (which
+// they also don't own), the handler must reject based on the existing
+// org, NOT the body. Update MUST NOT be called.
+func TestEdit_IDOR_PreReadDeniesForForeignOrg(t *testing.T) {
+	svc := &mockUpdater{getOut: existingDV(999)}
+	req := httptest.NewRequest(http.MethodPatch, "/duty-violations/5",
+		strings.NewReader(validCreateBody()))
 	req = req.WithContext(mwauth.ContextWithClaims(req.Context(),
 		&token.Claims{UserID: 1, Roles: []string{"reservoir"}, OrganizationIDs: []int64{50}}))
 	req = withID(req, "5")
@@ -348,12 +479,54 @@ func TestEdit_OrgAccessDenied(t *testing.T) {
 	if rec.Code != http.StatusForbidden {
 		t.Errorf("status: want 403, got %d", rec.Code)
 	}
+	if svc.updateCalled {
+		t.Errorf("Update must not run when pre-read fails the org check")
+	}
+}
+
+// IDOR via reassignment: caller owns the existing record's org (50) but
+// tries to MOVE the record to org 999 they don't own. Must reject — even
+// though the caller is allowed to read+edit the record in its current org.
+func TestEdit_IDOR_RejectsTransferToForeignOrg(t *testing.T) {
+	svc := &mockUpdater{getOut: existingDV(50)}
+	body := strings.Replace(validCreateBody(), `"organization_id": 103`, `"organization_id": 999`, 1)
+	req := httptest.NewRequest(http.MethodPatch, "/duty-violations/5", strings.NewReader(body))
+	req = req.WithContext(mwauth.ContextWithClaims(req.Context(),
+		&token.Claims{UserID: 1, Roles: []string{"reservoir"}, OrganizationIDs: []int64{50}}))
+	req = withID(req, "5")
+	rec := httptest.NewRecorder()
+	Edit(quietLog(), svc)(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("status: want 403, got %d", rec.Code)
+	}
+	if svc.updateCalled {
+		t.Errorf("Update must not run when transfer target is foreign")
+	}
+}
+
+// sc role can reassign freely — they have access to every org. Sanity
+// check that the IDOR guard doesn't accidentally block privileged users.
+func TestEdit_SCCanReassign(t *testing.T) {
+	svc := &mockUpdater{
+		getOut: existingDV(50),
+		out:    &dvmodel.DutyViolation{ID: 5, OrganizationID: 999},
+	}
+	body := strings.Replace(validCreateBody(), `"organization_id": 103`, `"organization_id": 999`, 1)
+	req := authedRequest(http.MethodPatch, "/duty-violations/5", body, 1)
+	req = withID(req, "5")
+	rec := httptest.NewRecorder()
+	Edit(quietLog(), svc)(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("sc must be able to reassign: status %d, body %s", rec.Code, rec.Body.String())
+	}
 }
 
 // --- DELETE /duty-violations/{id} ---
 
 func TestDelete_HappyPath(t *testing.T) {
-	svc := &mockDeleter{}
+	svc := &mockDeleter{getOut: existingDV(103)}
 	req := authedRequest(http.MethodDelete, "/duty-violations/5", "", 1)
 	req = withID(req, "5")
 	rec := httptest.NewRecorder()
@@ -362,10 +535,14 @@ func TestDelete_HappyPath(t *testing.T) {
 	if rec.Code != http.StatusNoContent {
 		t.Errorf("status: want 204, got %d", rec.Code)
 	}
+	if !svc.deleteCalled {
+		t.Errorf("Delete must run on happy path")
+	}
 }
 
-func TestDelete_NotFound(t *testing.T) {
-	svc := &mockDeleter{err: storage.ErrNotFound}
+// Pre-read ErrNotFound surfaces as 404 — Delete is not attempted.
+func TestDelete_NotFoundOnPreRead(t *testing.T) {
+	svc := &mockDeleter{getErr: storage.ErrNotFound}
 	req := authedRequest(http.MethodDelete, "/duty-violations/9999", "", 1)
 	req = withID(req, "9999")
 	rec := httptest.NewRecorder()
@@ -373,6 +550,9 @@ func TestDelete_NotFound(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("status: want 404, got %d", rec.Code)
+	}
+	if svc.deleteCalled {
+		t.Errorf("Delete must not run when pre-read fails")
 	}
 }
 
@@ -389,7 +569,7 @@ func TestDelete_BadID(t *testing.T) {
 }
 
 func TestDelete_ServiceError_500(t *testing.T) {
-	svc := &mockDeleter{err: errors.New("db down")}
+	svc := &mockDeleter{getOut: existingDV(103), err: errors.New("db down")}
 	req := authedRequest(http.MethodDelete, "/duty-violations/5", "", 1)
 	req = withID(req, "5")
 	rec := httptest.NewRecorder()
@@ -397,5 +577,24 @@ func TestDelete_ServiceError_500(t *testing.T) {
 
 	if rec.Code != http.StatusInternalServerError {
 		t.Errorf("status: want 500, got %d", rec.Code)
+	}
+}
+
+// IDOR defense: a caller targeting a record they don't own gets 403 and
+// the row is NOT deleted.
+func TestDelete_IDOR_RejectsForeignOrg(t *testing.T) {
+	svc := &mockDeleter{getOut: existingDV(999)}
+	req := httptest.NewRequest(http.MethodDelete, "/duty-violations/5", nil)
+	req = req.WithContext(mwauth.ContextWithClaims(req.Context(),
+		&token.Claims{UserID: 1, Roles: []string{"reservoir"}, OrganizationIDs: []int64{50}}))
+	req = withID(req, "5")
+	rec := httptest.NewRecorder()
+	Delete(quietLog(), svc)(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("status: want 403, got %d", rec.Code)
+	}
+	if svc.deleteCalled {
+		t.Errorf("Delete must NOT run for foreign org")
 	}
 }
