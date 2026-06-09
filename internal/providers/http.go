@@ -23,6 +23,7 @@ import (
 	hrmvacation "srmt-admin/internal/lib/service/hrm/vacation"
 	"srmt-admin/internal/lib/service/dayrotation"
 	dischargesvc "srmt-admin/internal/lib/service/discharge"
+	dutyviolationssvc "srmt-admin/internal/lib/service/dutyviolations"
 	gesreportsvc "srmt-admin/internal/lib/service/ges-report"
 	"srmt-admin/internal/lib/service/metrics"
 	"srmt-admin/internal/lib/service/reservoir"
@@ -81,6 +82,7 @@ type AppContainer struct {
 	DayRotationService     *dayrotation.Service
 	GESReportService       *gesreportsvc.Service
 	DischargeService       *dischargesvc.Service
+	DutyViolationsService  *dutyviolationssvc.Service
 	SelService             *selsvc.Service
 }
 
@@ -117,6 +119,7 @@ func ProvideAppContainer(
 	dayRotationSvc *dayrotation.Service,
 	gesReportSvc *gesreportsvc.Service,
 	dischargeSvc *dischargesvc.Service,
+	dutyViolationsSvc *dutyviolationssvc.Service,
 	selSvc *selsvc.Service,
 ) *AppContainer {
 	return &AppContainer{
@@ -151,6 +154,7 @@ func ProvideAppContainer(
 		DayRotationService:     dayRotationSvc,
 		GESReportService:       gesReportSvc,
 		DischargeService:       dischargeSvc,
+		DutyViolationsService:  dutyViolationsSvc,
 		SelService:             selSvc,
 	}
 }
@@ -185,6 +189,7 @@ func ProvideRouter(
 	reservoirHourlySvc *reservoirhourly.Service,
 	gesReportSvc *gesreportsvc.Service,
 	dischargeSvc *dischargesvc.Service,
+	dutyViolationsSvc *dutyviolationssvc.Service,
 	selSvc *selsvc.Service,
 ) *chi.Mux {
 	r := chi.NewRouter()
@@ -227,6 +232,7 @@ func ProvideRouter(
 		ReservoirHourlyService:     reservoirHourlySvc,
 		GESReportService:           gesReportSvc,
 		DischargeService:           dischargeSvc,
+		DutyViolationsService:      dutyViolationsSvc,
 		SelService:                 selSvc,
 	}
 
