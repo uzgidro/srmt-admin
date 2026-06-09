@@ -84,6 +84,7 @@ import (
 	hrmTimesheetHandler "srmt-admin/internal/http-server/handlers/hrm/timesheet"
 	hrmTrainingHandler "srmt-admin/internal/http-server/handlers/hrm/training"
 	hrmVacationHandler "srmt-admin/internal/http-server/handlers/hrm/vacation"
+	dutyviolationshandler "srmt-admin/internal/http-server/handlers/duty-violations"
 	incidentsHandler "srmt-admin/internal/http-server/handlers/incidents-handler"
 	setIndicator "srmt-admin/internal/http-server/handlers/indicators/set"
 	"srmt-admin/internal/http-server/handlers/instructions"
@@ -164,6 +165,7 @@ import (
 	"srmt-admin/internal/http-server/middleware/devonly"
 	"srmt-admin/internal/lib/service/alarm"
 	dischargesvc "srmt-admin/internal/lib/service/discharge"
+	dutyviolationssvc "srmt-admin/internal/lib/service/dutyviolations"
 	dischargeExcelGen "srmt-admin/internal/lib/service/excel/discharge"
 	excelgen "srmt-admin/internal/lib/service/excel/reservoir-summary"
 	reservoirHourlyExcelGen "srmt-admin/internal/lib/service/excel/reservoir-summary-hourly"
@@ -237,6 +239,7 @@ type AppDependencies struct {
 	ReservoirHourlyService     *reservoirhourly.Service
 	GESReportService           *gesreportsvc.Service
 	DischargeService           *dischargesvc.Service
+	DutyViolationsService      *dutyviolationssvc.Service
 	SelService                 *selsvc.Service
 }
 
@@ -485,6 +488,13 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 			r.Post("/incidents", incidentsHandler.Add(deps.Log, deps.PgRepo))
 			r.Patch("/incidents/{id}", incidentsHandler.Edit(deps.Log, deps.PgRepo))
 			r.Delete("/incidents/{id}", incidentsHandler.Delete(deps.Log, deps.PgRepo))
+
+			// Duty-officer violations (прогулы дежурных): file-attached CRUD,
+			// service-layer orchestrates record↔files invariants.
+			r.Get("/duty-violations", dutyviolationshandler.List(deps.Log, deps.DutyViolationsService))
+			r.Post("/duty-violations", dutyviolationshandler.Add(deps.Log, deps.DutyViolationsService))
+			r.Patch("/duty-violations/{id}", dutyviolationshandler.Edit(deps.Log, deps.DutyViolationsService))
+			r.Delete("/duty-violations/{id}", dutyviolationshandler.Delete(deps.Log, deps.DutyViolationsService))
 
 			r.Get("/past-events", pastEventsHandler.Get(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
 			r.Get("/past-events/by-type", pastEventsHandler.GetByType(deps.Log, deps.PgRepo, deps.MinioRepo, loc))
