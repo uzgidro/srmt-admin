@@ -66,10 +66,14 @@ func (r *Repo) AddDutyViolationWithFiles(ctx context.Context, req dvmodel.Create
 }
 
 
-// GetDutyViolations returns rows matching the optional filter, newest first.
-// Attached files are loaded with a per-row follow-up query (N+1 by design;
-// these reports are short-lived list views, not high-throughput).
-func (r *Repo) GetDutyViolations(ctx context.Context, f dvmodel.ListFilter) ([]*dvmodel.DutyViolation, error) {
+// GetDutyViolations returns matching records grouped by organization.
+// Groups are sorted by org name ASC; records within a group are newest
+// first. The SQL itself orders by (o.name ASC, start_time DESC, id DESC)
+// so a single linear scan is enough to build the groups in order.
+//
+// Files for each record are loaded with a per-row follow-up query (N+1
+// by design — these reports are short-lived list views, not high-throughput).
+func (r *Repo) GetDutyViolations(ctx context.Context, f dvmodel.ListFilter) ([]dvmodel.OrgGroup, error) {
 	const op = "storage.repo.GetDutyViolations"
 
 	query, args := buildDutyViolationsListQuery(f)
@@ -80,26 +84,41 @@ func (r *Repo) GetDutyViolations(ctx context.Context, f dvmodel.ListFilter) ([]*
 	}
 	defer rows.Close()
 
-	result := make([]*dvmodel.DutyViolation, 0)
+	// Stream-group: SQL emits rows already grouped by org (ORDER BY o.name),
+	// so we just append to the trailing group while org_id is unchanged.
+	groups := make([]dvmodel.OrgGroup, 0)
 	for rows.Next() {
 		dv, err := scanDutyViolationRow(rows)
 		if err != nil {
 			return nil, fmt.Errorf("%s: scan: %w", op, err)
 		}
-		result = append(result, dv)
+		if n := len(groups); n > 0 && groups[n-1].ID == dv.OrganizationID {
+			groups[n-1].Violations = append(groups[n-1].Violations, *dv)
+			continue
+		}
+		groups = append(groups, dvmodel.OrgGroup{
+			ID:         dv.OrganizationID,
+			Name:       dv.OrganizationName,
+			Violations: []dvmodel.DutyViolation{*dv},
+		})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("%s: rows: %w", op, err)
 	}
 
-	for _, dv := range result {
-		files, err := r.loadDutyViolationFiles(ctx, dv.ID)
-		if err != nil {
-			return nil, fmt.Errorf("%s: load files for %d: %w", op, dv.ID, err)
+	// Load files per record. Indexed loop so we mutate the slice element
+	// in place; ranging by value would make Files writes invisible.
+	for gi := range groups {
+		for vi := range groups[gi].Violations {
+			files, err := r.loadDutyViolationFiles(ctx, groups[gi].Violations[vi].ID)
+			if err != nil {
+				return nil, fmt.Errorf("%s: load files for %d: %w",
+					op, groups[gi].Violations[vi].ID, err)
+			}
+			groups[gi].Violations[vi].Files = files
 		}
-		dv.Files = files
 	}
-	return result, nil
+	return groups, nil
 }
 
 // GetDutyViolationByID is the single-row variant used by the service after
@@ -290,7 +309,10 @@ func buildDutyViolationsListQuery(f dvmodel.ListFilter) (string, []any) {
 	if len(conds) > 0 {
 		q += "WHERE " + joinConds(conds)
 	}
-	q += " ORDER BY dv.start_time DESC, dv.id DESC"
+	// org name first → groups arrive contiguously in the row stream, so
+	// GetDutyViolations can group with one linear pass. Within each org
+	// newest-first matches the prior flat-list convention.
+	q += " ORDER BY organization_name ASC, dv.start_time DESC, dv.id DESC"
 	return q, args
 }
 

@@ -73,10 +73,12 @@
 > здесь: для shift-based отчётности один день — это естественная
 > единица, разговор обычно ведётся «что было в смену 08-Jun».
 >
-> **Breaking change vs предыдущей версии:** ранее эндпоинт принимал
-> `?from`/`?to` (диапазон). Теперь — один `?date` (один op-day).
-> Также конверсия UTC midnight → op-day Asia/Tashkent сдвигает границы
-> на ≈5 часов; фронту это и нужно.
+> **Breaking change vs предыдущей версии:** (1) ранее эндпоинт принимал
+> `?from`/`?to` (диапазон) — теперь один `?date` (один op-day).
+> (2) Конверсия UTC midnight → op-day Asia/Tashkent сдвигает границы на
+> ≈5 часов; фронту это и нужно. (3) Shape ответа изменился с
+> `DutyViolation[]` на `DutyViolationOrgGroup[]` — записи теперь
+> сгруппированы по организации.
 
 ## TypeScript DTO
 
@@ -104,6 +106,15 @@ interface DutyViolation {
   updated_at: string;
 }
 
+// GET /duty-violations возвращает записи, СГРУППИРОВАННЫЕ по организации.
+// Группы отсортированы по name ASC; внутри каждой группы записи
+// отсортированы по start_time DESC (свежие сверху), затем id DESC.
+interface DutyViolationOrgGroup {
+  id: number;                    // organization_id
+  name: string;                  // organization_name
+  violations: DutyViolation[];   // ≥1 запись (пустых групп бэк не отдаёт)
+}
+
 interface CreateDutyViolationRequest {
   organization_id: number;   // > 0
   start_time: string;        // ISO 8601
@@ -121,7 +132,7 @@ type UpdateDutyViolationRequest = CreateDutyViolationRequest;
 | Эндпоинт | Успех | Ошибки |
 |---|---|---|
 | `POST` | `200` + `DutyViolation` | `400` invalid JSON / validation, `401` not auth, `403` foreign org, `422` org/file не существует, `500` server |
-| `GET` | `200` + `DutyViolation[]` | `400` invalid filters, `500` |
+| `GET` | `200` + `DutyViolationOrgGroup[]` (записи сгруппированы по организации) | `400` invalid filters, `500` |
 | `PATCH` | `200` + обновлённый `DutyViolation` | `400`, `403`, `404` not found, `422`, `500` |
 | `DELETE` | `204` + `{"status":"Deleted"}` | `400` invalid id, `404`, `500` |
 
@@ -178,14 +189,34 @@ Content-Type: application/json
 
 ### Список с фильтрами
 
+Записи возвращаются **сгруппированными по организации** (как у idle
+discharges по каскадам — `cascade → hpps → discharges`, но без cascade-
+уровня; группировка плоская: `org → violations`).
+
 ```http
-GET /duty-violations?organization_id=103&date=2026-06-08
+GET /duty-violations?date=2026-06-08
 → 200 OK
 [
-  { "id": 7, "organization_id": 103, ... },
-  { "id": 3, "organization_id": 103, ... }
+  {
+    "id": 100,
+    "name": "Андижон ГЭС",
+    "violations": [
+      { "id": 7, "organization_id": 100, "duty_officer_name": "Иванов И.И.", ... },
+      { "id": 3, "organization_id": 100, "duty_officer_name": "Петров П.П.", ... }
+    ]
+  },
+  {
+    "id": 103,
+    "name": "Пском",
+    "violations": [
+      { "id": 5, "organization_id": 103, ... }
+    ]
+  }
 ]
 ```
+
+Если задан фильтр `?organization_id=103` — массив всё равно групповой,
+просто содержит ≤1 группу.
 
 ### Обновление — добавить ещё один файл
 

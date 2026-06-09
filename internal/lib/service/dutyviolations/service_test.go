@@ -29,7 +29,7 @@ type mockRepo struct {
 	deleteErr   error
 	deleteCalls int
 
-	listResult    []*dvmodel.DutyViolation
+	listResult    []dvmodel.OrgGroup
 	listErr       error
 	listGotFilter dvmodel.ListFilter
 }
@@ -47,7 +47,7 @@ func (m *mockRepo) UpdateDutyViolationWithFiles(_ context.Context, _ int64, req 
 	return m.updateErr
 }
 
-func (m *mockRepo) GetDutyViolations(_ context.Context, f dvmodel.ListFilter) ([]*dvmodel.DutyViolation, error) {
+func (m *mockRepo) GetDutyViolations(_ context.Context, f dvmodel.ListFilter) ([]dvmodel.OrgGroup, error) {
 	m.listGotFilter = f
 	return m.listResult, m.listErr
 }
@@ -214,16 +214,21 @@ func TestDelete_PassesThrough(t *testing.T) {
 	}
 }
 
-func TestList_PassesFilterUnchanged(t *testing.T) {
+// List is a pass-through: filter goes to the repo unchanged, the OrgGroup
+// payload comes back as-is. Tests both halves with a 2-group fixture.
+func TestList_PassesFilterAndReturnsGroups(t *testing.T) {
 	orgID := int64(7)
-	repo := &mockRepo{listResult: []*dvmodel.DutyViolation{{ID: 1}, {ID: 2}}}
+	repo := &mockRepo{listResult: []dvmodel.OrgGroup{
+		{ID: 7, Name: "Андижон", Violations: []dvmodel.DutyViolation{{ID: 1}, {ID: 2}}},
+		{ID: 8, Name: "Чарвак", Violations: []dvmodel.DutyViolation{{ID: 3}}},
+	}}
 	svc := NewService(repo)
 	got, err := svc.List(context.Background(), dvmodel.ListFilter{OrganizationID: &orgID})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	if len(got) != 2 {
-		t.Errorf("want 2 rows, got %d", len(got))
+	if len(got) != 2 || got[0].ID != 7 || got[1].ID != 8 {
+		t.Errorf("groups not forwarded: %+v", got)
 	}
 	if repo.listGotFilter.OrganizationID == nil || *repo.listGotFilter.OrganizationID != 7 {
 		t.Errorf("filter not forwarded correctly: %+v", repo.listGotFilter)
