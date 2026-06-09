@@ -53,8 +53,12 @@ type UpdateRequest struct {
 // ListFilter holds optional query-string filters for the GET list endpoint.
 // All fields are nil when not provided; the repo composes a dynamic WHERE
 // clause from the non-nil ones.
+//
+// Day is the operational day (anchored at 05:00 local time, Asia/Tashkent).
+// The repo translates it to a half-open `[Day, Day+24h)` window — matching
+// incidents/visits/shutdowns. A nil Day means "no day filter at all" (used
+// when listing without a date param).
 type ListFilter struct {
 	OrganizationID *int64
-	From           *time.Time
-	To             *time.Time
+	Day            *time.Time
 }

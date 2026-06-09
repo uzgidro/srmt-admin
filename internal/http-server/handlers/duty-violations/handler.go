@@ -125,7 +125,7 @@ func Add(log *slog.Logger, svc ServiceCreator) http.HandlerFunc {
 	}
 }
 
-// --- GET /duty-violations?organization_id=N&from=YYYY-MM-DD&to=YYYY-MM-DD ---
+// --- GET /duty-violations?organization_id=N&date=YYYY-MM-DD ---
 
 // List accepts loc *time.Location so date filters can be interpreted as
 // operational days (05:00 local boundary) instead of raw UTC midnight —
@@ -375,14 +375,17 @@ func parseIDParam(r *http.Request) (int64, error) {
 	return id, nil
 }
 
-// parseListFilter reads the optional ?organization_id, ?from and ?to query
-// parameters. Dates are interpreted as operational days (05:00 local
-// boundary, Asia/Tashkent by default — same as incidents/discharges).
+// parseListFilter reads the optional ?organization_id and ?date query
+// parameters. The convention matches incidents/visits/shutdowns:
 //
-// The to-boundary is the start of the day AFTER `to`, so the repo can
-// filter as `start_time < to` (half-open interval). That convention is
-// shared with `cutoffs.Compute` — a record landing exactly on the cutoff
-// belongs to the next op-day, not the previous one.
+//   - ?date=YYYY-MM-DD picks one operational day (05:00 local..05:00 next
+//     day local, Asia/Tashkent by default). The repo handles the +24h
+//     end-of-window itself.
+//   - Omitting ?date returns ALL records (no day filter at all). Callers
+//     who want "today" pass the explicit date — same as incidents.
+//
+// No range support here on purpose: duty-officer violations are reported
+// per-shift, a single day is the natural granularity.
 func parseListFilter(r *http.Request, loc *time.Location) (dvmodel.ListFilter, error) {
 	var f dvmodel.ListFilter
 	q := r.URL.Query()
@@ -394,23 +397,14 @@ func parseListFilter(r *http.Request, loc *time.Location) (dvmodel.ListFilter, e
 		}
 		f.OrganizationID = &v
 	}
-	if s := q.Get("from"); s != "" {
+	if s := q.Get("date"); s != "" {
 		t, err := time.ParseInLocation("2006-01-02", s, loc)
 		if err != nil {
-			return f, errors.New("invalid from date, expected YYYY-MM-DD")
+			return f, errors.New("invalid date, expected YYYY-MM-DD")
 		}
 		// День начинается в 05:00 местного времени.
-		start := time.Date(t.Year(), t.Month(), t.Day(), 5, 0, 0, 0, loc)
-		f.From = &start
-	}
-	if s := q.Get("to"); s != "" {
-		t, err := time.ParseInLocation("2006-01-02", s, loc)
-		if err != nil {
-			return f, errors.New("invalid to date, expected YYYY-MM-DD")
-		}
-		// День заканчивается в 05:00 локального времени следующего дня.
-		end := time.Date(t.Year(), t.Month(), t.Day(), 5, 0, 0, 0, loc).Add(24 * time.Hour)
-		f.To = &end
+		day := time.Date(t.Year(), t.Month(), t.Day(), 5, 0, 0, 0, loc)
+		f.Day = &day
 	}
 	return f, nil
 }

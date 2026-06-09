@@ -260,67 +260,54 @@ func TestList_HappyPath_NoFilters(t *testing.T) {
 	}
 }
 
-// Confirms the handler forwards org_id, from and to to the service intact.
-// from=2026-06-01 → 2026-06-01T05:00 Tashkent (start of operational day).
-// to=2026-06-30 → 2026-07-01T05:00 Tashkent (start of the day AFTER to,
-// since the repo uses a half-open `start_time < $to` filter).
+// Confirms the handler forwards org_id and date to the service.
+// date=2026-06-08 → Day = 2026-06-08T05:00 Tashkent (start of op-day).
+// The repo handles the +24h end-of-window.
 func TestList_ForwardsAllFilters(t *testing.T) {
 	svc := &mockLister{out: nil}
 	req := authedRequest(http.MethodGet,
-		"/duty-violations?organization_id=42&from=2026-06-01&to=2026-06-30", "", 1)
+		"/duty-violations?organization_id=42&date=2026-06-08", "", 1)
 	rec := httptest.NewRecorder()
 	List(quietLog(), svc, tashkentLoc)(rec, req)
 
 	if svc.got.OrganizationID == nil || *svc.got.OrganizationID != 42 {
 		t.Errorf("org filter not forwarded: %+v", svc.got)
 	}
-	wantFrom := time.Date(2026, 6, 1, 5, 0, 0, 0, tashkentLoc)
-	if svc.got.From == nil || !svc.got.From.Equal(wantFrom) {
-		t.Errorf("from filter wrong: want %v, got %v", wantFrom, svc.got.From)
-	}
-	wantTo := time.Date(2026, 7, 1, 5, 0, 0, 0, tashkentLoc)
-	if svc.got.To == nil || !svc.got.To.Equal(wantTo) {
-		t.Errorf("to filter wrong: want %v, got %v", wantTo, svc.got.To)
+	wantDay := time.Date(2026, 6, 8, 5, 0, 0, 0, tashkentLoc)
+	if svc.got.Day == nil || !svc.got.Day.Equal(wantDay) {
+		t.Errorf("date filter wrong: want %v, got %v", wantDay, svc.got.Day)
 	}
 }
 
-// Single-day filter: from=to=2026-06-08 must cover ALL 24h of that op-day
-// (05:00 08-Jun → 05:00 09-Jun, both local time). A record at 04:30 on
-// 09-Jun belongs to op-day 08-Jun and MUST be included.
-func TestList_SingleDayRange_CoversFullOpDay(t *testing.T) {
+// Op-day anchor uses the configured timezone, not UTC. ?date=2026-06-08
+// with Asia/Tashkent loc must yield 00:00 UTC of that calendar date
+// (05:00 local = 00:00 UTC). Regression guard against re-introducing
+// time.Parse, which would silently produce midnight UTC.
+func TestList_DateUsesLocationNotUTC(t *testing.T) {
 	svc := &mockLister{out: nil}
-	req := authedRequest(http.MethodGet,
-		"/duty-violations?from=2026-06-08&to=2026-06-08", "", 1)
+	req := authedRequest(http.MethodGet, "/duty-violations?date=2026-06-08", "", 1)
 	rec := httptest.NewRecorder()
 	List(quietLog(), svc, tashkentLoc)(rec, req)
 
-	wantFrom := time.Date(2026, 6, 8, 5, 0, 0, 0, tashkentLoc)
-	wantTo := time.Date(2026, 6, 9, 5, 0, 0, 0, tashkentLoc)
-	if svc.got.From == nil || !svc.got.From.Equal(wantFrom) {
-		t.Errorf("from: want %v, got %v", wantFrom, svc.got.From)
-	}
-	if svc.got.To == nil || !svc.got.To.Equal(wantTo) {
-		t.Errorf("to: want %v, got %v", wantTo, svc.got.To)
-	}
-	if diff := svc.got.To.Sub(*svc.got.From); diff != 24*time.Hour {
-		t.Errorf("single-day op-day must span 24h, got %v", diff)
-	}
-}
-
-// Op-day uses the configured timezone, not UTC. A request for from=2026-06-08
-// with Asia/Tashkent loc must yield 00:00 UTC on the date, NOT 05:00 UTC.
-// This is the primary regression guard against accidentally re-introducing
-// time.Parse (which would interpret the date as UTC midnight).
-func TestList_FromUsesLocationNotUTC(t *testing.T) {
-	svc := &mockLister{out: nil}
-	req := authedRequest(http.MethodGet, "/duty-violations?from=2026-06-08", "", 1)
-	rec := httptest.NewRecorder()
-	List(quietLog(), svc, tashkentLoc)(rec, req)
-
-	// 2026-06-08T05:00:00+05:00 == 2026-06-08T00:00:00Z.
 	wantUTC := time.Date(2026, 6, 8, 0, 0, 0, 0, time.UTC)
-	if svc.got.From == nil || !svc.got.From.UTC().Equal(wantUTC) {
-		t.Errorf("from in UTC: want %v, got %v", wantUTC, svc.got.From.UTC())
+	if svc.got.Day == nil || !svc.got.Day.UTC().Equal(wantUTC) {
+		t.Errorf("date in UTC: want %v, got %v", wantUTC, svc.got.Day.UTC())
+	}
+}
+
+// Without ?date the handler forwards a nil Day filter — the repo then
+// returns every record. Matches the contract used by the project's other
+// list endpoints (incidents/visits also default to "no day filter" when
+// the parameter is missing inside the handler, before the handler's own
+// fallback kicks in).
+func TestList_NoDateForwardsNilDay(t *testing.T) {
+	svc := &mockLister{out: nil}
+	req := authedRequest(http.MethodGet, "/duty-violations", "", 1)
+	rec := httptest.NewRecorder()
+	List(quietLog(), svc, tashkentLoc)(rec, req)
+
+	if svc.got.Day != nil {
+		t.Errorf("missing ?date must NOT set Day filter, got %v", svc.got.Day)
 	}
 }
 
