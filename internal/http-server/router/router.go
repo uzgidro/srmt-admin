@@ -491,7 +491,7 @@ func SetupRoutes(router *chi.Mux, deps *AppDependencies) {
 
 			// Duty-officer violations (прогулы дежурных): file-attached CRUD,
 			// service-layer orchestrates record↔files invariants.
-			r.Get("/duty-violations", dutyviolationshandler.List(deps.Log, deps.DutyViolationsService))
+			r.Get("/duty-violations", dutyviolationshandler.List(deps.Log, deps.DutyViolationsService, loc))
 			r.Post("/duty-violations", dutyviolationshandler.Add(deps.Log, deps.DutyViolationsService))
 			r.Patch("/duty-violations/{id}", dutyviolationshandler.Edit(deps.Log, deps.DutyViolationsService))
 			r.Delete("/duty-violations/{id}", dutyviolationshandler.Delete(deps.Log, deps.DutyViolationsService))

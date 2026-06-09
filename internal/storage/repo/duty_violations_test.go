@@ -38,16 +38,22 @@ func TestBuildDutyViolationsListQuery_FiltersByOrg(t *testing.T) {
 	}
 }
 
+// The handler converts ?to=YYYY-MM-DD into the start of the NEXT op-day
+// (05:00 the day after), so the repo uses a half-open `start_time < $to`
+// filter. A `<=` here would double-count records on the cutoff.
 func TestBuildDutyViolationsListQuery_FiltersByDateRange(t *testing.T) {
-	from := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
-	to := time.Date(2026, 6, 30, 23, 59, 59, 0, time.UTC)
+	from := time.Date(2026, 6, 1, 5, 0, 0, 0, time.UTC)
+	to := time.Date(2026, 7, 1, 5, 0, 0, 0, time.UTC)
 	q, args := buildDutyViolationsListQuery(dvmodel.ListFilter{From: &from, To: &to})
 
 	if !strings.Contains(q, "dv.start_time >= $1") {
 		t.Errorf("from-filter missing: %s", q)
 	}
-	if !strings.Contains(q, "dv.start_time <= $2") {
-		t.Errorf("to-filter missing: %s", q)
+	if !strings.Contains(q, "dv.start_time < $2") {
+		t.Errorf("to-filter must use half-open `< $2`, got: %s", q)
+	}
+	if strings.Contains(q, "dv.start_time <= $") {
+		t.Errorf("legacy inclusive `<=` filter must not appear: %s", q)
 	}
 	if len(args) != 2 {
 		t.Errorf("want 2 args, got %d", len(args))

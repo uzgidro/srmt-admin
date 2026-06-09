@@ -282,7 +282,10 @@ func buildDutyViolationsListQuery(f dvmodel.ListFilter) (string, []any) {
 		add("dv.start_time >= $%d", *f.From)
 	}
 	if f.To != nil {
-		add("dv.start_time <= $%d", *f.To)
+		// Half-open interval [from, to): the handler set To = (day+1)@05:00,
+		// so a record landing exactly on the cutoff belongs to the NEXT
+		// op-day. Matches cutoffs.Compute() semantics.
+		add("dv.start_time < $%d", *f.To)
 	}
 	if len(conds) > 0 {
 		q += "WHERE " + joinConds(conds)
