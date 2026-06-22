@@ -82,7 +82,7 @@ func GetExport(log *slog.Logger, pgRepo *repo.Repo, fetcher staticDataFetcher, g
 		if err != nil {
 			log.Error("failed to fetch dataAtDayBegin", sl.Err(err))
 		}
-		applyStaticFallbacks(r.Context(), log, data, dataAtDayBegin, pgRepo)
+		applyStaticFallbacks(r.Context(), log, data, dataAtDayBegin, pgRepo, MapConfigLookup{})
 
 		// Get author short name from JWT claims
 		var authorShort string

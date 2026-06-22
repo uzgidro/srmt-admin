@@ -70,7 +70,7 @@ func Get(log *slog.Logger, getter reservoirSummaryGetter, fetcher staticDataFetc
 			log.Error("failed to fetch dataAtDayBegin", sl.Err(err))
 		}
 
-		applyStaticFallbacks(r.Context(), log, summaries, dataAtDayBegin, getter)
+		applyStaticFallbacks(r.Context(), log, summaries, dataAtDayBegin, getter, MapConfigLookup{})
 
 		summaries = filterSummariesForCaller(r.Context(), summaries)
 
