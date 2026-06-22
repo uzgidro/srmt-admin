@@ -26,11 +26,13 @@ type mockSummaryGetter struct {
 	curveVolume float64
 	curveErr    error
 
-	// Reservoir-summary config — drives modsnow_enabled masking in
-	// applyStaticFallbacks. Default empty slice = no config row for any
-	// org, which leaves Modsnow values untouched (matches legacy behaviour
-	// of every test written before the masking gate landed).
-	configs []reservoirsummary.ReservoirSummaryConfig
+	// Reservoir-summary config — drives both modsnow_enabled masking and the
+	// volume_source strategy switch in applyStaticFallbacks. Default empty
+	// slice = no config row for any org (legacy behaviour: Modsnow untouched,
+	// volume resolution falls back to the "static" path). configsErr lets a
+	// test exercise the degraded-on-fetch-failure path explicitly.
+	configs    []reservoirsummary.ReservoirSummaryConfig
+	configsErr error
 }
 
 func (m *mockSummaryGetter) GetReservoirSummary(_ context.Context, _ string) ([]*reservoirsummary.ResponseModel, error) {
@@ -43,7 +45,7 @@ func (m *mockSummaryGetter) GetVolumeByLevelByOrg(_ context.Context, orgID int64
 }
 
 func (m *mockSummaryGetter) GetAllReservoirSummaryConfigs(_ context.Context) ([]reservoirsummary.ReservoirSummaryConfig, error) {
-	return m.configs, nil
+	return m.configs, m.configsErr
 }
 
 type mockStaticDataFetcher struct {
@@ -644,6 +646,53 @@ func TestGet_ModsnowPreservedWhenEnabled(t *testing.T) {
 	}
 	if result[0].Modsnow.YearAgo != 11 {
 		t.Errorf("Modsnow.YearAgo: want 11 (preserved), got %v", result[0].Modsnow.YearAgo)
+	}
+}
+
+// End-to-end: when the config row says volume_source=level_volume, the
+// handler must load the configs from the repo and forward them into
+// applyStaticFallbacks so the curve wins over the DB snapshot. Without
+// this wiring, Get would still pass an empty MapConfigLookup and the
+// strategy switch would silently fall back to "static" for every org.
+func TestGet_VolumeSourceLevelVolume_E2E(t *testing.T) {
+	orgID := int64(96)
+
+	getter := &mockSummaryGetter{
+		summaries: []*reservoirsummary.ResponseModel{
+			{
+				OrganizationID: ptrInt64(orgID),
+				Level:          reservoirsummary.ValueResponse{Current: 200},
+				Volume:         reservoirsummary.ValueResponse{Current: 100}, // snapshot the curve must override
+			},
+		},
+		curveVolume: 150,
+		configs: []reservoirsummary.ReservoirSummaryConfig{
+			{ID: 1, OrganizationID: orgID, SortOrder: 1, IncludeInTotal: true, ModsnowEnabled: true, VolumeSource: "level_volume"},
+		},
+	}
+	fetcher := &mockStaticDataFetcher{}
+
+	log := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	req := httptest.NewRequest(http.MethodGet, "/reservoir-summary?date=2025-01-01", nil)
+	req = req.WithContext(mwauth.ContextWithClaims(req.Context(), &token.Claims{Roles: []string{"sc"}}))
+	rec := httptest.NewRecorder()
+	Get(log, getter, fetcher)(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d (body %s)", rec.Code, rec.Body.String())
+	}
+	var got []*reservoirsummary.ResponseModel
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("want 1 row, got %d", len(got))
+	}
+	if got[0].Volume.Current != 150 {
+		t.Errorf("Volume.Current: want 150 (curve, via level_volume strategy), got %v", got[0].Volume.Current)
+	}
+	if got[0].Volume.IsEdited == nil || !*got[0].Volume.IsEdited {
+		t.Errorf("Volume.IsEdited: want true, got %v", got[0].Volume.IsEdited)
 	}
 }
 

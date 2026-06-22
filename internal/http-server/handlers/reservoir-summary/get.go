@@ -20,8 +20,9 @@ import (
 // reservoirSummaryGetter defines the interface for retrieving reservoir
 // summaries. It also provides level→volume curve lookups so the handler can
 // recompute Volume.Current when Volume is missing but Level is known, and
-// the per-org reservoir_summary_config used to mask modsnow values when an
-// org has modsnow_enabled=false.
+// the per-org reservoir_summary_config used both to mask modsnow values
+// (modsnow_enabled=false) and to drive the volume_source strategy switch
+// in applyStaticFallbacks.
 type reservoirSummaryGetter interface {
 	GetReservoirSummary(ctx context.Context, date string) ([]*reservoirsummary.ResponseModel, error)
 	GetAllReservoirSummaryConfigs(ctx context.Context) ([]reservoirsummary.ReservoirSummaryConfig, error)
@@ -73,16 +74,18 @@ func Get(log *slog.Logger, getter reservoirSummaryGetter, fetcher staticDataFetc
 			log.Error("failed to fetch dataAtDayBegin", sl.Err(err))
 		}
 
-		// Load per-org config so applyStaticFallbacks can mask Modsnow for
-		// any org with modsnow_enabled=false. A config fetch failure is
-		// non-fatal — fall back to an empty MapConfigLookup which masks
-		// every org's modsnow (safer than leaking stale data when the
-		// flag was meant to hide it).
+		// Load per-org config: applyStaticFallbacks uses it both to mask
+		// Modsnow for orgs with modsnow_enabled=false AND to drive the
+		// volume_source strategy switch. A fetch failure is non-fatal —
+		// fall back to an empty MapConfigLookup, which masks every org's
+		// modsnow (safer than leaking stale data when the flag was meant
+		// to hide it) and degrades volume resolution to the legacy
+		// "static" path for every org.
 		configs, cfgErr := getter.GetAllReservoirSummaryConfigs(r.Context())
 		if cfgErr != nil {
 			log.Error("failed to load reservoir_summary_config", sl.Err(cfgErr))
 		}
-		configLookup := MapConfigLookup{}
+		configLookup := make(MapConfigLookup, len(configs))
 		for _, c := range configs {
 			configLookup[c.OrganizationID] = c
 		}
