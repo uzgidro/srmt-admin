@@ -445,20 +445,28 @@ ORDER BY sort_position
 
 // --- Reservoir Summary Config CRUD ---
 
+// upsertReservoirSummaryConfigQuery returns the SQL for upserting a
+// reservoir-summary config row. Extracted into a function so structural
+// tests can pin the column list — see reservoir_summary_test.go.
+func upsertReservoirSummaryConfigQuery() string {
+	return `
+		INSERT INTO reservoir_summary_config (organization_id, sort_order, include_in_total, modsnow_enabled)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (organization_id) DO UPDATE SET
+			sort_order = EXCLUDED.sort_order,
+			include_in_total = EXCLUDED.include_in_total,
+			modsnow_enabled = EXCLUDED.modsnow_enabled,
+			updated_at = NOW()`
+}
+
 // UpsertReservoirSummaryConfig inserts or updates a config row. Upsert key
 // is organization_id (UNIQUE in DB).
 func (r *Repo) UpsertReservoirSummaryConfig(ctx context.Context, req reservoirsummary.UpsertReservoirSummaryConfigRequest) error {
 	const op = "storage.repo.UpsertReservoirSummaryConfig"
 
-	const query = `
-		INSERT INTO reservoir_summary_config (organization_id, sort_order, include_in_total)
-		VALUES ($1, $2, $3)
-		ON CONFLICT (organization_id) DO UPDATE SET
-			sort_order = EXCLUDED.sort_order,
-			include_in_total = EXCLUDED.include_in_total,
-			updated_at = NOW()`
-
-	_, err := r.db.ExecContext(ctx, query, req.OrganizationID, req.SortOrder, req.IncludeInTotal)
+	_, err := r.db.ExecContext(ctx, upsertReservoirSummaryConfigQuery(),
+		req.OrganizationID, req.SortOrder, req.IncludeInTotal, req.ModsnowEnabled,
+	)
 	if err != nil {
 		if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
 			return translatedErr
@@ -468,23 +476,28 @@ func (r *Repo) UpsertReservoirSummaryConfig(ctx context.Context, req reservoirsu
 	return nil
 }
 
-// GetAllReservoirSummaryConfigs returns all config rows joined with
-// organization names, ordered by sort_order so the result is render-ready.
-func (r *Repo) GetAllReservoirSummaryConfigs(ctx context.Context) ([]reservoirsummary.ReservoirSummaryConfig, error) {
-	const op = "storage.repo.GetAllReservoirSummaryConfigs"
-
-	const query = `
+// getAllReservoirSummaryConfigsQuery returns the SQL for the full config
+// listing. Function form so structural tests can grep the column list.
+func getAllReservoirSummaryConfigsQuery() string {
+	return `
 		SELECT
 			rsc.id,
 			rsc.organization_id,
 			o.name AS organization_name,
 			rsc.sort_order,
-			rsc.include_in_total
+			rsc.include_in_total,
+			rsc.modsnow_enabled
 		FROM reservoir_summary_config rsc
 		JOIN organizations o ON o.id = rsc.organization_id
 		ORDER BY rsc.sort_order, o.name`
+}
 
-	rows, err := r.db.QueryContext(ctx, query)
+// GetAllReservoirSummaryConfigs returns all config rows joined with
+// organization names, ordered by sort_order so the result is render-ready.
+func (r *Repo) GetAllReservoirSummaryConfigs(ctx context.Context) ([]reservoirsummary.ReservoirSummaryConfig, error) {
+	const op = "storage.repo.GetAllReservoirSummaryConfigs"
+
+	rows, err := r.db.QueryContext(ctx, getAllReservoirSummaryConfigsQuery())
 	if err != nil {
 		return nil, fmt.Errorf("%s: query: %w", op, err)
 	}
@@ -499,6 +512,7 @@ func (r *Repo) GetAllReservoirSummaryConfigs(ctx context.Context) ([]reservoirsu
 			&cfg.OrganizationName,
 			&cfg.SortOrder,
 			&cfg.IncludeInTotal,
+			&cfg.ModsnowEnabled,
 		); err != nil {
 			return nil, fmt.Errorf("%s: scan: %w", op, err)
 		}
@@ -532,30 +546,36 @@ func (r *Repo) DeleteReservoirSummaryConfig(ctx context.Context, organizationID 
 	return nil
 }
 
+// getReservoirSummaryConfigByOrgIDQuery returns the SQL for the single-row
+// lookup. Function form so structural tests can grep the column list.
+func getReservoirSummaryConfigByOrgIDQuery() string {
+	return `
+		SELECT
+			rsc.id,
+			rsc.organization_id,
+			o.name AS organization_name,
+			rsc.sort_order,
+			rsc.include_in_total,
+			rsc.modsnow_enabled
+		FROM reservoir_summary_config rsc
+		JOIN organizations o ON o.id = rsc.organization_id
+		WHERE rsc.organization_id = $1`
+}
+
 // GetReservoirSummaryConfigByOrgID returns one config row by organization_id,
 // or storage.ErrNotFound when nothing matched. Useful for validating that an
 // org is part of the report before writing related data.
 func (r *Repo) GetReservoirSummaryConfigByOrgID(ctx context.Context, orgID int64) (*reservoirsummary.ReservoirSummaryConfig, error) {
 	const op = "storage.repo.GetReservoirSummaryConfigByOrgID"
 
-	const query = `
-		SELECT
-			rsc.id,
-			rsc.organization_id,
-			o.name AS organization_name,
-			rsc.sort_order,
-			rsc.include_in_total
-		FROM reservoir_summary_config rsc
-		JOIN organizations o ON o.id = rsc.organization_id
-		WHERE rsc.organization_id = $1`
-
 	var cfg reservoirsummary.ReservoirSummaryConfig
-	err := r.db.QueryRowContext(ctx, query, orgID).Scan(
+	err := r.db.QueryRowContext(ctx, getReservoirSummaryConfigByOrgIDQuery(), orgID).Scan(
 		&cfg.ID,
 		&cfg.OrganizationID,
 		&cfg.OrganizationName,
 		&cfg.SortOrder,
 		&cfg.IncludeInTotal,
+		&cfg.ModsnowEnabled,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
