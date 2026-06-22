@@ -76,6 +76,39 @@ func TestUpsertConfig_HappyPath(t *testing.T) {
 	}
 }
 
+// TestUpsertConfig_ForwardsModsnowEnabled is a regression guard: the
+// handler is a thin pass-through, so the field is forwarded automatically
+// once it exists on the request struct (added in commit "reservoir-summary:
+// add modsnow_enabled to config"). Pin both branches so a future refactor
+// that introduces request-side defaulting / coercion of the flag can't
+// silently flip the bit on the way to the repo.
+func TestUpsertConfig_ForwardsModsnowEnabled(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{"false explicit", `{"organization_id":42,"sort_order":3,"include_in_total":true,"modsnow_enabled":false}`, false},
+		{"true explicit", `{"organization_id":42,"sort_order":3,"include_in_total":true,"modsnow_enabled":true}`, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &mockConfigUpserter{}
+			req := httptest.NewRequest(http.MethodPost, "/reservoir-summary/config", strings.NewReader(tc.body))
+			rec := httptest.NewRecorder()
+
+			UpsertConfig(quietLog(), repo)(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status: want 200, got %d (body %s)", rec.Code, rec.Body.String())
+			}
+			if repo.gotReq.ModsnowEnabled != tc.want {
+				t.Errorf("ModsnowEnabled forwarded to repo: want %v, got %v (req=%+v)", tc.want, repo.gotReq.ModsnowEnabled, repo.gotReq)
+			}
+		})
+	}
+}
+
 func TestUpsertConfig_InvalidJSON(t *testing.T) {
 	repo := &mockConfigUpserter{}
 	req := httptest.NewRequest(http.MethodPost, "/reservoir-summary/config", strings.NewReader("{not json"))
