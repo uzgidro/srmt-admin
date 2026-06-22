@@ -450,12 +450,13 @@ ORDER BY sort_position
 // tests can pin the column list — see reservoir_summary_test.go.
 func upsertReservoirSummaryConfigQuery() string {
 	return `
-		INSERT INTO reservoir_summary_config (organization_id, sort_order, include_in_total, modsnow_enabled)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO reservoir_summary_config (organization_id, sort_order, include_in_total, modsnow_enabled, volume_source)
+		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (organization_id) DO UPDATE SET
 			sort_order = EXCLUDED.sort_order,
 			include_in_total = EXCLUDED.include_in_total,
 			modsnow_enabled = EXCLUDED.modsnow_enabled,
+			volume_source = EXCLUDED.volume_source,
 			updated_at = NOW()`
 }
 
@@ -465,7 +466,7 @@ func (r *Repo) UpsertReservoirSummaryConfig(ctx context.Context, req reservoirsu
 	const op = "storage.repo.UpsertReservoirSummaryConfig"
 
 	_, err := r.db.ExecContext(ctx, upsertReservoirSummaryConfigQuery(),
-		req.OrganizationID, req.SortOrder, req.IncludeInTotal, req.ModsnowEnabled,
+		req.OrganizationID, req.SortOrder, req.IncludeInTotal, req.ModsnowEnabled, req.VolumeSource,
 	)
 	if err != nil {
 		if translatedErr := r.translator.Translate(err, op); translatedErr != nil {
@@ -486,7 +487,8 @@ func getAllReservoirSummaryConfigsQuery() string {
 			o.name AS organization_name,
 			rsc.sort_order,
 			rsc.include_in_total,
-			rsc.modsnow_enabled
+			rsc.modsnow_enabled,
+			rsc.volume_source
 		FROM reservoir_summary_config rsc
 		JOIN organizations o ON o.id = rsc.organization_id
 		ORDER BY rsc.sort_order, o.name`
@@ -513,6 +515,7 @@ func (r *Repo) GetAllReservoirSummaryConfigs(ctx context.Context) ([]reservoirsu
 			&cfg.SortOrder,
 			&cfg.IncludeInTotal,
 			&cfg.ModsnowEnabled,
+			&cfg.VolumeSource,
 		); err != nil {
 			return nil, fmt.Errorf("%s: scan: %w", op, err)
 		}
@@ -556,7 +559,8 @@ func getReservoirSummaryConfigByOrgIDQuery() string {
 			o.name AS organization_name,
 			rsc.sort_order,
 			rsc.include_in_total,
-			rsc.modsnow_enabled
+			rsc.modsnow_enabled,
+			rsc.volume_source
 		FROM reservoir_summary_config rsc
 		JOIN organizations o ON o.id = rsc.organization_id
 		WHERE rsc.organization_id = $1`
@@ -576,6 +580,7 @@ func (r *Repo) GetReservoirSummaryConfigByOrgID(ctx context.Context, orgID int64
 		&cfg.SortOrder,
 		&cfg.IncludeInTotal,
 		&cfg.ModsnowEnabled,
+		&cfg.VolumeSource,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
