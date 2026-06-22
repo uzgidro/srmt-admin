@@ -32,8 +32,28 @@ func New(overrideDir, template string) *Generator {
 	}
 }
 
-// GenerateExcel creates an Excel file from the template with the specified date
-func (g *Generator) GenerateExcel(date string, data []*reservoirsummarymodel.ResponseModel, authorShortName string) (*excelize.File, error) {
+// GenerateExcel creates an Excel file from the template with the specified date.
+//
+// configByOrgID is the per-org reservoir_summary_config map used to gate
+// optional per-org behaviour. Today it only governs ModsnowEnabled (false →
+// leave the modsnow cell empty), but the map is the long-term seam for
+// any future per-org Excel toggle so we don't need to grow the signature
+// every release.
+//
+// Semantics of configByOrgID:
+//   - nil          → legacy behaviour: render modsnow for every org
+//     (used by filter/manual-comparison exports that haven't been wired
+//     to load the config yet).
+//   - non-nil      → strict config-driven mode: only orgs whose config
+//     has ModsnowEnabled=true get modsnow rendered. Missing key or
+//     ModsnowEnabled=false → cell stays empty. Used by the
+//     /reservoir-summary/export handler.
+func (g *Generator) GenerateExcel(
+	date string,
+	data []*reservoirsummarymodel.ResponseModel,
+	configByOrgID map[int64]reservoirsummarymodel.ReservoirSummaryConfig,
+	authorShortName string,
+) (*excelize.File, error) {
 	// Open template (embedded, with optional override directory)
 	f, err := templates.Open(g.template, g.overrideDir)
 	if err != nil {
@@ -168,23 +188,39 @@ func (g *Generator) GenerateExcel(date string, data []*reservoirsummarymodel.Res
 		set(pastYearIncomingVolumeCells[i], org.IncomingVolumePrevYear)
 	}
 
-	// Populate modsnow data in cells N6-O22 (skip 3rd index element - index 2)
+	// Populate modsnow data in cells N6-O22. Per-org gated by
+	// reservoir_summary_config.modsnow_enabled: false / missing config →
+	// leave the cell empty (previously: hardcoded `if i == 2 { continue }`
+	// for the Сардоба slot). Organisations with OrganizationID==nil are
+	// already filtered out above (ИТОГО row).
 	currentYearModsnowCells := []string{"N6", "N8", "N10", "N12", "N14", "N16", "N18", "N22"}
 	pastYearModsnowCells := []string{"O6", "O8", "O10", "O12", "O14", "O16", "O18", "O22"}
 
-	// Calculate the number of organizations to display for modsnow (skip index 2)
 	maxModsnowIndex := len(filteredData)
 	if maxModsnowIndex > len(currentYearModsnowCells) {
 		maxModsnowIndex = len(currentYearModsnowCells)
 	}
 
-	// Populate cells with modsnow data, skipping index 2
 	for i := 0; i < maxModsnowIndex; i++ {
-		// Sardoba skip modsnow
-		if i == 2 {
+		org := filteredData[i]
+		// nil map → legacy "render everything" path for callers that
+		// haven't been updated to pass per-org config.
+		enabled := true
+		if configByOrgID != nil {
+			enabled = false
+			if org.OrganizationID != nil {
+				if cfg, ok := configByOrgID[*org.OrganizationID]; ok && cfg.ModsnowEnabled {
+					enabled = true
+				}
+			}
+		}
+		if !enabled {
+			// Explicitly clear whatever the template might have had so a
+			// disabled org always shows blank, not stale template data.
+			set(currentYearModsnowCells[i], "")
+			set(pastYearModsnowCells[i], "")
 			continue
 		}
-		org := filteredData[i]
 		set(currentYearModsnowCells[i], org.Modsnow.Current)
 		set(pastYearModsnowCells[i], org.Modsnow.YearAgo)
 	}

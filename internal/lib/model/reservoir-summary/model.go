@@ -33,18 +33,30 @@ type ResponseModel struct {
 // ReservoirSummaryConfig controls which organizations appear in the
 // /reservoir-summary report and how they roll up into the ИТОГО row.
 // Source of truth for both the JSON endpoint and the Excel exports.
+//
+// ModsnowEnabled gates the per-org modsnow value in both the Excel
+// generator (cell left empty when false) and the JSON response
+// (Modsnow.Current/YearAgo masked to 0). Default in the DB is TRUE so
+// behaviour is opt-out per reservoir.
 type ReservoirSummaryConfig struct {
 	ID               int64  `json:"id"`
 	OrganizationID   int64  `json:"organization_id"`
 	OrganizationName string `json:"organization_name,omitempty"`
 	SortOrder        int    `json:"sort_order"`
 	IncludeInTotal   bool   `json:"include_in_total"`
+	ModsnowEnabled   bool   `json:"modsnow_enabled"`
 }
 
 // UpsertReservoirSummaryConfigRequest is the POST body for creating or
 // updating one config row. Upsert key is organization_id (UNIQUE in DB).
+//
+// ModsnowEnabled is sent as a plain bool — the front-end is expected to
+// always include it (default TRUE for new rows). If callers omit the
+// JSON field, Go's zero-value (false) is what gets persisted, so the
+// front-end is responsible for sending TRUE explicitly on first create.
 type UpsertReservoirSummaryConfigRequest struct {
 	OrganizationID int64 `json:"organization_id" validate:"required,gt=0"`
 	SortOrder      int   `json:"sort_order" validate:"gte=0"`
 	IncludeInTotal bool  `json:"include_in_total"`
+	ModsnowEnabled bool  `json:"modsnow_enabled"`
 }

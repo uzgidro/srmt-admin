@@ -92,7 +92,10 @@ func New(
 			return
 		}
 
-		excelFile, err := summaryGen.GenerateExcel(dateStr, summaries, "")
+		// nil config → legacy "render every modsnow" path. /filter/export
+		// hasn't been wired to honour reservoir_summary_config.modsnow_enabled
+		// yet; behaviour identical to pre-modsnow-flag rollout.
+		excelFile, err := summaryGen.GenerateExcel(dateStr, summaries, nil, "")
 		if err != nil {
 			log.Error("failed to generate summary", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)

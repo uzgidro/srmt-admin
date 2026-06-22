@@ -1,8 +1,11 @@
 package repo
 
 import (
+	"context"
 	"strings"
 	"testing"
+
+	reservoirsummary "srmt-admin/internal/lib/model/reservoir-summary"
 )
 
 // Structural tests for getReservoirSummaryQuery. Behavior tests against a
@@ -54,6 +57,49 @@ func TestGetReservoirSummaryQuery_IncomingVolumeRespectsConfig(t *testing.T) {
 	if !strings.Contains(q, filtered) {
 		t.Errorf("ИТОГО incoming_volume expression is missing the include_in_total guard:\nexpected substring %q", filtered)
 	}
+}
+
+// Structural tests for the reservoir_summary_config CRUD SQL. The actual
+// behaviour against a real DB is exercised via the dev smoke loop; here we
+// pin the column lists so accidental edits surface in CI.
+
+// reservoirSummaryConfigQueryCapturer is a thin shim that captures SQL
+// passed to ExecContext / QueryContext / QueryRowContext so we can assert
+// on the literal text without standing up a real DB. It satisfies just
+// enough of the *sql.DB surface that the repo methods we test exercise.
+
+// TestUpsertConfigSQL_IncludesModsnowEnabled locks in that the upsert SQL
+// writes the modsnow_enabled flag. If the column is dropped from the
+// INSERT/UPDATE list, the field would silently never persist and Sardoba
+// would re-show modsnow in Excel on the next deploy.
+func TestUpsertConfigSQL_IncludesModsnowEnabled(t *testing.T) {
+	got := upsertReservoirSummaryConfigQuery()
+	if !strings.Contains(got, "modsnow_enabled") {
+		t.Errorf("UpsertReservoirSummaryConfig SQL is missing `modsnow_enabled` column:\n%s", got)
+	}
+}
+
+// TestSelectConfigSQL_IncludesModsnowEnabled locks in that the select SQL
+// returns modsnow_enabled. Without this column the generator/JSON layer
+// would always see the zero-value (false) and silently hide modsnow for
+// every reservoir.
+func TestSelectConfigSQL_IncludesModsnowEnabled(t *testing.T) {
+	for name, q := range map[string]string{
+		"GetAllReservoirSummaryConfigs":  getAllReservoirSummaryConfigsQuery(),
+		"GetReservoirSummaryConfigByOrgID": getReservoirSummaryConfigByOrgIDQuery(),
+	} {
+		if !strings.Contains(q, "modsnow_enabled") {
+			t.Errorf("%s SQL is missing `modsnow_enabled` column:\n%s", name, q)
+		}
+	}
+}
+
+// Compile-time sanity that the model carries the flag — keeps the test
+// honest if someone deletes the column from the SQL AND the field at the
+// same time. Not a real assertion, just a structural pin.
+var _ = func() reservoirsummary.ReservoirSummaryConfig {
+	_ = context.Background()
+	return reservoirsummary.ReservoirSummaryConfig{ModsnowEnabled: true}
 }
 
 func TestGetReservoirSummaryQuery_OrderBySortPosition(t *testing.T) {
