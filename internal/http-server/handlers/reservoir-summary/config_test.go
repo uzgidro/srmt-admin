@@ -164,6 +164,62 @@ func TestUpsertConfig_RepoError(t *testing.T) {
 	}
 }
 
+// volume_source must be one of {static, level_volume} (CHECK in 000086).
+// The handler rejects anything else with 400 before the SQL ever runs, so
+// operators see a real validation error instead of a 500 from a CHECK violation.
+func TestUpsertConfig_InvalidVolumeSource_400(t *testing.T) {
+	repo := &mockConfigUpserter{}
+	body := `{"organization_id":1,"sort_order":1,"include_in_total":true,"volume_source":"wat"}`
+	req := httptest.NewRequest(http.MethodPost, "/reservoir-summary/config", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	UpsertConfig(quietLog(), repo)(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status: want 400, got %d (body %s)", rec.Code, rec.Body.String())
+	}
+	if repo.calls != 0 {
+		t.Errorf("repo must not be called on invalid volume_source; got %d calls", repo.calls)
+	}
+}
+
+// Frontend opts into the new strategy by sending volume_source=level_volume;
+// the handler must pass that through to the repo verbatim.
+func TestUpsertConfig_ForwardsVolumeSource(t *testing.T) {
+	repo := &mockConfigUpserter{}
+	body := `{"organization_id":42,"sort_order":3,"include_in_total":true,"volume_source":"level_volume"}`
+	req := httptest.NewRequest(http.MethodPost, "/reservoir-summary/config", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	UpsertConfig(quietLog(), repo)(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d (body %s)", rec.Code, rec.Body.String())
+	}
+	if repo.gotReq.VolumeSource != "level_volume" {
+		t.Errorf("VolumeSource: want %q, got %q", "level_volume", repo.gotReq.VolumeSource)
+	}
+}
+
+// Backward-compatible default: existing clients never send volume_source.
+// The handler rewrites the empty string to "static" before validation runs
+// so the repo always sees a concrete, CHECK-compatible value.
+func TestUpsertConfig_DefaultsVolumeSourceToStatic(t *testing.T) {
+	repo := &mockConfigUpserter{}
+	body := `{"organization_id":42,"sort_order":3,"include_in_total":true}`
+	req := httptest.NewRequest(http.MethodPost, "/reservoir-summary/config", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	UpsertConfig(quietLog(), repo)(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d (body %s)", rec.Code, rec.Body.String())
+	}
+	if repo.gotReq.VolumeSource != "static" {
+		t.Errorf("VolumeSource: want default %q, got %q", "static", repo.gotReq.VolumeSource)
+	}
+}
+
 // FK violation on organization_id (non-existent org) must return 422 with
 // an actionable message — not the generic 500 that hides the cause.
 func TestUpsertConfig_NonExistentOrgReturns422(t *testing.T) {

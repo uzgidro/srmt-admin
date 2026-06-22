@@ -71,5 +71,8 @@ type UpsertReservoirSummaryConfigRequest struct {
 	SortOrder      int    `json:"sort_order" validate:"gte=0"`
 	IncludeInTotal bool   `json:"include_in_total"`
 	ModsnowEnabled bool   `json:"modsnow_enabled"`
-	VolumeSource   string `json:"volume_source"`
+	// omitempty stays even though the handler rewrites "" to "static" before
+	// validation — it's the safety net for a literal JSON `null`, which Go
+	// decodes to "" and which we want treated identically to "missing field".
+	VolumeSource string `json:"volume_source" validate:"omitempty,oneof=static level_volume"`
 }
