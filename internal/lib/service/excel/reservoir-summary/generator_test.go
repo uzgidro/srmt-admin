@@ -21,6 +21,7 @@ func fixtureData() []*reservoirsummarymodel.ResponseModel {
 			OrganizationID: orgID,
 			Level:          reservoirsummarymodel.ValueResponse{Current: lvl, Previous: lvl - 5},
 			Volume:         reservoirsummarymodel.ValueResponse{Current: vol},
+			Modsnow:        reservoirsummarymodel.ValueResponse{Current: lvl * 0.1, YearAgo: lvl * 0.05},
 		}
 	}
 	return []*reservoirsummarymodel.ResponseModel{
@@ -34,6 +35,20 @@ func fixtureData() []*reservoirsummarymodel.ResponseModel {
 		mk(id(8), 300, 30),  // Пском     → 22/23 (NEW slot)
 		mk(nil, 0, 999),     // ИТОГО     → must NOT appear in sheet
 	}
+}
+
+// allModsnowEnabledConfig returns a config map where every org in the
+// fixture has modsnow_enabled=true — the default behaviour for the
+// existing layout/regression tests that don't care about modsnow gating.
+func allModsnowEnabledConfig() map[int64]reservoirsummarymodel.ReservoirSummaryConfig {
+	out := map[int64]reservoirsummarymodel.ReservoirSummaryConfig{}
+	for _, orgID := range []int64{1, 2, 3, 4, 5, 6, 7, 8} {
+		out[orgID] = reservoirsummarymodel.ReservoirSummaryConfig{
+			OrganizationID: orgID,
+			ModsnowEnabled: true,
+		}
+	}
+	return out
 }
 
 // readNumeric pulls a cell value and parses it to a float, tolerating the
@@ -62,7 +77,7 @@ func readNumeric(t *testing.T, getCell func(string) (string, error), coord strin
 // the test is agnostic to the template's display format (0.00, signed, etc).
 func TestGenerateExcel_ChotkolInRows18and19(t *testing.T) {
 	g := New("", templates.ResSummary)
-	f, err := g.GenerateExcel("2025-12-16", fixtureData(), "Test")
+	f, err := g.GenerateExcel("2025-12-16", fixtureData(), allModsnowEnabledConfig(), "Test")
 	if err != nil {
 		t.Fatalf("GenerateExcel: %v", err)
 	}
@@ -84,7 +99,7 @@ func TestGenerateExcel_ChotkolInRows18and19(t *testing.T) {
 // Пском moved from rows 20/21 to 22/23.
 func TestGenerateExcel_PskomInRows22and23(t *testing.T) {
 	g := New("", templates.ResSummary)
-	f, err := g.GenerateExcel("2025-12-16", fixtureData(), "Test")
+	f, err := g.GenerateExcel("2025-12-16", fixtureData(), allModsnowEnabledConfig(), "Test")
 	if err != nil {
 		t.Fatalf("GenerateExcel: %v", err)
 	}
@@ -104,7 +119,7 @@ func TestGenerateExcel_PskomInRows22and23(t *testing.T) {
 // rows 20-21).
 func TestGenerateExcel_JamiFormulasUntouched(t *testing.T) {
 	g := New("", templates.ResSummary)
-	f, err := g.GenerateExcel("2025-12-16", fixtureData(), "Test")
+	f, err := g.GenerateExcel("2025-12-16", fixtureData(), allModsnowEnabledConfig(), "Test")
 	if err != nil {
 		t.Fatalf("GenerateExcel: %v", err)
 	}
@@ -122,11 +137,86 @@ func TestGenerateExcel_JamiFormulasUntouched(t *testing.T) {
 	}
 }
 
+// TestGenerateExcel_ModsnowSkippedByConfig — when an org has
+// modsnow_enabled=false in its config, the generator must leave the
+// modsnow cell empty (NOT zero, NOT the value from the data row). Org 1
+// occupies row 6 → cells N6 (current) and O6 (year-ago).
+func TestGenerateExcel_ModsnowSkippedByConfig(t *testing.T) {
+	cfg := allModsnowEnabledConfig()
+	c := cfg[1]
+	c.ModsnowEnabled = false
+	cfg[1] = c
+
+	g := New("", templates.ResSummary)
+	f, err := g.GenerateExcel("2025-12-16", fixtureData(), cfg, "Test")
+	if err != nil {
+		t.Fatalf("GenerateExcel: %v", err)
+	}
+	defer f.Close()
+	sheet := f.GetSheetName(0)
+
+	for _, coord := range []string{"N6", "O6"} {
+		raw, err := f.GetCellValue(sheet, coord)
+		if err != nil {
+			t.Fatalf("read %s: %v", coord, err)
+		}
+		if strings.TrimSpace(raw) != "" {
+			t.Errorf("%s: want empty (modsnow_enabled=false), got %q", coord, raw)
+		}
+	}
+}
+
+// TestGenerateExcel_ModsnowWrittenWhenEnabled — the same slot must
+// receive the Modsnow.Current value when the org has modsnow_enabled=true.
+// Asserts the positive branch to prevent a future bug that empties every
+// cell because the lookup is wrong.
+func TestGenerateExcel_ModsnowWrittenWhenEnabled(t *testing.T) {
+	cfg := allModsnowEnabledConfig() // org 1 has enabled=true
+
+	g := New("", templates.ResSummary)
+	data := fixtureData()
+	f, err := g.GenerateExcel("2025-12-16", data, cfg, "Test")
+	if err != nil {
+		t.Fatalf("GenerateExcel: %v", err)
+	}
+	defer f.Close()
+	sheet := f.GetSheetName(0)
+	get := func(c string) (string, error) { return f.GetCellValue(sheet, c) }
+
+	wantCurrent := data[0].Modsnow.Current
+	if v, raw, ok := readNumeric(t, get, "N6"); !ok || v != wantCurrent {
+		t.Errorf("N6 (Андижон modsnow current): want %v, got %q (parsed=%v)", wantCurrent, raw, v)
+	}
+}
+
+// TestGenerateExcel_SardobaSlotNoLongerHardcoded — historical behaviour
+// was the hardcoded `if i == 2 { continue }` (Сардоба skip). After the
+// hardcode is removed, the gating must come from config. When config
+// allows it, the value lands in N10/O10 — proves the hardcode is truly gone.
+func TestGenerateExcel_SardobaSlotNoLongerHardcoded(t *testing.T) {
+	cfg := allModsnowEnabledConfig() // org 3 (Сардоба slot) explicit true
+
+	g := New("", templates.ResSummary)
+	data := fixtureData()
+	f, err := g.GenerateExcel("2025-12-16", data, cfg, "Test")
+	if err != nil {
+		t.Fatalf("GenerateExcel: %v", err)
+	}
+	defer f.Close()
+	sheet := f.GetSheetName(0)
+	get := func(c string) (string, error) { return f.GetCellValue(sheet, c) }
+
+	wantCurrent := data[2].Modsnow.Current
+	if v, raw, ok := readNumeric(t, get, "N10"); !ok || v != wantCurrent {
+		t.Errorf("N10 (Сардоба slot modsnow current with enabled=true): want %v, got %q (parsed=%v) — hardcode likely still present", wantCurrent, raw, v)
+	}
+}
+
 // res-summary-filter.xlsx now shares the same row layout as res-summary.xlsx.
 // One generator, two templates, identical slot mapping.
 func TestGenerateExcel_FilterTemplate_SameLayout(t *testing.T) {
 	g := New("", templates.ResSummaryFilt)
-	f, err := g.GenerateExcel("2025-12-16", fixtureData(), "Test")
+	f, err := g.GenerateExcel("2025-12-16", fixtureData(), allModsnowEnabledConfig(), "Test")
 	if err != nil {
 		t.Fatalf("GenerateExcel: %v", err)
 	}

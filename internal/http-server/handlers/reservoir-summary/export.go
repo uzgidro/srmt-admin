@@ -12,6 +12,7 @@ import (
 
 	resp "srmt-admin/internal/lib/api/response"
 	"srmt-admin/internal/lib/logger/sl"
+	reservoirsummary "srmt-admin/internal/lib/model/reservoir-summary"
 	"srmt-admin/internal/lib/service/auth"
 	excelgen "srmt-admin/internal/lib/service/excel/reservoir-summary"
 	mwauth "srmt-admin/internal/http-server/middleware/auth"
@@ -82,7 +83,21 @@ func GetExport(log *slog.Logger, pgRepo *repo.Repo, fetcher staticDataFetcher, g
 		if err != nil {
 			log.Error("failed to fetch dataAtDayBegin", sl.Err(err))
 		}
-		applyStaticFallbacks(r.Context(), log, data, dataAtDayBegin, pgRepo, MapConfigLookup{})
+		// Load reservoir_summary_config so the generator can gate per-org
+		// behaviour (modsnow_enabled today, more knobs later). A config
+		// fetch failure is non-fatal — falling back to an empty map means
+		// modsnow cells render empty across the board, which is closer to
+		// the legacy hardcoded skip than overwriting cells with stale data.
+		configs, cfgErr := pgRepo.GetAllReservoirSummaryConfigs(r.Context())
+		if cfgErr != nil {
+			log.Error("failed to fetch reservoir_summary_config", sl.Err(cfgErr))
+		}
+		configByOrgID := make(map[int64]reservoirsummary.ReservoirSummaryConfig, len(configs))
+		for _, c := range configs {
+			configByOrgID[c.OrganizationID] = c
+		}
+
+		applyStaticFallbacks(r.Context(), log, data, dataAtDayBegin, pgRepo, MapConfigLookup(configByOrgID))
 
 		// Get author short name from JWT claims
 		var authorShort string
@@ -91,7 +106,7 @@ func GetExport(log *slog.Logger, pgRepo *repo.Repo, fetcher staticDataFetcher, g
 		}
 
 		// Generate Excel file
-		excelFile, err := generator.GenerateExcel(dateStr, data, authorShort)
+		excelFile, err := generator.GenerateExcel(dateStr, data, configByOrgID, authorShort)
 		if err != nil {
 			log.Error("failed to generate Excel file", sl.Err(err))
 			render.Status(r, http.StatusInternalServerError)
