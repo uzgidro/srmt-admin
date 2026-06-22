@@ -33,6 +33,7 @@ interface UpsertReservoirSummaryConfigRequest {
   sort_order: number;         // required, >= 0; позиция в отчёте
   include_in_total: boolean;  // суммировать ли значения в строку ИТОГО
   modsnow_enabled: boolean;   // default true для новых записей; см. ниже
+  volume_source?: 'static' | 'level_volume'; // опционально; бэк подставит 'static' если поле отсутствует или пустая строка
 }
 ```
 
@@ -53,6 +54,7 @@ interface ReservoirSummaryConfig {
   sort_order: number;
   include_in_total: boolean;
   modsnow_enabled: boolean;
+  volume_source: 'static' | 'level_volume';
 }
 ```
 
@@ -79,9 +81,77 @@ interface ReservoirSummaryConfig {
 - **`modsnow_enabled`** — гейт по организации для значения modsnow в
   обоих каналах (JSON и Excel). См. раздел «Поведение `modsnow_enabled`»
   ниже. Default в БД — `true`.
+- **`volume_source`** — стратегия определения `Volume.Current` в ответе
+  `/reservoir-summary` и в Excel-экспорте. Подробности — раздел
+  «Стратегия `volume_source`» ниже.
 - **Whitelist** — если организация **отсутствует** в
   `reservoir_summary_config`, она **не появится** в `/reservoir-summary`,
   даже если для неё есть данные в `reservoir_data`. Это фича.
+
+## Стратегия `volume_source`
+
+`volume_source` управляет тем, **откуда** берётся `Volume.Current` в ответе
+`/reservoir-summary?date=...` и в Excel-экспорте, когда дневной snapshot в
+`reservoir_data` пустой или расходится с калибровочной кривой
+`level_volume`. Значение хранится по каждой организации в
+`reservoir_summary_config.volume_source` и закрыто SQL-CHECK'ом — любое
+другое значение бэк отбрасывает на уровне валидации (400), не доходя до
+БД.
+
+### `static` (по умолчанию)
+
+Legacy-поведение, действует для всех существующих конфигов после
+миграции `000086`. Приоритет:
+
+1. **snapshot** из `reservoir_data` (`volume_mln_m3` на запрошенную
+   дату) — если **не ноль**, берётся он и точка.
+2. **`level_volume` curve** — если snapshot = 0 и `Level.Current ≠ 0`,
+   бэк интерполирует объём по калибровочной кривой организации.
+3. **static.uz fallback** — если кривая не настроена / не настроилась
+   (например, уровень вне диапазона), берётся `data.volume` из
+   static.uz day-begin snapshot.
+
+Подходит для обычных объектов: ручной ввод в `/reservoir-data` мгновенно
+виден в отчёте, а на «дырки» в данных есть два уровня страховки.
+
+### `level_volume`
+
+Кривая `level_volume` **приоритетна** перед snapshot'ом. Приоритет:
+
+1. **`level_volume` curve** — если `Level.Current ≠ 0` и для организации
+   настроена кривая, берётся интерполированное значение **даже когда
+   snapshot из `reservoir_data` не ноль**.
+2. **fallback на snapshot** — если кривая не настроена или уровень вне
+   её диапазона, остаётся то, что вернул SQL (snapshot или 0).
+
+Подходит для объектов, где ручной ввод объёма ненадёжен и единственным
+источником правды является пара `level` + калибровочная кривая.
+
+> **Важно для UI.** Когда `volume_source = level_volume`, **ручной POST
+> на `volume_mln_m3` через `/reservoir-data` будет перетёрт** при
+> следующем рендере отчёта (curve пересчитает по `level_m`). Фронт
+> должен показать осмысленный hint в форме редактирования: «для этого
+> объекта объём рассчитывается автоматически из уровня; правьте `level`,
+> а не `volume`».
+
+### Backward compatibility
+
+Поле `volume_source` в `POST /reservoir-summary/config` **опционально**.
+Если фронт его не присылает (или присылает пустую строку / `null`), бэк
+подставляет `'static'` ДО валидации. Это значит:
+
+- Существующие клиенты, которые ничего не знают про `volume_source`,
+  продолжают работать без изменений.
+- Все строки, существовавшие до миграции `000086`, получают
+  `volume_source = 'static'` (DEFAULT в `ALTER TABLE`) и сохраняют
+  legacy-поведение.
+
+### Деградация при отсутствии конфига
+
+Если строки в `reservoir_summary_config` нет (например, организация
+видна в данных, но не добавлена в whitelist) или загрузка конфигов из
+БД упала с ошибкой — бэк прозрачно использует `'static'` для затронутых
+организаций. Отчёт не падает; ошибка чтения логируется.
 
 ## Порядок ИТОГО-строки
 
