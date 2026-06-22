@@ -17,6 +17,24 @@ type volumeByLevelByOrg interface {
 	GetVolumeByLevelByOrg(ctx context.Context, orgID int64, level float64) (float64, error)
 }
 
+// ConfigLookup gives applyStaticFallbacks per-organization access to the
+// reservoir_summary_config row. Returning ok=false means "no config row";
+// callers treat that as defaults (modsnow_enabled=true, volume_source=static).
+// Introduced as a no-op param ahead of the modsnow_enabled / volume_source
+// split: this seam is what lets those two features land in parallel without
+// touching every call-site again.
+type ConfigLookup interface {
+	Get(orgID int64) (reservoirsummary.ReservoirSummaryConfig, bool)
+}
+
+// MapConfigLookup is the obvious in-memory ConfigLookup keyed by org id.
+type MapConfigLookup map[int64]reservoirsummary.ReservoirSummaryConfig
+
+func (m MapConfigLookup) Get(orgID int64) (reservoirsummary.ReservoirSummaryConfig, bool) {
+	v, ok := m[orgID]
+	return v, ok
+}
+
 // computeVolumeFromLevel asks the repo for the interpolated volume at the
 // given level for the organization. Returns (value, true) on success. Returns
 // (0, false) if there is no curve for this org, the level falls outside it,
@@ -58,6 +76,7 @@ func applyStaticFallbacks(
 	summaries []*reservoirsummary.ResponseModel,
 	dataAtDayBegin map[int64]*dto.OrganizationWithData,
 	curve volumeByLevelByOrg,
+	_ ConfigLookup,
 ) {
 	isEdited := true
 	for _, summary := range summaries {
