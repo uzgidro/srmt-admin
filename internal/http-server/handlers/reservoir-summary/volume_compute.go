@@ -70,18 +70,34 @@ func computeVolumeFromLevel(ctx context.Context, log *slog.Logger, repo volumeBy
 // Volume.Current from the (possibly just-pulled) Level via the level_volume
 // curve. If the curve isn't available, falls back to the static.uz Volume — the
 // pre-existing behaviour before the curve recompute was added.
+//
+// configs is consulted to mask Modsnow.Current / Modsnow.YearAgo for any org
+// whose ReservoirSummaryConfig has ModsnowEnabled=false. This is the JSON-side
+// counterpart of the empty-modsnow-cell behaviour in the Excel generator: a
+// reservoir with modsnow disabled should never expose stored modsnow values
+// to the frontend regardless of what the SQL query returned.
 func applyStaticFallbacks(
 	ctx context.Context,
 	log *slog.Logger,
 	summaries []*reservoirsummary.ResponseModel,
 	dataAtDayBegin map[int64]*dto.OrganizationWithData,
 	curve volumeByLevelByOrg,
-	_ ConfigLookup,
+	configs ConfigLookup,
 ) {
 	isEdited := true
 	for _, summary := range summaries {
 		if summary.OrganizationID == nil {
 			continue
+		}
+
+		// Modsnow masking is the first thing we do — it doesn't depend on
+		// static.uz data and is cheap to short-circuit. ConfigLookup is
+		// allowed to be nil (test helpers); treat that as "no override".
+		if configs != nil {
+			if cfg, ok := configs.Get(*summary.OrganizationID); ok && !cfg.ModsnowEnabled {
+				summary.Modsnow.Current = 0
+				summary.Modsnow.YearAgo = 0
+			}
 		}
 
 		// static.uz snapshot is optional: a reservoir without an entry can still

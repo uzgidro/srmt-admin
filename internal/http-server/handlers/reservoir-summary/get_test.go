@@ -22,9 +22,15 @@ type mockSummaryGetter struct {
 
 	// Curve lookup for level → volume recomputation. Optional: if curveErr/curveVolume
 	// stay zero-valued, behaves as "no curve configured".
-	curveCalls    []curveCall
-	curveVolume   float64
-	curveErr      error
+	curveCalls  []curveCall
+	curveVolume float64
+	curveErr    error
+
+	// Reservoir-summary config — drives modsnow_enabled masking in
+	// applyStaticFallbacks. Default empty slice = no config row for any
+	// org, which leaves Modsnow values untouched (matches legacy behaviour
+	// of every test written before the masking gate landed).
+	configs []reservoirsummary.ReservoirSummaryConfig
 }
 
 func (m *mockSummaryGetter) GetReservoirSummary(_ context.Context, _ string) ([]*reservoirsummary.ResponseModel, error) {
@@ -34,6 +40,10 @@ func (m *mockSummaryGetter) GetReservoirSummary(_ context.Context, _ string) ([]
 func (m *mockSummaryGetter) GetVolumeByLevelByOrg(_ context.Context, orgID int64, level float64) (float64, error) {
 	m.curveCalls = append(m.curveCalls, curveCall{orgID: orgID, level: level})
 	return m.curveVolume, m.curveErr
+}
+
+func (m *mockSummaryGetter) GetAllReservoirSummaryConfigs(_ context.Context) ([]reservoirsummary.ReservoirSummaryConfig, error) {
+	return m.configs, nil
 }
 
 type mockStaticDataFetcher struct {
@@ -544,6 +554,96 @@ func TestGet_NoClaimsReturnsEmpty(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Errorf("no-claims must get empty list, got %d rows", len(got))
+	}
+}
+
+// --- modsnow masking by config ---
+
+// TestGet_ModsnowMaskedWhenDisabled: when the per-org config has
+// modsnow_enabled=false the JSON response must zero out Modsnow.Current
+// and Modsnow.YearAgo regardless of what's in the underlying summary row.
+// This is the JSON-side counterpart of the Excel empty-cell behaviour.
+func TestGet_ModsnowMaskedWhenDisabled(t *testing.T) {
+	orgID := int64(7)
+
+	getter := &mockSummaryGetter{
+		summaries: []*reservoirsummary.ResponseModel{
+			{
+				OrganizationID: ptrInt64(orgID),
+				Modsnow: reservoirsummary.ValueResponse{
+					Current:     42,
+					YearAgo:     11,
+					TwoYearsAgo: 5, // not masked — column not part of report
+				},
+			},
+		},
+		configs: []reservoirsummary.ReservoirSummaryConfig{
+			{OrganizationID: orgID, ModsnowEnabled: false},
+		},
+	}
+
+	fetcher := &mockStaticDataFetcher{}
+	log := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	handler := Get(log, getter, fetcher)
+
+	req := httptest.NewRequest(http.MethodGet, "/reservoir-summary?date=2025-01-01", nil)
+	req = req.WithContext(mwauth.ContextWithClaims(req.Context(), &token.Claims{Roles: []string{"sc"}}))
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", rr.Code, rr.Body.String())
+	}
+	var result []*reservoirsummary.ResponseModel
+	if err := json.NewDecoder(rr.Body).Decode(&result); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(result) != 1 {
+		t.Fatalf("want 1 summary, got %d", len(result))
+	}
+	if result[0].Modsnow.Current != 0 {
+		t.Errorf("Modsnow.Current: want 0 (masked), got %v", result[0].Modsnow.Current)
+	}
+	if result[0].Modsnow.YearAgo != 0 {
+		t.Errorf("Modsnow.YearAgo: want 0 (masked), got %v", result[0].Modsnow.YearAgo)
+	}
+}
+
+// TestGet_ModsnowPreservedWhenEnabled: positive branch — config says
+// true, JSON keeps the values intact. Pin both branches to defend the
+// gate against a sign-flip refactor.
+func TestGet_ModsnowPreservedWhenEnabled(t *testing.T) {
+	orgID := int64(7)
+
+	getter := &mockSummaryGetter{
+		summaries: []*reservoirsummary.ResponseModel{
+			{
+				OrganizationID: ptrInt64(orgID),
+				Modsnow:        reservoirsummary.ValueResponse{Current: 42, YearAgo: 11},
+			},
+		},
+		configs: []reservoirsummary.ReservoirSummaryConfig{
+			{OrganizationID: orgID, ModsnowEnabled: true},
+		},
+	}
+
+	fetcher := &mockStaticDataFetcher{}
+	log := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	handler := Get(log, getter, fetcher)
+
+	req := httptest.NewRequest(http.MethodGet, "/reservoir-summary?date=2025-01-01", nil)
+	req = req.WithContext(mwauth.ContextWithClaims(req.Context(), &token.Claims{Roles: []string{"sc"}}))
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	var result []*reservoirsummary.ResponseModel
+	json.NewDecoder(rr.Body).Decode(&result)
+
+	if result[0].Modsnow.Current != 42 {
+		t.Errorf("Modsnow.Current: want 42 (preserved), got %v", result[0].Modsnow.Current)
+	}
+	if result[0].Modsnow.YearAgo != 11 {
+		t.Errorf("Modsnow.YearAgo: want 11 (preserved), got %v", result[0].Modsnow.YearAgo)
 	}
 }
 
