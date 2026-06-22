@@ -83,11 +83,13 @@ func GetExport(log *slog.Logger, pgRepo *repo.Repo, fetcher staticDataFetcher, g
 		if err != nil {
 			log.Error("failed to fetch dataAtDayBegin", sl.Err(err))
 		}
-		// Load reservoir_summary_config so the generator can gate per-org
-		// behaviour (modsnow_enabled today, more knobs later). A config
-		// fetch failure is non-fatal — falling back to an empty map means
-		// modsnow cells render empty across the board, which is closer to
-		// the legacy hardcoded skip than overwriting cells with stale data.
+		// Load reservoir_summary_config: drives both the generator's per-org
+		// modsnow_enabled gating AND the applyStaticFallbacks volume_source
+		// strategy switch (the same shared lookup). A fetch failure is
+		// non-fatal — an empty map means modsnow cells render empty across
+		// the board (closer to the legacy hardcoded skip than leaking stale
+		// data) and volume resolution degrades to the legacy "static" path
+		// for every org.
 		configs, cfgErr := pgRepo.GetAllReservoirSummaryConfigs(r.Context())
 		if cfgErr != nil {
 			log.Error("failed to fetch reservoir_summary_config", sl.Err(cfgErr))

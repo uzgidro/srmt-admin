@@ -38,6 +38,13 @@ type ResponseModel struct {
 // generator (cell left empty when false) and the JSON response
 // (Modsnow.Current/YearAgo masked to 0). Default in the DB is TRUE so
 // behaviour is opt-out per reservoir.
+//
+// VolumeSource governs how Volume.Current is resolved when the daily
+// snapshot in reservoir_data is missing or stale: "static" (default) uses
+// the snapshot first and only falls through to the level→volume curve and
+// the static.uz fallback when it is zero; "level_volume" inverts that —
+// the curve wins over the snapshot. See migration 000086 and the strategy
+// switch in handlers/reservoir-summary/volume_compute.go.
 type ReservoirSummaryConfig struct {
 	ID               int64  `json:"id"`
 	OrganizationID   int64  `json:"organization_id"`
@@ -45,6 +52,7 @@ type ReservoirSummaryConfig struct {
 	SortOrder        int    `json:"sort_order"`
 	IncludeInTotal   bool   `json:"include_in_total"`
 	ModsnowEnabled   bool   `json:"modsnow_enabled"`
+	VolumeSource     string `json:"volume_source"`
 }
 
 // UpsertReservoirSummaryConfigRequest is the POST body for creating or
@@ -54,9 +62,17 @@ type ReservoirSummaryConfig struct {
 // always include it (default TRUE for new rows). If callers omit the
 // JSON field, Go's zero-value (false) is what gets persisted, so the
 // front-end is responsible for sending TRUE explicitly on first create.
+//
+// VolumeSource accepts "static" or "level_volume"; an empty string is
+// rewritten to "static" by the handler before validation runs, so existing
+// clients that never sent the field continue to work unchanged.
 type UpsertReservoirSummaryConfigRequest struct {
-	OrganizationID int64 `json:"organization_id" validate:"required,gt=0"`
-	SortOrder      int   `json:"sort_order" validate:"gte=0"`
-	IncludeInTotal bool  `json:"include_in_total"`
-	ModsnowEnabled bool  `json:"modsnow_enabled"`
+	OrganizationID int64  `json:"organization_id" validate:"required,gt=0"`
+	SortOrder      int    `json:"sort_order" validate:"gte=0"`
+	IncludeInTotal bool   `json:"include_in_total"`
+	ModsnowEnabled bool   `json:"modsnow_enabled"`
+	// omitempty stays even though the handler rewrites "" to "static" before
+	// validation — it's the safety net for a literal JSON `null`, which Go
+	// decodes to "" and which we want treated identically to "missing field".
+	VolumeSource string `json:"volume_source" validate:"omitempty,oneof=static level_volume"`
 }

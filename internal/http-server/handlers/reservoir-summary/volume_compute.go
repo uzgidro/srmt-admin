@@ -65,17 +65,34 @@ func computeVolumeFromLevel(ctx context.Context, log *slog.Logger, repo volumeBy
 	return 0, false
 }
 
-// applyStaticFallbacks mutates summaries in place: pulls income/release/level
-// from the static.uz day-begin snapshot when DB values are zero, and recomputes
-// Volume.Current from the (possibly just-pulled) Level via the level_volume
-// curve. If the curve isn't available, falls back to the static.uz Volume — the
-// pre-existing behaviour before the curve recompute was added.
+// Supported values for ReservoirSummaryConfig.VolumeSource. Defined here so
+// the strategy switch and the handler default agree on the exact strings —
+// drift would silently send writes through that the CHECK constraint rejects.
+const (
+	volumeSourceStatic      = "static"
+	volumeSourceLevelVolume = "level_volume"
+)
+
+// from the static.uz day-begin snapshot when DB values are zero, then resolves
+// Volume.Current according to the per-organization volume_source strategy:
 //
-// configs is consulted to mask Modsnow.Current / Modsnow.YearAgo for any org
-// whose ReservoirSummaryConfig has ModsnowEnabled=false. This is the JSON-side
-// counterpart of the empty-modsnow-cell behaviour in the Excel generator: a
-// reservoir with modsnow disabled should never expose stored modsnow values
-// to the frontend regardless of what the SQL query returned.
+//   - "static" (default, legacy behaviour): snapshot wins. If the DB snapshot
+//     is zero, fall through to the level→volume curve, and only then to the
+//     static.uz Volume.
+//   - "level_volume": the curve wins. If the curve returns a value, it
+//     overwrites even a non-zero DB snapshot. If the curve is not configured
+//     for the org (or the level falls outside its range), the existing
+//     snapshot is preserved.
+//
+// An empty or unknown VolumeSource is treated as "static" so a missing
+// ConfigLookup entry (or a future enum value the binary doesn't recognise)
+// degrades gracefully to the legacy path.
+//
+// configs is also consulted to mask Modsnow.Current / Modsnow.YearAgo for any
+// org whose ReservoirSummaryConfig has ModsnowEnabled=false. This is the
+// JSON-side counterpart of the empty-modsnow-cell behaviour in the Excel
+// generator: a reservoir with modsnow disabled should never expose stored
+// modsnow values to the frontend regardless of what the SQL query returned.
 func applyStaticFallbacks(
 	ctx context.Context,
 	log *slog.Logger,
@@ -107,6 +124,9 @@ func applyStaticFallbacks(
 			staticData = val.Data
 		}
 
+		// Income/Release/Level fallbacks are independent of volume_source —
+		// they're driven entirely by the static.uz snapshot and apply to both
+		// strategies identically.
 		if staticData != nil {
 			if summary.Income.Current == 0 && staticData.AvgIncome != nil {
 				summary.Income.Current = *staticData.AvgIncome
@@ -122,23 +142,46 @@ func applyStaticFallbacks(
 			}
 		}
 
-		if summary.Volume.Current != 0 {
-			continue
+		source := volumeSourceStatic
+		if configs != nil {
+			if cfg, ok := configs.Get(*summary.OrganizationID); ok && cfg.VolumeSource != "" {
+				source = cfg.VolumeSource
+			}
 		}
-		// Prefer the calibration curve over the static.uz size field — operators
-		// reported that static.uz volume disagrees with the level→volume table
-		// for several reservoirs, so we recompute when we can and only fall
-		// back to static.size when the curve is unavailable.
-		if summary.Level.Current != 0 {
+
+		switch source {
+		case volumeSourceLevelVolume:
+			// Curve wins over the snapshot. Recompute only fires when we have
+			// a Level to feed it; without that, leave whatever the DB returned
+			// (the snapshot, possibly zero).
+			if summary.Level.Current == 0 {
+				continue
+			}
 			if computed, computedOK := computeVolumeFromLevel(ctx, log, curve, *summary.OrganizationID, summary.Level.Current); computedOK {
 				summary.Volume.Current = computed
 				summary.Volume.IsEdited = &isEdited
+			}
+			// Curve unavailable → keep the existing snapshot. Not an error.
+		default:
+			// Legacy "static" path: snapshot short-circuits any recompute.
+			if summary.Volume.Current != 0 {
 				continue
 			}
-		}
-		if staticData != nil && staticData.Volume != nil && *staticData.Volume != 0 {
-			summary.Volume.Current = *staticData.Volume
-			summary.Volume.IsEdited = &isEdited
+			// Prefer the calibration curve over the static.uz size field — operators
+			// reported that static.uz volume disagrees with the level→volume table
+			// for several reservoirs, so we recompute when we can and only fall
+			// back to static.size when the curve is unavailable.
+			if summary.Level.Current != 0 {
+				if computed, computedOK := computeVolumeFromLevel(ctx, log, curve, *summary.OrganizationID, summary.Level.Current); computedOK {
+					summary.Volume.Current = computed
+					summary.Volume.IsEdited = &isEdited
+					continue
+				}
+			}
+			if staticData != nil && staticData.Volume != nil && *staticData.Volume != 0 {
+				summary.Volume.Current = *staticData.Volume
+				summary.Volume.IsEdited = &isEdited
+			}
 		}
 	}
 }

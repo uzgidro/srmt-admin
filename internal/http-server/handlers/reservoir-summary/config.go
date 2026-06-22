@@ -49,6 +49,13 @@ func UpsertConfig(log *slog.Logger, repo ConfigUpserter) http.HandlerFunc {
 			return
 		}
 
+		// Default to "static" before validation so legacy clients (no
+		// volume_source field) keep working, and so the repo always writes
+		// a CHECK-compatible value into reservoir_summary_config.
+		if req.VolumeSource == "" {
+			req.VolumeSource = "static"
+		}
+
 		if err := validate.Struct(req); err != nil {
 			var vErrs validator.ValidationErrors
 			errors.As(err, &vErrs)

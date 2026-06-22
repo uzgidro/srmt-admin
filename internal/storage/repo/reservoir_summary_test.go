@@ -116,3 +116,31 @@ func TestGetReservoirSummaryQuery_OrderBySortPosition(t *testing.T) {
 		t.Errorf("query missing itog_position CTE that interleaves ИТОГО with per-org rows")
 	}
 }
+
+// volume_source migration (000086) adds a column controlling how Volume.Current
+// is resolved when the daily snapshot is missing or stale. The CRUD SQL must
+// round-trip the column, or the handler-layer strategy switch silently reads
+// zero values from the DB.
+func TestUpsertConfigSQL_IncludesVolumeSource(t *testing.T) {
+	q := upsertReservoirSummaryConfigQuery()
+
+	if !strings.Contains(q, "volume_source") {
+		t.Errorf("upsert query does not write volume_source:\n%s", q)
+	}
+}
+
+func TestSelectAllConfigsSQL_IncludesVolumeSource(t *testing.T) {
+	q := getAllReservoirSummaryConfigsQuery()
+
+	if !strings.Contains(q, "volume_source") {
+		t.Errorf("GetAllReservoirSummaryConfigs query does not select volume_source:\n%s", q)
+	}
+}
+
+func TestSelectConfigByOrgIDSQL_IncludesVolumeSource(t *testing.T) {
+	q := getReservoirSummaryConfigByOrgIDQuery()
+
+	if !strings.Contains(q, "volume_source") {
+		t.Errorf("GetReservoirSummaryConfigByOrgID query does not select volume_source:\n%s", q)
+	}
+}
