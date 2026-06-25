@@ -79,85 +79,136 @@ func TestComputeVolumeFromLevel_OtherError(t *testing.T) {
 	}
 }
 
-// volume_source = "level_volume" inverts the legacy strategy: even when the
-// DB snapshot is non-zero, the curve result wins. This is how operators opt
-// reservoirs whose stored volume disagrees with the calibrated curve onto a
-// single source of truth.
-func TestApplyStaticFallbacks_LevelVolumeOverridesSnapshot(t *testing.T) {
+// SNAPSHOT WINS — common precondition for BOTH strategies.
+// Operators reported that any manual POST into reservoir_data.volume_mln_m3
+// must surface in the report regardless of volume_source. The strategy
+// switch only fires when the snapshot is zero (i.e. operator hasn't typed
+// anything for that day yet).
+func TestApplyStaticFallbacks_LevelVolume_SnapshotWinsWhenPresent(t *testing.T) {
 	orgID := int64(42)
+	staticVolume := 999.0
 	summaries := []*reservoirsummary.ResponseModel{{
 		OrganizationID: &orgID,
 		Level:          reservoirsummary.ValueResponse{Current: 200},
-		Volume:         reservoirsummary.ValueResponse{Current: 100}, // snapshot from DB
+		Volume:         reservoirsummary.ValueResponse{Current: 100}, // snapshot from operator
 	}}
-	curve := &mockCurveRepo{volume: 150} // curve disagrees with snapshot
+	dayBegin := map[int64]*dto.OrganizationWithData{
+		orgID: {Data: &dto.ReservoirData{Volume: &staticVolume}},
+	}
+	curve := &mockCurveRepo{volume: 150}
 	configs := MapConfigLookup{
 		orgID: reservoirsummary.ReservoirSummaryConfig{OrganizationID: orgID, VolumeSource: "level_volume"},
 	}
 
-	applyStaticFallbacks(context.Background(), newTestLogger(), summaries, nil, curve, configs)
+	applyStaticFallbacks(context.Background(), newTestLogger(), summaries, dayBegin, curve, configs)
 
-	if summaries[0].Volume.Current != 150 {
-		t.Errorf("Volume.Current: want 150 (curve wins), got %v", summaries[0].Volume.Current)
+	if summaries[0].Volume.Current != 100 {
+		t.Errorf("Volume.Current: want 100 (snapshot wins), got %v", summaries[0].Volume.Current)
+	}
+	if len(curve.calls) != 0 {
+		t.Errorf("curve must not be queried when snapshot is non-zero; got %+v", curve.calls)
+	}
+}
+
+func TestApplyStaticFallbacks_Static_SnapshotWinsWhenPresent(t *testing.T) {
+	orgID := int64(42)
+	staticVolume := 999.0
+	summaries := []*reservoirsummary.ResponseModel{{
+		OrganizationID: &orgID,
+		Level:          reservoirsummary.ValueResponse{Current: 200},
+		Volume:         reservoirsummary.ValueResponse{Current: 100},
+	}}
+	dayBegin := map[int64]*dto.OrganizationWithData{
+		orgID: {Data: &dto.ReservoirData{Volume: &staticVolume}},
+	}
+	curve := &mockCurveRepo{volume: 150}
+	configs := MapConfigLookup{
+		orgID: reservoirsummary.ReservoirSummaryConfig{OrganizationID: orgID, VolumeSource: "static"},
+	}
+
+	applyStaticFallbacks(context.Background(), newTestLogger(), summaries, dayBegin, curve, configs)
+
+	if summaries[0].Volume.Current != 100 {
+		t.Errorf("Volume.Current: want 100 (snapshot wins), got %v", summaries[0].Volume.Current)
+	}
+}
+
+// volume_source = "static" with zero snapshot: static.uz wins over curve.
+// This is the bug fix — previously the curve was always preferred and
+// static.uz was the last-resort fallback, which inverted the operator's
+// explicit "static" choice.
+func TestApplyStaticFallbacks_Static_StaticUzBeatsCurveWhenSnapshotZero(t *testing.T) {
+	orgID := int64(42)
+	staticVolume := 999.0
+	summaries := []*reservoirsummary.ResponseModel{{
+		OrganizationID: &orgID,
+		Level:          reservoirsummary.ValueResponse{Current: 200},
+		Volume:         reservoirsummary.ValueResponse{Current: 0},
+	}}
+	dayBegin := map[int64]*dto.OrganizationWithData{
+		orgID: {Data: &dto.ReservoirData{Volume: &staticVolume}},
+	}
+	curve := &mockCurveRepo{volume: 150} // curve has an answer; must be ignored
+	configs := MapConfigLookup{
+		orgID: reservoirsummary.ReservoirSummaryConfig{OrganizationID: orgID, VolumeSource: "static"},
+	}
+
+	applyStaticFallbacks(context.Background(), newTestLogger(), summaries, dayBegin, curve, configs)
+
+	if summaries[0].Volume.Current != staticVolume {
+		t.Errorf("Volume.Current: want %v (static.uz wins under static), got %v", staticVolume, summaries[0].Volume.Current)
 	}
 	if summaries[0].Volume.IsEdited == nil || !*summaries[0].Volume.IsEdited {
 		t.Errorf("Volume.IsEdited: want true, got %v", summaries[0].Volume.IsEdited)
 	}
 }
 
-// "level_volume" without a configured curve falls back to the snapshot so a
-// half-finished migration (config flipped, curve not yet loaded) doesn't blank
-// the value on the dashboard.
-func TestApplyStaticFallbacks_LevelVolumeFallsBackToSnapshotIfCurveMissing(t *testing.T) {
+// "static" + zero snapshot + no static.uz volume → curve is the fallback.
+// Confirms the chain static.uz → curve → 0, not static.uz alone.
+func TestApplyStaticFallbacks_Static_CurveFallbackWhenStaticUzAbsent(t *testing.T) {
 	orgID := int64(42)
 	summaries := []*reservoirsummary.ResponseModel{{
 		OrganizationID: &orgID,
 		Level:          reservoirsummary.ValueResponse{Current: 200},
-		Volume:         reservoirsummary.ValueResponse{Current: 100},
+		Volume:         reservoirsummary.ValueResponse{Current: 0},
 	}}
-	curve := &mockCurveRepo{err: storage.ErrLevelVolumeNotConfigured}
+	dayBegin := map[int64]*dto.OrganizationWithData{} // no static.uz entry
+	curve := &mockCurveRepo{volume: 150}
 	configs := MapConfigLookup{
-		orgID: reservoirsummary.ReservoirSummaryConfig{OrganizationID: orgID, VolumeSource: "level_volume"},
+		orgID: reservoirsummary.ReservoirSummaryConfig{OrganizationID: orgID, VolumeSource: "static"},
 	}
 
-	applyStaticFallbacks(context.Background(), newTestLogger(), summaries, nil, curve, configs)
+	applyStaticFallbacks(context.Background(), newTestLogger(), summaries, dayBegin, curve, configs)
 
-	if summaries[0].Volume.Current != 100 {
-		t.Errorf("Volume.Current: want 100 (snapshot preserved), got %v", summaries[0].Volume.Current)
-	}
-	if summaries[0].Volume.IsEdited != nil {
-		t.Errorf("Volume.IsEdited: want nil (untouched), got %v", *summaries[0].Volume.IsEdited)
+	if summaries[0].Volume.Current != 150 {
+		t.Errorf("Volume.Current: want 150 (curve fallback after static.uz miss), got %v", summaries[0].Volume.Current)
 	}
 }
 
-// "static" matches the pre-feature behaviour exactly: a non-zero snapshot
-// short-circuits any recompute, regardless of what the curve would return.
-func TestApplyStaticFallbacks_StaticPreservesLegacyBehaviour(t *testing.T) {
+// "static" + zero snapshot + no static.uz + no curve → stays 0. This is the
+// terminal degraded state; the cell must not be filled with garbage.
+func TestApplyStaticFallbacks_Static_StaysZeroWhenAllSourcesEmpty(t *testing.T) {
 	orgID := int64(42)
 	summaries := []*reservoirsummary.ResponseModel{{
 		OrganizationID: &orgID,
 		Level:          reservoirsummary.ValueResponse{Current: 200},
-		Volume:         reservoirsummary.ValueResponse{Current: 100},
+		Volume:         reservoirsummary.ValueResponse{Current: 0},
 	}}
-	curve := &mockCurveRepo{volume: 999} // would be applied if the strategy were level_volume
+	curve := &mockCurveRepo{err: storage.ErrLevelVolumeNotConfigured}
 	configs := MapConfigLookup{
 		orgID: reservoirsummary.ReservoirSummaryConfig{OrganizationID: orgID, VolumeSource: "static"},
 	}
 
 	applyStaticFallbacks(context.Background(), newTestLogger(), summaries, nil, curve, configs)
 
-	if summaries[0].Volume.Current != 100 {
-		t.Errorf("Volume.Current: want 100 (snapshot, no recompute), got %v", summaries[0].Volume.Current)
-	}
-	if len(curve.calls) != 0 {
-		t.Errorf("curve must not be called when snapshot is non-zero under static; got %+v", curve.calls)
+	if summaries[0].Volume.Current != 0 {
+		t.Errorf("Volume.Current: want 0 (no sources, no fallback), got %v", summaries[0].Volume.Current)
 	}
 }
 
-// Even under "static", a zero snapshot still triggers the curve recompute —
-// and the curve wins over the static.uz volume fallback. Pins that the
-// pre-existing snapshot→curve→static.uz priority is preserved in this branch.
-func TestApplyStaticFallbacks_StaticUsesCurveOnlyWhenSnapshotZero(t *testing.T) {
+// volume_source = "level_volume" + zero snapshot: curve wins; fallback to
+// static.uz only when curve isn't configured.
+func TestApplyStaticFallbacks_LevelVolume_CurveWinsWhenSnapshotZero(t *testing.T) {
 	orgID := int64(42)
 	staticVolume := 999.0
 	summaries := []*reservoirsummary.ResponseModel{{
@@ -170,22 +221,61 @@ func TestApplyStaticFallbacks_StaticUsesCurveOnlyWhenSnapshotZero(t *testing.T) 
 	}
 	curve := &mockCurveRepo{volume: 150}
 	configs := MapConfigLookup{
-		orgID: reservoirsummary.ReservoirSummaryConfig{OrganizationID: orgID, VolumeSource: "static"},
+		orgID: reservoirsummary.ReservoirSummaryConfig{OrganizationID: orgID, VolumeSource: "level_volume"},
 	}
 
 	applyStaticFallbacks(context.Background(), newTestLogger(), summaries, dayBegin, curve, configs)
 
 	if summaries[0].Volume.Current != 150 {
-		t.Errorf("Volume.Current: want 150 (curve beats static.uz), got %v", summaries[0].Volume.Current)
+		t.Errorf("Volume.Current: want 150 (curve wins under level_volume), got %v", summaries[0].Volume.Current)
 	}
 }
 
-// MapConfigLookup is introduced as a no-op seam ahead of the modsnow_enabled /
-// volume_source features. This test pins the contract: passing an empty
-// ConfigLookup must not change applyStaticFallbacks' existing behaviour —
-// snapshot→curve→static.uz priority still holds, no panic on missing keys.
-// Both feature branches (Module A / Module B) build on top of this seam, so a
-// regression here would silently break either of them.
+func TestApplyStaticFallbacks_LevelVolume_StaticUzFallbackWhenCurveMissing(t *testing.T) {
+	orgID := int64(42)
+	staticVolume := 999.0
+	summaries := []*reservoirsummary.ResponseModel{{
+		OrganizationID: &orgID,
+		Level:          reservoirsummary.ValueResponse{Current: 200},
+		Volume:         reservoirsummary.ValueResponse{Current: 0},
+	}}
+	dayBegin := map[int64]*dto.OrganizationWithData{
+		orgID: {Data: &dto.ReservoirData{Volume: &staticVolume}},
+	}
+	curve := &mockCurveRepo{err: storage.ErrLevelVolumeNotConfigured}
+	configs := MapConfigLookup{
+		orgID: reservoirsummary.ReservoirSummaryConfig{OrganizationID: orgID, VolumeSource: "level_volume"},
+	}
+
+	applyStaticFallbacks(context.Background(), newTestLogger(), summaries, dayBegin, curve, configs)
+
+	if summaries[0].Volume.Current != staticVolume {
+		t.Errorf("Volume.Current: want %v (static.uz fallback after curve miss), got %v", staticVolume, summaries[0].Volume.Current)
+	}
+}
+
+func TestApplyStaticFallbacks_LevelVolume_StaysZeroWhenAllSourcesEmpty(t *testing.T) {
+	orgID := int64(42)
+	summaries := []*reservoirsummary.ResponseModel{{
+		OrganizationID: &orgID,
+		Level:          reservoirsummary.ValueResponse{Current: 200},
+		Volume:         reservoirsummary.ValueResponse{Current: 0},
+	}}
+	curve := &mockCurveRepo{err: storage.ErrLevelVolumeNotConfigured}
+	configs := MapConfigLookup{
+		orgID: reservoirsummary.ReservoirSummaryConfig{OrganizationID: orgID, VolumeSource: "level_volume"},
+	}
+
+	applyStaticFallbacks(context.Background(), newTestLogger(), summaries, nil, curve, configs)
+
+	if summaries[0].Volume.Current != 0 {
+		t.Errorf("Volume.Current: want 0 (no sources), got %v", summaries[0].Volume.Current)
+	}
+}
+
+// Empty MapConfigLookup → degraded "static" default for every org. The
+// regression guard from the prep PR has to track the new semantics:
+// snapshot wins, then static.uz, then curve, then 0.
 func TestApplyStaticFallbacks_IgnoresConfigsParam(t *testing.T) {
 	orgID := int64(42)
 	level := 200.5
@@ -209,8 +299,6 @@ func TestApplyStaticFallbacks_IgnoresConfigsParam(t *testing.T) {
 	}
 	curve := &mockCurveRepo{volume: curveVolume}
 
-	// Empty MapConfigLookup must be treated identically to "no config" — i.e.
-	// the legacy behaviour is preserved bit-for-bit.
 	applyStaticFallbacks(context.Background(), newTestLogger(), summaries, dayBegin, curve, MapConfigLookup{})
 
 	got := summaries[0]
@@ -220,12 +308,11 @@ func TestApplyStaticFallbacks_IgnoresConfigsParam(t *testing.T) {
 	if got.Release.Current != staticRelease {
 		t.Errorf("Release.Current: want %v, got %v", staticRelease, got.Release.Current)
 	}
-	// Level was non-zero in the summary already, so the static.uz Level must NOT overwrite it.
 	if got.Level.Current != level {
 		t.Errorf("Level.Current: want %v (untouched), got %v", level, got.Level.Current)
 	}
-	// Volume was zero → curve wins over static.uz volume.
-	if got.Volume.Current != curveVolume {
-		t.Errorf("Volume.Current: want %v (curve), got %v", curveVolume, got.Volume.Current)
+	// Default strategy = "static". Volume was zero → static.uz wins over curve.
+	if got.Volume.Current != staticVolume {
+		t.Errorf("Volume.Current: want %v (static.uz under default static), got %v", staticVolume, got.Volume.Current)
 	}
 }

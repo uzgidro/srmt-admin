@@ -73,20 +73,24 @@ const (
 	volumeSourceLevelVolume = "level_volume"
 )
 
+// applyStaticFallbacks mutates summaries in place: pulls income/release/level
 // from the static.uz day-begin snapshot when DB values are zero, then resolves
-// Volume.Current according to the per-organization volume_source strategy:
+// Volume.Current.
 //
-//   - "static" (default, legacy behaviour): snapshot wins. If the DB snapshot
-//     is zero, fall through to the level→volume curve, and only then to the
-//     static.uz Volume.
-//   - "level_volume": the curve wins. If the curve returns a value, it
-//     overwrites even a non-zero DB snapshot. If the curve is not configured
-//     for the org (or the level falls outside its range), the existing
-//     snapshot is preserved.
+// Volume resolution always starts with the DB snapshot
+// (reservoir_data.volume_mln_m3): if the operator typed a value for this day
+// it wins over both sources — "what the operator entered must show in the
+// report". The strategy switch only fires when the snapshot is zero
+// (operator hasn't entered anything yet):
 //
-// An empty or unknown VolumeSource is treated as "static" so a missing
-// ConfigLookup entry (or a future enum value the binary doesn't recognise)
-// degrades gracefully to the legacy path.
+//   - "static" (default): static.uz Volume → curve → 0
+//   - "level_volume":     curve → static.uz Volume → 0
+//
+// Both strategies use the other source as a fallback so partial coverage
+// (curve not configured / static.uz outage) still produces a value where
+// possible. Empty/unknown VolumeSource → "static" so a missing ConfigLookup
+// entry or a future enum value the binary doesn't recognise degrades
+// gracefully.
 //
 // configs is also consulted to mask Modsnow.Current / Modsnow.YearAgo for any
 // org whose ReservoirSummaryConfig has ModsnowEnabled=false. This is the
@@ -142,6 +146,11 @@ func applyStaticFallbacks(
 			}
 		}
 
+		// Snapshot wins universally — operator's manual POST always surfaces.
+		if summary.Volume.Current != 0 {
+			continue
+		}
+
 		source := volumeSourceStatic
 		if configs != nil {
 			if cfg, ok := configs.Get(*summary.OrganizationID); ok && cfg.VolumeSource != "" {
@@ -149,39 +158,58 @@ func applyStaticFallbacks(
 			}
 		}
 
+		// Strategy fires only when snapshot is zero. Both strategies are
+		// symmetric: try the configured primary source, then the other one,
+		// then leave Volume at 0.
+		var primary, fallback volumeProvider
 		switch source {
 		case volumeSourceLevelVolume:
-			// Curve wins over the snapshot. Recompute only fires when we have
-			// a Level to feed it; without that, leave whatever the DB returned
-			// (the snapshot, possibly zero).
-			if summary.Level.Current == 0 {
-				continue
-			}
-			if computed, computedOK := computeVolumeFromLevel(ctx, log, curve, *summary.OrganizationID, summary.Level.Current); computedOK {
-				summary.Volume.Current = computed
-				summary.Volume.IsEdited = &isEdited
-			}
-			// Curve unavailable → keep the existing snapshot. Not an error.
-		default:
-			// Legacy "static" path: snapshot short-circuits any recompute.
-			if summary.Volume.Current != 0 {
-				continue
-			}
-			// Prefer the calibration curve over the static.uz size field — operators
-			// reported that static.uz volume disagrees with the level→volume table
-			// for several reservoirs, so we recompute when we can and only fall
-			// back to static.size when the curve is unavailable.
-			if summary.Level.Current != 0 {
-				if computed, computedOK := computeVolumeFromLevel(ctx, log, curve, *summary.OrganizationID, summary.Level.Current); computedOK {
-					summary.Volume.Current = computed
-					summary.Volume.IsEdited = &isEdited
-					continue
-				}
-			}
-			if staticData != nil && staticData.Volume != nil && *staticData.Volume != 0 {
-				summary.Volume.Current = *staticData.Volume
-				summary.Volume.IsEdited = &isEdited
-			}
+			primary = curveProvider{ctx: ctx, log: log, curve: curve}
+			fallback = staticUzProvider{data: staticData}
+		default: // volumeSourceStatic + unknown values
+			primary = staticUzProvider{data: staticData}
+			fallback = curveProvider{ctx: ctx, log: log, curve: curve}
 		}
+
+		if v, ok := primary.volume(*summary.OrganizationID, summary.Level.Current); ok {
+			summary.Volume.Current = v
+			summary.Volume.IsEdited = &isEdited
+			continue
+		}
+		if v, ok := fallback.volume(*summary.OrganizationID, summary.Level.Current); ok {
+			summary.Volume.Current = v
+			summary.Volume.IsEdited = &isEdited
+		}
+		// Both sources empty → Volume stays 0 (the SQL default).
 	}
+}
+
+// volumeProvider abstracts the two sources of volume so the strategy switch
+// can compose them without duplicating per-source error handling.
+type volumeProvider interface {
+	volume(orgID int64, level float64) (float64, bool)
+}
+
+type staticUzProvider struct {
+	data *dto.ReservoirData
+}
+
+func (s staticUzProvider) volume(_ int64, _ float64) (float64, bool) {
+	if s.data == nil || s.data.Volume == nil || *s.data.Volume == 0 {
+		return 0, false
+	}
+	return *s.data.Volume, true
+}
+
+type curveProvider struct {
+	ctx   context.Context
+	log   *slog.Logger
+	curve volumeByLevelByOrg
+}
+
+func (c curveProvider) volume(orgID int64, level float64) (float64, bool) {
+	if level == 0 {
+		return 0, false
+	}
+	return computeVolumeFromLevel(c.ctx, c.log, c.curve, orgID, level)
 }

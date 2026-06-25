@@ -237,6 +237,12 @@ func TestGet_VolumeRecomputedFromStaticLevel(t *testing.T) {
 			},
 		},
 		curveVolume: 125.0,
+		// volume_source=level_volume forces curve to be tried first. Without this
+		// the default "static" strategy would prefer static.uz Volume (80) over
+		// the curve recompute.
+		configs: []reservoirsummary.ReservoirSummaryConfig{
+			{ID: 1, OrganizationID: orgID, ModsnowEnabled: true, VolumeSource: "level_volume"},
+		},
 	}
 
 	fetcher := &mockStaticDataFetcher{
@@ -245,7 +251,7 @@ func TestGet_VolumeRecomputedFromStaticLevel(t *testing.T) {
 				OrganizationID: orgID,
 				Data: &dto.ReservoirData{
 					Level:  ptrFloat(205.0),
-					Volume: ptrFloat(80.0), // would be the old fallback; should be ignored when curve succeeds
+					Volume: ptrFloat(80.0), // fallback under level_volume; curve wins
 				},
 			},
 		},
@@ -649,11 +655,13 @@ func TestGet_ModsnowPreservedWhenEnabled(t *testing.T) {
 	}
 }
 
-// End-to-end: when the config row says volume_source=level_volume, the
-// handler must load the configs from the repo and forward them into
-// applyStaticFallbacks so the curve wins over the DB snapshot. Without
-// this wiring, Get would still pass an empty MapConfigLookup and the
-// strategy switch would silently fall back to "static" for every org.
+// End-to-end: when the snapshot is zero and the config row says
+// volume_source=level_volume, the handler must load the configs from the
+// repo and forward them so applyStaticFallbacks consults the curve first
+// (rather than static.uz). Without this wiring, Get would pass an empty
+// MapConfigLookup and the strategy switch would silently fall back to
+// "static" for every org. Snapshot wins universally and would mask any
+// strategy difference, so the test uses Volume.Current=0.
 func TestGet_VolumeSourceLevelVolume_E2E(t *testing.T) {
 	orgID := int64(96)
 
@@ -662,7 +670,7 @@ func TestGet_VolumeSourceLevelVolume_E2E(t *testing.T) {
 			{
 				OrganizationID: ptrInt64(orgID),
 				Level:          reservoirsummary.ValueResponse{Current: 200},
-				Volume:         reservoirsummary.ValueResponse{Current: 100}, // snapshot the curve must override
+				Volume:         reservoirsummary.ValueResponse{Current: 0}, // no snapshot → strategy fires
 			},
 		},
 		curveVolume: 150,
